@@ -1,0 +1,233 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.logo {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.settingsBtn {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+.settingsBtn:hover {
+  background: var(--color-border);
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 780px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Primary CTA */
+.cta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6) var(--space-6);
+  width: 100%;
+  text-align: left;
+  box-shadow: var(--shadow-md);
+  min-height: 80px;
+}
+
+.cta:active {
+  opacity: 0.9;
+  transform: scale(0.995);
+}
+
+.ctaIcon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.ctaLabel {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  flex: 1;
+}
+
+.ctaArrow {
+  font-size: var(--font-size-sm);
+  opacity: 0.7;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.15);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+}
+
+/* Sections */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.viewAll {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Draft card */
+.draftCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-draft);
+  border: 1px solid #e8dfc8;
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  width: 100%;
+  text-align: left;
+  gap: var(--space-3);
+}
+
+.draftCard:active {
+  opacity: 0.85;
+}
+
+.draftInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.draftIcon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.draftName {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.draftPreview {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  margin-top: var(--space-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.draftCta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  flex-shrink: 0;
+}
+
+/* Thumbnails */
+.thumbnails {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--space-2);
+}
+
+.thumbnails::-webkit-scrollbar {
+  display: none;
+}
+
+.thumb {
+  flex-shrink: 0;
+  width: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+}
+
+.thumb:active {
+  opacity: 0.8;
+}
+
+.thumbImg {
+  width: 110px;
+  height: 148px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.thumbPlaceholder {
+  width: 110px;
+  height: 148px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
+
+.thumbName {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thumbDate {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.empty {
+  text-align: center;
+  color: var(--color-text-sub);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-10);
+}
