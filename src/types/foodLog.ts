@@ -1,14 +1,35 @@
-export interface FoodLogForm {
-  date: string;
+export interface PhotoEntry {
+  localId: string;
+  requestId: string;
+  previewUrl: string;
+  base64: string;
   food: string;
+  foodId?: string;
   phase: string;
-  place: string;
-  largeCategory: string;
-  harvested: string;
   memo: string;
-  photoFile: File | null;
-  photoPreviewUrl: string;
-  photoBase64: string;
+  gps?: { lat: number; lng: number; accuracy: number };
+  takenAt?: string;
+}
+
+export interface CommonFields {
+  date: string;
+  largeCategory: string;
+  place: string;
+  harvested: string;
+}
+
+export interface FoodCandidate {
+  name: string;
+  category: string;
+}
+
+export type PhotoSendStatus = 'pending' | 'sending' | 'success' | 'error';
+
+export interface PhotoSendResult {
+  photoIndex: number;
+  status: PhotoSendStatus;
+  result?: FoodLogSuccess;
+  error?: string;
 }
 
 export interface FoodLogSuccess {
@@ -37,19 +58,22 @@ export const PHASE_OPTIONS = [
 
 export const HARVESTED_OPTIONS = ['あり', 'なし', '不明'] as const;
 
-export function emptyForm(): FoodLogForm {
+export const MAX_PHOTOS = 5;
+
+export function emptyCommonFields(): CommonFields {
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return { date, largeCategory: '', place: '', harvested: '不明' };
+}
+
+export function emptyPhotoEntry(): PhotoEntry {
   return {
-    date,
+    localId: crypto.randomUUID(),
+    requestId: crypto.randomUUID(),
+    previewUrl: '',
+    base64: '',
     food: '',
     phase: '',
-    place: '',
-    largeCategory: '',
-    harvested: '不明',
     memo: '',
-    photoFile: null,
-    photoPreviewUrl: '',
-    photoBase64: '',
   };
 }

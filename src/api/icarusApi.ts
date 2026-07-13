@@ -1,5 +1,5 @@
-import { WORKER_URL } from '../config';
-import type { FoodLogForm, FoodLogSuccess, FoodLogApiError } from '../types/foodLog';
+import { WORKER_URL, GAS_PUBLIC_URL } from '../config';
+import type { PhotoEntry, CommonFields, FoodLogSuccess, FoodLogApiError, FoodCandidate } from '../types/foodLog';
 
 export class TokenExpiredError extends Error {
   constructor(message: string) {
@@ -8,9 +8,9 @@ export class TokenExpiredError extends Error {
   }
 }
 
-export async function submitFoodLog(
-  form: FoodLogForm,
-  requestId: string,
+export async function submitPhotoEntry(
+  photo: PhotoEntry,
+  common: CommonFields,
   idToken: string,
 ): Promise<FoodLogSuccess> {
   let res: Response;
@@ -22,22 +22,29 @@ export async function submitFoodLog(
         Authorization: `Bearer ${idToken}`,
       },
       body: JSON.stringify({
-        requestId,
+        requestId: photo.requestId,
         recordType: 'food',
-        clientVersion: '1.0.0',
-        date: form.date,
-        food: form.food,
-        phase: form.phase,
-        place: form.place,
-        largeCategory: form.largeCategory,
-        harvested: form.harvested,
-        memo: form.memo,
-        photoBase64: form.photoBase64,
+        clientVersion: '2.0.0',
+        date: common.date,
+        food: photo.food,
+        foodId: photo.foodId,
+        phase: photo.phase,
+        place: common.place,
+        largeCategory: common.largeCategory,
+        harvested: common.harvested,
+        memo: photo.memo,
+        photoBase64: photo.base64,
         photoMimeType: 'image/jpeg',
+        gps: photo.gps,
+        takenAt: photo.takenAt,
       }),
     });
   } catch {
     throw new Error('ネットワークエラーが発生しました。通信状況を確認してください。');
+  }
+
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
   }
 
   let json: FoodLogSuccess | FoodLogApiError;
@@ -47,15 +54,34 @@ export async function submitFoodLog(
     throw new Error(`サーバーエラー (HTTP ${res.status})`);
   }
 
-  if (res.status === 401) {
-    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
-  }
-
   if (json.status !== 'success') {
     throw new Error((json as FoodLogApiError).message || '送信に失敗しました');
   }
 
   return json as FoodLogSuccess;
+}
+
+export async function fetchFoodCandidates(): Promise<FoodCandidate[]> {
+  try {
+    const url = `${GAS_PUBLIC_URL}?action=food_candidates`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json() as FoodCandidate[];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchGps(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
+  if (!navigator.geolocation) return null;
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => resolve(null),
+      { timeout: 8000, maximumAge: 60000 },
+    );
+  });
 }
 
 export async function resizeToJpeg(
