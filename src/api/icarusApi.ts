@@ -35,7 +35,9 @@ export async function submitPhotoEntry(
         memo: photo.memo,
         photoBase64: photo.base64,
         photoMimeType: 'image/jpeg',
-        gps: photo.gps,
+        latitude: photo.gps?.lat,
+        longitude: photo.gps?.lng,
+        gpsAccuracy: photo.gps?.accuracy,
         takenAt: photo.takenAt,
       }),
     });
