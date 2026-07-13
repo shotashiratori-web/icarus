@@ -31,6 +31,15 @@ export default function HomeScreen({ go }: Props) {
           <span className={styles.ctaArrow}>→ 作る</span>
         </button>
 
+        <button
+          className={styles.cta}
+          onClick={() => go({ name: 'foodLog' })}
+        >
+          <span className={styles.ctaIcon}>🌿</span>
+          <span className={styles.ctaLabel}>食材ログを送る</span>
+          <span className={styles.ctaArrow}>→ 記録</span>
+        </button>
+
         {/* 最近のノート */}
         {recent.length > 0 && (
           <section className={styles.section}>
