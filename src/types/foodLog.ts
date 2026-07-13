@@ -3,6 +3,7 @@ export interface PhotoEntry {
   requestId: string;
   previewUrl: string;
   base64: string;
+  date: string;
   food: string;
   foodId?: string;
   phase: string;
@@ -12,7 +13,6 @@ export interface PhotoEntry {
 }
 
 export interface CommonFields {
-  date: string;
   largeCategory: string;
   place: string;
   harvested: string;
@@ -61,9 +61,7 @@ export const HARVESTED_OPTIONS = ['あり', 'なし', '不明'] as const;
 export const MAX_PHOTOS = 5;
 
 export function emptyCommonFields(): CommonFields {
-  const now = new Date();
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return { date, largeCategory: '', place: '', harvested: '不明' };
+  return { largeCategory: '', place: '', harvested: '不明' };
 }
 
 export function emptyPhotoEntry(): PhotoEntry {
@@ -72,8 +70,14 @@ export function emptyPhotoEntry(): PhotoEntry {
     requestId: crypto.randomUUID(),
     previewUrl: '',
     base64: '',
+    date: '',
     food: '',
     phase: '',
     memo: '',
   };
+}
+
+export function todayString(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }

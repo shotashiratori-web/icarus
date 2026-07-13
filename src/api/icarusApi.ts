@@ -1,5 +1,20 @@
+import { parse as parseExif } from 'exifr';
 import { WORKER_URL, GAS_PUBLIC_URL } from '../config';
 import type { PhotoEntry, CommonFields, FoodLogSuccess, FoodLogApiError, FoodCandidate } from '../types/foodLog';
+
+export async function extractExifDate(file: File): Promise<{ date: string; takenAt: string } | null> {
+  try {
+    const exif = await parseExif(file, { pick: ['DateTimeOriginal', 'CreateDate', 'DateTime'] });
+    const raw: unknown = exif?.DateTimeOriginal ?? exif?.CreateDate ?? exif?.DateTime;
+    if (!raw) return null;
+    const d = raw instanceof Date ? raw : new Date(raw as string);
+    if (isNaN(d.getTime())) return null;
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { date, takenAt: d.toISOString() };
+  } catch {
+    return null;
+  }
+}
 
 export class TokenExpiredError extends Error {
   constructor(message: string) {
@@ -25,7 +40,7 @@ export async function submitPhotoEntry(
         requestId: photo.requestId,
         recordType: 'food',
         clientVersion: '2.0.0',
-        date: common.date,
+        date: photo.date,
         food: photo.food,
         foodId: photo.foodId,
         phase: photo.phase,
