@@ -347,7 +347,6 @@ export default function FoodLogScreen({ go }: Props) {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             multiple
             className={styles.hidden}
             onChange={handleFileChange}
