@@ -1,6 +1,13 @@
 import { FIELD_RECENT_URL, WORK_RECENT_URL } from '../config';
 import type { FieldObservation, WorkLogItem, RecentApiSuccess, RecentApiError } from '../types/fieldLog';
-import { TokenExpiredError, NetworkUnknownError } from './icarusApi';
+import { TokenExpiredError } from './icarusApi';
+
+export class NetworkUnknownError extends Error {
+  constructor() {
+    super('ネットワークエラーが発生しました。通信状況を確認してください。');
+    this.name = 'NetworkUnknownError';
+  }
+}
 
 async function fetchRecent<T>(baseUrl: string, idToken: string, limit: number): Promise<T[]> {
   let res: Response;

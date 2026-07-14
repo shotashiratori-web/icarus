@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { fetchRecentWorkLogs } from '../api/fieldApi';
+import { fetchRecentWorkLogs, NetworkUnknownError } from '../api/fieldApi';
 import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
-import { TokenExpiredError, NetworkUnknownError } from '../api/icarusApi';
+import { TokenExpiredError } from '../api/icarusApi';
 import type { WorkLogItem } from '../types/fieldLog';
 import type { Screen } from '../App';
 import styles from './ProcessingScreen.module.css';

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { FIELD_MAP_URL } from '../config';
-import { fetchRecentFieldObservations } from '../api/fieldApi';
+import { fetchRecentFieldObservations, NetworkUnknownError } from '../api/fieldApi';
 import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
-import { TokenExpiredError, NetworkUnknownError } from '../api/icarusApi';
+import { TokenExpiredError } from '../api/icarusApi';
 import type { FieldObservation } from '../types/fieldLog';
 import type { Screen } from '../App';
 import styles from './FieldScreen.module.css';

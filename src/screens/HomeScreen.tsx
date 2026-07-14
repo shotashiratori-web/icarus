@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getAllNotes, loadFoodLogDraft } from '../db/localDB';
+import { getAllNotes } from '../db/localDB';
 import { fetchRecentFieldObservations, fetchRecentWorkLogs } from '../api/fieldApi';
 import { requestSilentIdToken } from '../api/googleAuth';
 import type { FieldObservation, WorkLogItem } from '../types/fieldLog';
@@ -9,27 +9,13 @@ import styles from './HomeScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
 
-interface FoodDraftSummary {
-  photoCount: number;
-  savedAt: string;
-  hasRetry: boolean;
-}
-
 export default function HomeScreen({ go }: Props) {
   const [recent, setRecent] = useState<WineNote[]>([]);
-  const [foodDraft, setFoodDraft] = useState<FoodDraftSummary | null>(null);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
 
   useEffect(() => {
     getAllNotes().then(all => setRecent(all.slice(0, 5)));
-    loadFoodLogDraft().then(draft => {
-      if (!draft || draft.photos.length === 0) return;
-      const hasRetry = (draft.sendResults ?? []).some(
-        r => r.status === 'failed' || r.status === 'unknown',
-      );
-      setFoodDraft({ photoCount: draft.photos.length, savedAt: draft.savedAt, hasRetry });
-    });
   }, []);
 
   // 最近の観察・最近の作業（失敗してもホーム画面全体には影響させない）
@@ -121,21 +107,6 @@ export default function HomeScreen({ go }: Props) {
               </div>
             )}
           </section>
-        )}
-
-        {foodDraft && (
-          <button className={styles.draftCard} onClick={() => go({ name: 'draftList' })}>
-            <div className={styles.draftInfo}>
-              <span className={styles.draftIcon}>{foodDraft.hasRetry ? '⚠️' : '📝'}</span>
-              <div>
-                <p className={styles.draftName}>
-                  {foodDraft.hasRetry ? '未送信あり' : '食材ログ下書き'}（{foodDraft.photoCount} 枚）
-                </p>
-                <p className={styles.draftPreview}>{foodDraft.savedAt.slice(0, 16).replace('T', ' ')}</p>
-              </div>
-            </div>
-            <span className={styles.draftCta}>確認 →</span>
-          </button>
         )}
 
         {/* 最近のノート */}
