@@ -1,23 +1,29 @@
 .root { display:flex; flex-direction:column; height:100%; background:var(--color-bg); }
 .header { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-4) var(--space-5); background:var(--color-surface); border-bottom:1px solid var(--color-border); }
 .back { font-size:var(--font-size-sm); color:var(--color-text-sub); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm); }
-.title { flex:1; font-size:var(--font-size-base); font-weight:600; }
+.title { flex:1; font-size:var(--font-size-base); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 .main { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:var(--space-6); display:flex; flex-direction:column; gap:var(--space-6); max-width:780px; width:100%; margin:0 auto; }
+
+.summary { display:flex; flex-direction:column; gap:var(--space-4); }
+.summaryPhoto { width:100%; max-height:240px; object-fit:cover; border-radius:var(--radius-md); display:block; }
+.summaryList { display:grid; grid-template-columns:auto 1fr; gap:var(--space-2) var(--space-4); background:var(--color-surface); border-radius:var(--radius-md); padding:var(--space-4); margin:0; font-size:var(--font-size-sm); border:1px solid var(--color-border); }
+.summaryList dt { color:var(--color-text-sub); font-weight:600; white-space:nowrap; }
+.summaryList dd { margin:0; }
+
+.addBtn { padding:var(--space-4); background:var(--color-primary); color:var(--color-primary-fg); border:none; border-radius:var(--radius-md); font-size:var(--font-size-base); font-weight:600; cursor:pointer; }
 
 .section { display:flex; flex-direction:column; gap:var(--space-3); }
 .sectionTitle { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); text-transform:uppercase; letter-spacing:0.5px; }
 
-.newWorkBtn { padding:var(--space-4); background:var(--color-primary); color:var(--color-primary-fg); border:none; border-radius:var(--radius-md); font-size:var(--font-size-base); font-weight:600; cursor:pointer; }
-
 .list { display:flex; flex-direction:column; gap:var(--space-3); }
-.item { display:flex; align-items:center; gap:var(--space-4); padding:var(--space-3); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); width:100%; text-align:left; cursor:pointer; font:inherit; color:inherit; }
-.photo { width:64px; height:64px; object-fit:cover; border-radius:var(--radius-sm); flex-shrink:0; background:var(--color-bg); }
-.photoPlaceholder { width:64px; height:64px; border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; }
-.info { flex:1; min-width:0; }
-.name { font-size:var(--font-size-base); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.sub { font-size:var(--font-size-sm); color:var(--color-text-sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.date { font-size:var(--font-size-xs); color:var(--color-text-sub); margin-top:2px; }
+.entry { display:flex; align-items:flex-start; gap:var(--space-4); padding:var(--space-3); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); }
+.entryPhoto { width:64px; height:64px; object-fit:cover; border-radius:var(--radius-sm); flex-shrink:0; background:var(--color-bg); }
+.entryPhotoPlaceholder { width:64px; height:64px; border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; }
+.entryInfo { flex:1; min-width:0; }
+.entryDate { font-size:var(--font-size-xs); color:var(--color-text-sub); margin:0 0 4px; }
+.entryContent { font-size:var(--font-size-sm); margin:0 0 4px; white-space:pre-wrap; }
+.entryCaption { font-size:var(--font-size-xs); color:var(--color-text-sub); margin:0; }
 
 .skeletonList { display:flex; flex-direction:column; gap:var(--space-3); }
 .skeletonItem { height:64px; border-radius:var(--radius-md); background:linear-gradient(90deg, var(--color-border) 25%, var(--color-bg) 50%, var(--color-border) 75%); background-size:200% 100%; animation:shimmer 1.4s ease-in-out infinite; }

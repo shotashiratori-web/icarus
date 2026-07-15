@@ -9,3 +9,5 @@ export const FIELD_MAP_URL = `${GAS_PUBLIC_URL}?action=map`;
 
 export const FIELD_RECENT_URL = `${WORKER_URL}/field/recent`;
 export const WORK_RECENT_URL = `${WORKER_URL}/work/recent`;
+export const WORK_DETAIL_URL = `${WORKER_URL}/work/detail`;
+export const WORK_SUBMIT_URL = `${WORKER_URL}/work`;

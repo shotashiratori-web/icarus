@@ -67,6 +67,10 @@ export default function ProcessingScreen({ go }: Props) {
       </header>
 
       <main className={styles.main}>
+        <button className={styles.newWorkBtn} onClick={() => go({ name: 'workForm', mode: 'create' })}>
+          ＋ 新しい作業を始める
+        </button>
+
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>最近の作業</h2>
 
@@ -99,7 +103,11 @@ export default function ProcessingScreen({ go }: Props) {
           {state === 'ready' && items.length > 0 && (
             <div className={styles.list}>
               {items.map((item) => (
-                <div key={item.workId} className={styles.item}>
+                <button
+                  key={item.workId}
+                  className={styles.item}
+                  onClick={() => go({ name: 'workDetail', workId: item.workId })}
+                >
                   {item.photoUrl ? (
                     <img src={item.photoUrl} alt="" className={styles.photo} loading="lazy" />
                   ) : (
@@ -110,7 +118,7 @@ export default function ProcessingScreen({ go }: Props) {
                     {item.memo && <p className={styles.sub}>{item.memo}</p>}
                     <p className={styles.date}>{item.datetime.slice(0, 16).replace('T', ' ')}</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
