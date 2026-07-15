@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchWorkDetail, WorkNotFoundError } from '../api/workApi';
-import { NetworkUnknownError, TokenExpiredError } from '../api/icarusApi';
+import { fetchWorkDetail, WorkNotFoundError, NetworkUnknownError } from '../api/workApi';
+import { TokenExpiredError } from '../api/icarusApi';
 import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
 import type { WorkDetail } from '../types/workLog';
 import type { Screen } from '../App';

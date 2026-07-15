@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
-import { resizeToJpeg, TokenExpiredError, NetworkUnknownError } from '../api/icarusApi';
-import { submitWork, WorkProcessingError } from '../api/workApi';
+import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
+import { submitWork, WorkProcessingError, NetworkUnknownError } from '../api/workApi';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
 import type { Screen } from '../App';
 import styles from './WorkFormScreen.module.css';

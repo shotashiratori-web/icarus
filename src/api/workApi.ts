@@ -1,6 +1,13 @@
 import { WORK_SUBMIT_URL, WORK_DETAIL_URL } from '../config';
 import type { WorkDetail, WorkDetailSuccess, WorkSubmitPayload, WorkSubmitSuccess, WorkSubmitError } from '../types/workLog';
-import { TokenExpiredError, NetworkUnknownError } from './icarusApi';
+import { TokenExpiredError } from './icarusApi';
+
+export class NetworkUnknownError extends Error {
+  constructor() {
+    super('ネットワークエラーが発生しました。通信状況を確認してください。');
+    this.name = 'NetworkUnknownError';
+  }
+}
 
 export class WorkProcessingError extends Error {
   constructor(message: string) {
