@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
+import { useRef, useState } from 'react';
 import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
 import { submitWork, WorkProcessingError, NetworkUnknownError } from '../api/workApi';
+import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
 import type { Screen } from '../App';
 import styles from './WorkFormScreen.module.css';
 
-type Phase = 'auth' | 'form' | 'confirm' | 'sending' | 'complete';
+type Phase = 'form' | 'confirm' | 'sending' | 'complete';
 type SendOutcome =
   | { kind: 'success'; result: WorkSubmitSuccess }
   | { kind: 'processing'; message: string }
@@ -20,11 +20,8 @@ type Props = {
 };
 
 export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
-  const [phase, setPhase] = useState<Phase>('auth');
-  const [idToken, setIdToken] = useState('');
-  const [userEmail, setUserEmail] = useState('');
-  const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
-  const [authError, setAuthError] = useState('');
+  const { idToken, userEmail, authState, signInContainerRef, handleTokenExpired } = useAuth();
+  const [phase, setPhase] = useState<Phase>('form');
 
   const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID());
   const [title, setTitle] = useState('');
@@ -42,44 +39,6 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
   const backTarget: Screen = mode === 'append' && workId
     ? { name: 'workDetail', workId }
     : { name: 'processing' };
-
-  // ── Google Sign-In（サイレント → ボタン） ────────────────
-  useEffect(() => {
-    if (phase !== 'auth') return;
-    let cancelled = false;
-
-    const afterAuth = async (token: string) => {
-      if (cancelled) return;
-      setIdToken(token);
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-        if (typeof payload.email === 'string') setUserEmail(payload.email);
-      } catch { /* ignore */ }
-      setPhase('form');
-    };
-
-    requestSilentIdToken().then((token) => {
-      if (cancelled) return;
-      if (token) void afterAuth(token);
-    });
-
-    return () => { cancelled = true; };
-  }, [phase, mode, workId]);
-
-  useEffect(() => {
-    if (phase !== 'auth' || !signInEl) return;
-    void renderSignInButton(signInEl, (token) => {
-      setAuthError('');
-      void (async () => {
-        setIdToken(token);
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-          if (typeof payload.email === 'string') setUserEmail(payload.email);
-        } catch { /* ignore */ }
-        setPhase('form');
-      })();
-    });
-  }, [phase, signInEl]);
 
   // ── 写真選択 ─────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,6 +72,10 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
 
   // ── 送信 ─────────────────────────────────────────────────
   const send = async () => {
+    if (!idToken) {
+      handleTokenExpired();
+      return;
+    }
     setPhase('sending');
     try {
       const isoDatetime = new Date(datetime).toISOString();
@@ -131,9 +94,8 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
       setOutcome({ kind: 'success', result });
     } catch (err) {
       if (err instanceof TokenExpiredError) {
-        setIdToken(''); setUserEmail('');
-        setAuthError(err.message);
-        setPhase('auth');
+        handleTokenExpired();
+        setPhase('form');
         return;
       }
       if (err instanceof WorkProcessingError) {
@@ -161,7 +123,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
   // RENDER
   // ════════════════════════════════════════════════════════
 
-  if (phase === 'auth') {
+  if (authState !== 'ready') {
     return (
       <div className={styles.root}>
         <header className={styles.header}>
@@ -170,9 +132,14 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
         </header>
         <main className={styles.authMain}>
           <div className={styles.authCard}>
-            {authError && <p className={styles.errorBanner}>{authError}</p>}
-            <p className={styles.authLead}>Googleアカウントでログインしてください。</p>
-            <div ref={setSignInEl} className={styles.googleBtnWrap} />
+            {authState === 'signedOut' ? (
+              <>
+                <p className={styles.authLead}>Googleアカウントでログインしてください。</p>
+                <div ref={signInContainerRef} className={styles.googleBtnWrap} />
+              </>
+            ) : (
+              <p className={styles.authLead}>ログイン確認中…</p>
+            )}
           </div>
         </main>
       </div>

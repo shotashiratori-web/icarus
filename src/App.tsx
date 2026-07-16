@@ -8,6 +8,7 @@ import FieldScreen from './screens/FieldScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
 import WorkDetailScreen from './screens/WorkDetailScreen';
 import WorkFormScreen from './screens/WorkFormScreen';
+import { AuthProvider } from './context/AuthContext';
 
 export type Screen =
   | { name: 'home' }
@@ -21,7 +22,7 @@ export type Screen =
   | { name: 'workForm'; mode: 'create' }
   | { name: 'workForm'; mode: 'append'; workId: string; workTitle?: string };
 
-export default function App() {
+function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
 
   const go = (s: Screen) => setScreen(s);
@@ -44,4 +45,12 @@ export default function App() {
   );
 
   return null;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  );
 }

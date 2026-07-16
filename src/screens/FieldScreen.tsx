@@ -1,30 +1,30 @@
 import { useEffect, useState } from 'react';
 import { FIELD_MAP_URL } from '../config';
 import { fetchRecentFieldObservations, NetworkUnknownError } from '../api/fieldApi';
-import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
 import { TokenExpiredError } from '../api/icarusApi';
+import { useAuth } from '../context/AuthContext';
 import type { FieldObservation } from '../types/fieldLog';
 import type { Screen } from '../App';
 import styles from './FieldScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
-type LoadState = 'loading' | 'ready' | 'error' | 'signedOut';
+type LoadState = 'loading' | 'ready' | 'error';
 
 export default function FieldScreen({ go }: Props) {
+  const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const [items, setItems] = useState<FieldObservation[]>([]);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
-  const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
 
-  const load = async (idToken: string) => {
+  const load = async (token: string) => {
     setState('loading');
     try {
-      const result = await fetchRecentFieldObservations(idToken, 20);
+      const result = await fetchRecentFieldObservations(token, 20);
       setItems(result);
       setState('ready');
     } catch (e) {
       if (e instanceof TokenExpiredError) {
-        setState('signedOut');
+        handleTokenExpired();
         return;
       }
       setErrorMessage(
@@ -35,30 +35,12 @@ export default function FieldScreen({ go }: Props) {
   };
 
   const retry = () => {
-    void requestSilentIdToken().then((token) => (token ? load(token) : setState('signedOut')));
+    if (idToken) void load(idToken);
   };
 
   useEffect(() => {
-    let cancelled = false;
-    requestSilentIdToken().then((token) => {
-      if (cancelled) return;
-      if (token) {
-        void load(token);
-      } else {
-        setState('signedOut');
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (state !== 'signedOut' || !signInEl) return;
-    void renderSignInButton(signInEl, (token) => {
-      void load(token);
-    });
-  }, [state, signInEl]);
+    if (authState === 'ready' && idToken) void load(idToken);
+  }, [authState, idToken]);
 
   return (
     <div className={styles.root}>
@@ -81,7 +63,7 @@ export default function FieldScreen({ go }: Props) {
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>最近の観察</h2>
 
-          {state === 'loading' && (
+          {(authState === 'checking' || (authState === 'ready' && state === 'loading')) && (
             <div className={styles.skeletonList}>
               {[0, 1, 2].map((i) => (
                 <div key={i} className={styles.skeletonItem} />
@@ -89,14 +71,14 @@ export default function FieldScreen({ go }: Props) {
             </div>
           )}
 
-          {state === 'signedOut' && (
+          {authState === 'signedOut' && (
             <div className={styles.signInBox}>
               <p className={styles.hintText}>ログインすると最近の観察を確認できます</p>
-              <div ref={setSignInEl} />
+              <div ref={signInContainerRef} />
             </div>
           )}
 
-          {state === 'error' && (
+          {authState === 'ready' && state === 'error' && (
             <div className={styles.errorBox}>
               <p className={styles.errorText}>{errorMessage}</p>
               <button className={styles.retryBtn} onClick={retry}>再読み込み</button>

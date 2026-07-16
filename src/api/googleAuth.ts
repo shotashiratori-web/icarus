@@ -84,6 +84,11 @@ export async function requestSilentIdToken(): Promise<string | null> {
   });
 }
 
+/** 自動サインインを無効化する（サインアウト時）。 */
+export function disableAutoSelect(): void {
+  getGoogleId()?.disableAutoSelect();
+}
+
 /** サインインボタンを描画し、認証済みID tokenをcallbackへ渡す。 */
 export async function renderSignInButton(
   el: HTMLElement,

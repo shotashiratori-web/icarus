@@ -1,29 +1,29 @@
 import { useEffect, useState } from 'react';
 import { fetchWorkDetail, WorkNotFoundError, NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
-import { requestSilentIdToken, renderSignInButton } from '../api/googleAuth';
+import { useAuth } from '../context/AuthContext';
 import type { WorkDetail } from '../types/workLog';
 import type { Screen } from '../App';
 import styles from './WorkDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; workId: string };
-type LoadState = 'loading' | 'ready' | 'error' | 'notFound' | 'signedOut';
+type LoadState = 'loading' | 'ready' | 'error' | 'notFound';
 
 export default function WorkDetailScreen({ go, workId }: Props) {
+  const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
-  const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
 
-  const load = async (idToken: string) => {
+  const load = async (token: string) => {
     setState('loading');
     try {
-      const result = await fetchWorkDetail(workId, idToken);
+      const result = await fetchWorkDetail(workId, token);
       setDetail(result);
       setState('ready');
     } catch (e) {
       if (e instanceof TokenExpiredError) {
-        setState('signedOut');
+        handleTokenExpired();
         return;
       }
       if (e instanceof WorkNotFoundError) {
@@ -38,28 +38,12 @@ export default function WorkDetailScreen({ go, workId }: Props) {
   };
 
   const retry = () => {
-    void requestSilentIdToken().then((token) => (token ? load(token) : setState('signedOut')));
+    if (idToken) void load(idToken);
   };
 
   useEffect(() => {
-    let cancelled = false;
-    requestSilentIdToken().then((token) => {
-      if (cancelled) return;
-      if (token) {
-        void load(token);
-      } else {
-        setState('signedOut');
-      }
-    });
-    return () => { cancelled = true; };
-  }, [workId]);
-
-  useEffect(() => {
-    if (state !== 'signedOut' || !signInEl) return;
-    void renderSignInButton(signInEl, (token) => {
-      void load(token);
-    });
-  }, [state, signInEl]);
+    if (authState === 'ready' && idToken) void load(idToken);
+  }, [authState, idToken, workId]);
 
   return (
     <div className={styles.root}>
@@ -69,27 +53,27 @@ export default function WorkDetailScreen({ go, workId }: Props) {
       </header>
 
       <main className={styles.main}>
-        {state === 'loading' && (
+        {(authState === 'checking' || (authState === 'ready' && state === 'loading')) && (
           <div className={styles.skeletonList}>
             {[0, 1, 2].map((i) => (<div key={i} className={styles.skeletonItem} />))}
           </div>
         )}
 
-        {state === 'signedOut' && (
+        {authState === 'signedOut' && (
           <div className={styles.signInBox}>
             <p className={styles.hintText}>ログインすると作業の詳細を確認できます</p>
-            <div ref={setSignInEl} />
+            <div ref={signInContainerRef} />
           </div>
         )}
 
-        {state === 'error' && (
+        {authState === 'ready' && state === 'error' && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>{errorMessage}</p>
             <button className={styles.retryBtn} onClick={retry}>再読み込み</button>
           </div>
         )}
 
-        {state === 'notFound' && (
+        {authState === 'ready' && state === 'notFound' && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>作業が見つかりません</p>
             <button className={styles.retryBtn} onClick={() => go({ name: 'processing' })}>一覧へ戻る</button>
