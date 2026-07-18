@@ -8,7 +8,8 @@ import FieldScreen from './screens/FieldScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
 import WorkDetailScreen from './screens/WorkDetailScreen';
 import WorkFormScreen from './screens/WorkFormScreen';
-import { AuthProvider } from './context/AuthContext';
+import PendingApprovalScreen from './screens/PendingApprovalScreen';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
 export type Screen =
   | { name: 'home' }
@@ -24,8 +25,16 @@ export type Screen =
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
+  const { authState, staffMe } = useAuth();
 
   const go = (s: Screen) => setScreen(s);
+
+  // 優先順位: Loading（checking） → SignedOut → PendingApproval → 既存画面
+  // checking/signedOut は各画面が個別に処理する既存の慣例をそのまま活かし、
+  // ready かつ staffMe を取得済みで active でない場合のみ、どの画面よりも優先して割り込む。
+  if (authState === 'ready' && staffMe && staffMe.staffStatus !== 'active') {
+    return <PendingApprovalScreen status={staffMe.staffStatus} />;
+  }
 
   if (screen.name === 'home')       return <HomeScreen go={go} />;
   if (screen.name === 'record')     return <RecordScreen noteId={screen.noteId} go={go} />;

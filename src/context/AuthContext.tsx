@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { requestSilentIdToken, renderSignInButton, disableAutoSelect } from '../api/googleAuth';
+import { fetchMyStaffStatus } from '../api/staffApi';
+import { TokenExpiredError } from '../api/icarusApi';
+import type { StaffMe } from '../types/staff';
 
 export type AuthState = 'checking' | 'ready' | 'signedOut';
 
@@ -7,6 +10,7 @@ interface AuthContextValue {
   idToken: string | null;
   userEmail: string;
   authState: AuthState;
+  staffMe: StaffMe | null;
   signInContainerRef: (el: HTMLDivElement | null) => void;
   handleTokenExpired: () => void;
   signOut: () => void;
@@ -28,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userEmail, setUserEmail] = useState('');
   const [authState, setAuthState] = useState<AuthState>('checking');
   const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
+  const [staffMe, setStaffMe] = useState<StaffMe | null>(null);
 
   // アプリ起動時に一度だけサイレントサインインを試みる。以降、画面遷移では再認証しない。
   useEffect(() => {
@@ -58,8 +63,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleTokenExpired = () => {
     setIdToken(null);
     setUserEmail('');
+    setStaffMe(null);
     setAuthState('signedOut');
   };
+
+  // authState が ready になったら一度だけ自分のスタッフ状態を取得する。
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) {
+      setStaffMe(null);
+      return;
+    }
+    let cancelled = false;
+    fetchMyStaffStatus(idToken).then((item) => {
+      if (!cancelled) setStaffMe(item);
+    }).catch((e) => {
+      if (cancelled) return;
+      if (e instanceof TokenExpiredError) {
+        handleTokenExpired();
+      }
+      // それ以外の失敗（ネットワーク等）は staffMe を null のままにする。
+      // 通常画面側の signedOut/エラー導線に任せ、ここでは致命的にしない。
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState, idToken]);
 
   const signOut = () => {
     disableAutoSelect();
@@ -68,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ idToken, userEmail, authState, signInContainerRef: setSignInEl, handleTokenExpired, signOut }}
+      value={{ idToken, userEmail, authState, staffMe, signInContainerRef: setSignInEl, handleTokenExpired, signOut }}
     >
       {children}
     </AuthContext.Provider>
