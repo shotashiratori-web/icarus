@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getAllNotes } from '../db/localDB';
 import { fetchRecentFieldObservations, fetchRecentWorkLogs } from '../api/fieldApi';
 import { requestSilentIdToken } from '../api/googleAuth';
+import { useAuth } from '../context/AuthContext';
 import type { FieldObservation, WorkLogItem } from '../types/fieldLog';
 import type { WineNote } from '../types/wine';
 import type { Screen } from '../App';
@@ -10,6 +11,7 @@ import styles from './HomeScreen.module.css';
 type Props = { go: (s: Screen) => void };
 
 export default function HomeScreen({ go }: Props) {
+  const { staffMe } = useAuth();
   const [recent, setRecent] = useState<WineNote[]>([]);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
@@ -70,6 +72,13 @@ export default function HomeScreen({ go }: Props) {
             <span>加工</span>
           </button>
         </div>
+
+        {staffMe?.role === 'admin' && (
+          <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
+            <span className={styles.navIcon}>🛡️</span>
+            <span>スタッフ管理</span>
+          </button>
+        )}
 
         {(recentObservations.length > 0 || recentProcessing.length > 0) && (
           <section className={styles.section}>
