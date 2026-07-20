@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import styles from './ZukanFieldDetailScreen.module.css';
@@ -6,8 +5,6 @@ import styles from './ZukanFieldDetailScreen.module.css';
 type Props = { go: (s: Screen) => void; entry: FieldLogEntry };
 
 export default function ZukanFieldDetailScreen({ go, entry }: Props) {
-  const [showMapNotice, setShowMapNotice] = useState(false);
-
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -38,11 +35,9 @@ export default function ZukanFieldDetailScreen({ go, entry }: Props) {
         )}
 
         <div className={styles.linkRow}>
-          <button
-            className={styles.linkBtn}
-            onClick={() => setShowMapNotice(true)}
-          >
+          <button className={`${styles.linkBtn} ${styles.linkBtnDisabled}`} disabled>
             📍 地図で見る
+            <span className={styles.linkBadge}>準備中</span>
           </button>
           {entry.notionUrl && (
             <a className={styles.linkBtn} href={entry.notionUrl} target="_blank" rel="noreferrer">
@@ -50,9 +45,6 @@ export default function ZukanFieldDetailScreen({ go, entry }: Props) {
             </a>
           )}
         </div>
-        {showMapNotice && (
-          <p className={styles.mapNotice}>地図での表示はPhase7A-2で実装予定です。</p>
-        )}
       </main>
     </div>
   );
