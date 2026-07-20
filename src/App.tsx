@@ -15,6 +15,7 @@ import DailyAdminListScreen from './screens/DailyAdminListScreen';
 import ZukanTopScreen from './screens/ZukanTopScreen';
 import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import WineListScreen from './screens/WineListScreen';
+import WineDetailScreen from './screens/WineDetailScreen';
 import WineFormScreen from './screens/WineFormScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { FieldLogEntry } from './types/zukan';
@@ -49,7 +50,9 @@ export type Screen =
   // Phase8: Wine Entity（Icarus最初の正式Entity。Food/Process/Dish/Producer等の将来Entityも同じ形の画面になる想定）
   | { name: 'wineList' }
   | { name: 'wineForm'; mode: 'create' }
-  | { name: 'wineForm'; mode: 'edit'; wine: WineEntity };
+  | { name: 'wineForm'; mode: 'edit'; wine: WineEntity }
+  // Phase9: ワイン図鑑（閲覧専用）。今回は入口が一覧のみのため、フィールド詳細のような再帰from構造は持たない
+  | { name: 'wineDetail'; entry: WineEntity };
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
@@ -91,6 +94,7 @@ function AppRoutes() {
   );
   if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} from={screen.from} />;
   if (screen.name === 'wineList') return <WineListScreen go={go} />;
+  if (screen.name === 'wineDetail') return <WineDetailScreen go={go} entry={screen.entry} />;
   if (screen.name === 'wineForm') return screen.mode === 'edit'
     ? <WineFormScreen go={go} mode="edit" wine={screen.wine} />
     : <WineFormScreen go={go} mode="create" />;

@@ -18,6 +18,7 @@ export default function WineListScreen({ go }: Props) {
   const [errorMessage, setErrorMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('updated');
+  const [varietyFilter, setVarietyFilter] = useState('');
 
   const load = async (token: string) => {
     setState('loading');
@@ -37,16 +38,23 @@ export default function WineListScreen({ go }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, idToken]);
 
+  const varietyOptions = useMemo(() => {
+    const set = new Set(items.map((w) => w.variety).filter(Boolean));
+    return Array.from(set).sort();
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const list = q
-      ? items.filter((w) => [w.title, w.producer, w.variety, w.origin].some((v) => v.toLowerCase().includes(q)))
-      : items;
+    const list = items.filter((w) => {
+      if (varietyFilter && w.variety !== varietyFilter) return false;
+      if (!q) return true;
+      return [w.title, w.producer, w.variety, w.origin].some((v) => v.toLowerCase().includes(q));
+    });
     const sorted = [...list];
     if (sortKey === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
     else sorted.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return sorted;
-  }, [items, searchQuery, sortKey]);
+  }, [items, searchQuery, sortKey, varietyFilter]);
 
   return (
     <div className={styles.root}>
@@ -93,13 +101,26 @@ export default function WineListScreen({ go }: Props) {
               </select>
             </div>
 
+            {varietyOptions.length > 0 && (
+              <div className={styles.kigoBar}>
+                <button className={`${styles.kBtn} ${!varietyFilter ? styles.kBtnActive : ''}`} onClick={() => setVarietyFilter('')}>
+                  すべて
+                </button>
+                {varietyOptions.map((v) => (
+                  <button key={v} className={`${styles.kBtn} ${varietyFilter === v ? styles.kBtnActive : ''}`} onClick={() => setVarietyFilter(v)}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <p className={styles.count}>{filtered.length}件</p>
 
             {filtered.length === 0 && <p className={styles.empty}>該当するワインはありません</p>}
 
             <div className={styles.grid}>
               {filtered.map((wine) => (
-                <button key={wine.id} className={styles.card} onClick={() => go({ name: 'wineForm', mode: 'edit', wine })}>
+                <button key={wine.id} className={styles.card} onClick={() => go({ name: 'wineDetail', entry: wine })}>
                   <div className={styles.photoWrap}>
                     {wine.photos[0]
                       ? <img className={styles.photo} src={wine.photos[0]} alt={wine.title} loading="lazy" />

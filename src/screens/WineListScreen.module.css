@@ -71,6 +71,35 @@
   background: var(--color-surface);
 }
 
+.kigoBar {
+  display: flex;
+  overflow-x: auto;
+  gap: 6px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.kigoBar::-webkit-scrollbar {
+  display: none;
+}
+
+.kBtn {
+  flex-shrink: 0;
+  border: none;
+  background: #f0f0f0;
+  color: #555;
+  padding: 7px 14px;
+  border-radius: 18px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.kBtnActive {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  font-weight: bold;
+}
+
 .count {
   font-size: var(--font-size-xs);
   color: var(--color-text-sub);
