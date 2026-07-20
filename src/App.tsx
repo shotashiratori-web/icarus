@@ -13,13 +13,17 @@ import StaffApprovalScreen from './screens/StaffApprovalScreen';
 import DailySubmitScreen from './screens/DailySubmitScreen';
 import DailyAdminListScreen from './screens/DailyAdminListScreen';
 import ZukanTopScreen from './screens/ZukanTopScreen';
-import ZukanFieldListScreen from './screens/ZukanFieldListScreen';
 import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
-
-// leafletは地図画面を開くまで読み込まない（バンドルサイズ抑制のため動的import）
-const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
 import type { FieldLogEntry } from './types/zukan';
+
+// leafletは実際にフィールド一覧・地図を開くまで読み込まない（バンドルサイズ抑制のため動的import）
+const ZukanFieldListScreen = lazy(() => import('./screens/ZukanFieldListScreen'));
+const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
+
+const mapLoadingFallback = (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>読み込み中…</div>
+);
 
 export type Screen =
   | { name: 'home' }
@@ -75,9 +79,13 @@ function AppRoutes() {
   if (screen.name === 'daily') return <DailySubmitScreen go={go} />;
   if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;
   if (screen.name === 'zukan') return <ZukanTopScreen go={go} />;
-  if (screen.name === 'zukanFieldList') return <ZukanFieldListScreen go={go} />;
+  if (screen.name === 'zukanFieldList') return (
+    <Suspense fallback={mapLoadingFallback}>
+      <ZukanFieldListScreen go={go} />
+    </Suspense>
+  );
   if (screen.name === 'zukanFieldMap') return (
-    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>地図を読み込み中…</div>}>
+    <Suspense fallback={mapLoadingFallback}>
       <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} />
     </Suspense>
   );
