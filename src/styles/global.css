@@ -43,3 +43,9 @@ button {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* フィールドマップの検索一致ピン（赤）。Leafletのdiv-icon既定の背景・枠線を消してSVGだけ見せる */
+.field-marker-icon-matched {
+  background: none;
+  border: none;
+}

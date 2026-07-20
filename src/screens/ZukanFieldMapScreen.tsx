@@ -142,6 +142,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                     dimMode={dimMode}
                     shouldOpen={focusEntry?.id === entry.id}
                     onOpenDetail={openDetail}
+                    highlighted={!!searchQuery.trim() && matchedIds.has(entry.id)}
                   />
                 ))}
               </MarkerClusterGroup>

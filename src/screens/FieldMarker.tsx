@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import type L from 'leaflet';
-import { fieldMarkerIcon } from '../utils/fieldMarkerIcon';
+import { fieldMarkerIcon, fieldMarkerIconMatched } from '../utils/fieldMarkerIcon';
 import type { FieldLogEntry } from '../types/zukan';
 import styles from './FieldMarker.module.css';
 
@@ -16,9 +16,10 @@ type Props = {
   shouldOpen: boolean;
   onOpenDetail: (entry: FieldLogEntry) => void;
   compact?: boolean; // trueの場合、名前・日付・詳細ボタンのみの簡易ポップアップ（狭いミニマップ向け）
+  highlighted?: boolean; // trueの場合、検索に一致したピンとして赤色で強調表示する
 };
 
-export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, compact = false }: Props) {
+export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, compact = false, highlighted = false }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpe
   return (
     <Marker
       position={[entry.lat, entry.lng]}
-      icon={fieldMarkerIcon}
+      icon={highlighted ? fieldMarkerIconMatched : fieldMarkerIcon}
       opacity={matched ? 1 : 0.3}
       zIndexOffset={matched ? 1000 : 0}
       ref={markerRef}
