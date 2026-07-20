@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { FIELD_MAP_URL } from '../config';
 import { fetchRecentFieldObservations, NetworkUnknownError } from '../api/fieldApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
@@ -52,9 +51,7 @@ export default function FieldScreen({ go }: Props) {
       <main className={styles.main}>
         <button
           className={styles.mapBtn}
-          onClick={() => {
-            window.location.href = FIELD_MAP_URL;
-          }}
+          onClick={() => go({ name: 'zukanFieldMap', from: { name: 'field' } })}
         >
           <span className={styles.mapIcon}>🗺️</span>
           <span>フィールドマップを開く</span>

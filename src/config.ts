@@ -4,8 +4,7 @@ export const GOOGLE_CLIENT_ID =
 export const GAS_PUBLIC_URL =
   'https://script.google.com/macros/s/AKfycbx4ezP4YYItTunIBXt9l9qbgR8wafUrJXJeU4CZbJQkfSHFT7-KGmA-WOSQQ5Zkm8kbvg/exec';
 
-// 既存フィールドマップ（本体は変更しない、通常遷移のみ）
-export const FIELD_MAP_URL = `${GAS_PUBLIC_URL}?action=map`;
+// フィールドマップはIcarus版に統一（[[icarus_field_map_unification_policy]]）。GAS版の?action=mapは使わない
 export const FIELD_LOGS_GEOJSON_URL = `${GAS_PUBLIC_URL}?action=field_logs_geojson`;
 
 export const FIELD_RECENT_URL = `${WORKER_URL}/field/recent`;
