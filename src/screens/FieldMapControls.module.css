@@ -1,0 +1,129 @@
+.root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 900;
+  pointer-events: none;
+}
+
+.searchBar {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  background: rgba(255, 255, 255, 0.96);
+  pointer-events: all;
+}
+
+.searchInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+  border: 1.5px solid var(--color-border);
+  border-radius: 20px;
+  font-size: var(--font-size-sm);
+  outline: none;
+  color: var(--color-text);
+}
+
+.searchInput:focus {
+  border-color: var(--color-primary);
+}
+
+.filterBar, .kigoBar {
+  display: flex;
+  overflow-x: auto;
+  gap: 6px;
+  padding: var(--space-1) var(--space-3);
+  background: rgba(255, 255, 255, 0.96);
+  pointer-events: all;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.filterBar::-webkit-scrollbar, .kigoBar::-webkit-scrollbar {
+  display: none;
+}
+
+.fBtn, .kBtn {
+  flex-shrink: 0;
+  border: none;
+  background: #f0f0f0;
+  color: #555;
+  padding: 7px 14px;
+  border-radius: 18px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.fBtnActive, .kBtnActive {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  font-weight: bold;
+}
+
+.fBtnStar {
+  background: #fff3e0;
+  color: #bf360c;
+  border: 1.5px solid #ffcc80;
+}
+
+.fBtnStar.fBtnActive {
+  background: #e65100;
+  color: #fff;
+  border-color: #e65100;
+}
+
+.customDateBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: rgba(255, 255, 255, 0.96);
+  pointer-events: all;
+}
+
+.dateInput {
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.dateSep {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.dimToggle {
+  display: flex;
+  gap: 6px;
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  background: rgba(255, 255, 255, 0.96);
+  pointer-events: all;
+}
+
+.dBtn {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: #f5f5f5;
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+}
+
+.dBtnActive {
+  background: #e8f5e9;
+  border-color: var(--color-primary);
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.status {
+  padding: 5px var(--space-4);
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.88);
+  pointer-events: none;
+}
