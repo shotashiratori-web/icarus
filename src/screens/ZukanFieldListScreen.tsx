@@ -113,7 +113,7 @@ export default function ZukanFieldListScreen({ go }: Props) {
                   dimMode={false}
                   shouldOpen={false}
                   onOpenDetail={openDetail}
-                  popup={false}
+                  compact
                 />
               ))}
             </MapContainer>

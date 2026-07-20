@@ -15,29 +15,17 @@ type Props = {
   dimMode: boolean;
   shouldOpen: boolean;
   onOpenDetail: (entry: FieldLogEntry) => void;
-  popup?: boolean; // falseの場合、ポップアップを出さずタップで直接詳細画面へ（狭いミニマップ向け）
+  compact?: boolean; // trueの場合、名前・日付・詳細ボタンのみの簡易ポップアップ（狭いミニマップ向け）
 };
 
-export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, popup = true }: Props) {
+export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, compact = false }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
-    if (popup && shouldOpen) markerRef.current?.openPopup();
-  }, [popup, shouldOpen]);
+    if (shouldOpen) markerRef.current?.openPopup();
+  }, [shouldOpen]);
 
   if (!dimMode && !matched) return null;
-
-  if (!popup) {
-    return (
-      <Marker
-        position={[entry.lat, entry.lng]}
-        icon={fieldMarkerIcon}
-        opacity={matched ? 1 : 0.3}
-        zIndexOffset={matched ? 1000 : 0}
-        eventHandlers={{ click: () => onOpenDetail(entry) }}
-      />
-    );
-  }
 
   return (
     <Marker
@@ -48,27 +36,35 @@ export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpe
       ref={markerRef}
     >
       <Popup maxWidth={220}>
-        <div className={styles.popup}>
-          {entry.photoUrl && (
-            <img className={styles.popupPhoto} src={entry.photoUrl} alt={entry.foodName} />
-          )}
-          <p className={styles.popupName}>{entry.foodName || '無題'}</p>
-          {entry.place && <p className={styles.popupPlace}>📍 {entry.place}</p>}
-          {entry.date && <p className={styles.popupMeta}>{entry.date}</p>}
-          {entry.elevation !== null && <p className={styles.popupElev}>標高 {entry.elevation}m</p>}
-          {entry.kigo && <p className={styles.popupTag}>{entry.kigo}</p>}
-
-          <div className={styles.popupActions}>
-            {entry.photoUrl && (
-              <a className={styles.popupAct} href={entry.photoUrl} target="_blank" rel="noreferrer" title="写真を見る">📷</a>
-            )}
-            <a className={styles.popupAct} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer" title="経路案内">🧭</a>
-            {entry.notionUrl && (
-              <a className={styles.popupAct} href={entry.notionUrl} target="_blank" rel="noreferrer" title="Notionで開く">📖</a>
-            )}
+        {compact ? (
+          <div className={styles.popup}>
+            <p className={styles.popupName}>{entry.foodName || '無題'}</p>
+            {entry.date && <p className={styles.popupMeta}>{entry.date}</p>}
+            <button className={styles.popupBtn} onClick={() => onOpenDetail(entry)}>詳細を見る</button>
           </div>
-          <button className={styles.popupBtn} onClick={() => onOpenDetail(entry)}>詳細を見る</button>
-        </div>
+        ) : (
+          <div className={styles.popup}>
+            {entry.photoUrl && (
+              <img className={styles.popupPhoto} src={entry.photoUrl} alt={entry.foodName} />
+            )}
+            <p className={styles.popupName}>{entry.foodName || '無題'}</p>
+            {entry.place && <p className={styles.popupPlace}>📍 {entry.place}</p>}
+            {entry.date && <p className={styles.popupMeta}>{entry.date}</p>}
+            {entry.elevation !== null && <p className={styles.popupElev}>標高 {entry.elevation}m</p>}
+            {entry.kigo && <p className={styles.popupTag}>{entry.kigo}</p>}
+
+            <div className={styles.popupActions}>
+              {entry.photoUrl && (
+                <a className={styles.popupAct} href={entry.photoUrl} target="_blank" rel="noreferrer" title="写真を見る">📷</a>
+              )}
+              <a className={styles.popupAct} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer" title="経路案内">🧭</a>
+              {entry.notionUrl && (
+                <a className={styles.popupAct} href={entry.notionUrl} target="_blank" rel="noreferrer" title="Notionで開く">📖</a>
+              )}
+            </div>
+            <button className={styles.popupBtn} onClick={() => onOpenDetail(entry)}>詳細を見る</button>
+          </div>
+        )}
       </Popup>
     </Marker>
   );
