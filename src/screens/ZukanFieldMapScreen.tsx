@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
@@ -7,6 +7,7 @@ import { matchesFilter } from '../utils/fieldFilter';
 import FieldMapControls from './FieldMapControls';
 import FieldMarker from './FieldMarker';
 import FitFieldBounds from './FitFieldBounds';
+import BottomSheet from './BottomSheet';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import styles from './ZukanFieldMapScreen.module.css';
@@ -17,11 +18,26 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   const {
     entries, loadState, errorMessage, ensureLoaded, reload,
     searchQuery, kigoFilter, setSearchQuery, setKigoFilter,
+    listScrollTop, setListScrollTop, sheetSnap, setSheetSnap,
     timeFilter, setTimeFilter, customDateStart, customDateEnd, setCustomDateRange,
     dimMode, setDimMode,
   } = useZukanFieldStore();
 
+  const listRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => { void ensureLoaded(); }, [ensureLoaded]);
+
+  // 詳細画面から戻ってきたときに、ボトムシート一覧のスクロール位置を復元する
+  useEffect(() => {
+    if (loadState === 'ready' && listRef.current) {
+      listRef.current.scrollTop = listScrollTop;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState]);
+
+  const handleListScroll = () => {
+    if (listRef.current) setListScrollTop(listRef.current.scrollTop);
+  };
 
   const openDetail = (entry: FieldLogEntry) => {
     go({ name: 'zukanFieldDetail', entry, from: { name: 'zukanFieldMap', focusEntry, from } });
@@ -69,9 +85,6 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
         <span className={styles.title}>🗺️ フィールドマップ</span>
-        <button className={styles.listBtn} onClick={() => go({ name: 'zukanFieldList' })}>
-          📋 一覧で見る
-        </button>
       </header>
 
       <main className={styles.main}>
@@ -128,6 +141,38 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                 />
               ))}
             </MapContainer>
+
+            <BottomSheet
+              snap={sheetSnap}
+              onSnapChange={setSheetSnap}
+              contentRef={listRef}
+              onContentScroll={handleListScroll}
+              peek={<p className={styles.sheetCount}>{matchedEntries.length}件の観察記録</p>}
+            >
+              {matchedEntries.length === 0 ? (
+                <p className={styles.empty}>該当する観察記録はありません</p>
+              ) : (
+                <div key={`${searchQuery}::${kigoFilter}`} className={styles.grid}>
+                  {matchedEntries.map((entry) => (
+                    <button key={entry.id} className={styles.card} onClick={() => openDetail(entry)}>
+                      <div className={styles.photoWrap}>
+                        {entry.photoUrl
+                          ? <img className={styles.photo} src={entry.photoUrl} alt={entry.foodName} loading="lazy" />
+                          : <div className={styles.photoPlaceholder}>写真なし</div>}
+                      </div>
+                      <div className={styles.cardBody}>
+                        <span className={styles.foodName}>{entry.foodName || '無題'}</span>
+                        <span className={styles.metaRow}>
+                          <span className={styles.place}>📍 {entry.place || '場所不明'}</span>
+                          <span className={styles.date}>{entry.date}</span>
+                        </span>
+                        {entry.kigo && <span className={styles.tag}>{entry.kigo}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </BottomSheet>
           </>
         )}
       </main>

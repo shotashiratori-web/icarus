@@ -17,8 +17,7 @@ import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { FieldLogEntry } from './types/zukan';
 
-// leafletは実際にフィールド一覧・地図を開くまで読み込まない（バンドルサイズ抑制のため動的import）
-const ZukanFieldListScreen = lazy(() => import('./screens/ZukanFieldListScreen'));
+// leafletはフィールドマップを開くまで読み込まない（バンドルサイズ抑制のため動的import）
 const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
 
 const mapLoadingFallback = (
@@ -40,9 +39,8 @@ export type Screen =
   | { name: 'daily' }
   | { name: 'dailyAdmin' }
   | { name: 'zukan' }
-  | { name: 'zukanFieldList' }
-  // 詳細・地図は「どこから来たか」を持つハブ構造。将来AI検索・関連料理等の入口が増えても、
-  // 戻る操作は常にfromへ辿るだけで済む（詳細画面を中心とした構造、Phase7A-2要件）。
+  // マップは唯一の入口（フィールドマップ統一方針）。詳細画面同様「どこから来たか」を持つハブ構造で、
+  // 将来AI検索・関連料理等の入口が増えても、戻る操作は常にfromへ辿るだけで済む（Phase7A-2/7C要件）。
   | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen }
   | { name: 'zukanFieldDetail'; entry: FieldLogEntry; from: Screen };
 
@@ -79,11 +77,6 @@ function AppRoutes() {
   if (screen.name === 'daily') return <DailySubmitScreen go={go} />;
   if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;
   if (screen.name === 'zukan') return <ZukanTopScreen go={go} />;
-  if (screen.name === 'zukanFieldList') return (
-    <Suspense fallback={mapLoadingFallback}>
-      <ZukanFieldListScreen go={go} />
-    </Suspense>
-  );
   if (screen.name === 'zukanFieldMap') return (
     <Suspense fallback={mapLoadingFallback}>
       <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} />
