@@ -1,33 +1,33 @@
-import { useEffect, useMemo, useState } from 'react';
-import { fetchFieldLogEntries, NetworkUnknownError } from '../api/zukanApi';
-import type { FieldLogEntry } from '../types/zukan';
+import { useEffect, useMemo, useRef } from 'react';
+import { useZukanFieldStore } from '../store/zukanFieldStore';
 import type { Screen } from '../App';
 import styles from './ZukanFieldListScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
-type LoadState = 'loading' | 'ready' | 'error';
 
 export default function ZukanFieldListScreen({ go }: Props) {
-  const [state, setState] = useState<LoadState>('loading');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [entries, setEntries] = useState<FieldLogEntry[]>([]);
-  const [query, setQuery] = useState('');
-  const [kigoFilter, setKigoFilter] = useState('');
+  const {
+    entries, loadState, errorMessage,
+    searchQuery, kigoFilter, listScrollTop,
+    ensureLoaded, reload, setSearchQuery, setKigoFilter, setListScrollTop,
+  } = useZukanFieldStore();
 
-  const load = async () => {
-    setState('loading');
-    try {
-      const items = await fetchFieldLogEntries();
-      items.sort((a, b) => b.date.localeCompare(a.date));
-      setEntries(items);
-      setState('ready');
-    } catch (e) {
-      setErrorMessage(e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました');
-      setState('error');
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  // ①一覧・地図で同じデータを共有する。既に読み込み済みなら再fetchしない
+  useEffect(() => { void ensureLoaded(); }, [ensureLoaded]);
+
+  // ②地図往復後もスクロール位置を保持する。読み込み完了後に一度だけ復元する
+  useEffect(() => {
+    if (loadState === 'ready' && mainRef.current) {
+      mainRef.current.scrollTop = listScrollTop;
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState]);
 
-  useEffect(() => { void load(); }, []);
+  const handleScroll = () => {
+    if (mainRef.current) setListScrollTop(mainRef.current.scrollTop);
+  };
 
   const kigoOptions = useMemo(() => {
     const set = new Set(entries.map((e) => e.kigo).filter(Boolean));
@@ -35,43 +35,53 @@ export default function ZukanFieldListScreen({ go }: Props) {
   }, [entries]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
     return entries.filter((e) => {
       if (kigoFilter && e.kigo !== kigoFilter) return false;
       if (!q) return true;
       return [e.foodName, e.place, e.memo, e.kigo].some((v) => v.toLowerCase().includes(q));
     });
-  }, [entries, query, kigoFilter]);
+  }, [entries, searchQuery, kigoFilter]);
+
+  const openDetail = (entry: (typeof entries)[number]) => {
+    go({ name: 'zukanFieldDetail', entry, from: { name: 'zukanFieldList' } });
+  };
 
   return (
     <div className={styles.root}>
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go({ name: 'zukan' })}>← 図鑑</button>
         <span className={styles.title}>🌱 フィールド</span>
+        <button
+          className={styles.mapBtn}
+          onClick={() => go({ name: 'zukanFieldMap', from: { name: 'zukanFieldList' } })}
+        >
+          🗺️ マップで見る
+        </button>
       </header>
 
-      <main className={styles.main}>
-        {state === 'loading' && (
+      <main className={styles.main} ref={mainRef} onScroll={handleScroll}>
+        {loadState === 'loading' && (
           <div className={styles.skeletonGrid}>
             {[0, 1, 2, 3].map((i) => (<div key={i} className={styles.skeletonCard} />))}
           </div>
         )}
 
-        {state === 'error' && (
+        {loadState === 'error' && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>{errorMessage}</p>
-            <button className={styles.retryBtn} onClick={() => load()}>再読み込み</button>
+            <button className={styles.retryBtn} onClick={() => reload()}>再読み込み</button>
           </div>
         )}
 
-        {state === 'ready' && (
+        {loadState === 'ready' && (
           <>
             <div className={styles.filters}>
               <input
                 className={styles.searchInput}
                 type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="食材名・場所・メモで検索"
               />
               {kigoOptions.length > 0 && (
@@ -88,7 +98,7 @@ export default function ZukanFieldListScreen({ go }: Props) {
 
             <div className={styles.grid}>
               {filtered.map((entry) => (
-                <button key={entry.id} className={styles.card} onClick={() => go({ name: 'zukanFieldDetail', entry })}>
+                <button key={entry.id} className={styles.card} onClick={() => openDetail(entry)}>
                   <div className={styles.photoWrap}>
                     {entry.photoUrl
                       ? <img className={styles.photo} src={entry.photoUrl} alt={entry.foodName} loading="lazy" />

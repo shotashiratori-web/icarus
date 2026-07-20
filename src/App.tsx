@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import HomeScreen from './screens/HomeScreen';
 import RecordScreen from './screens/RecordScreen';
 import ReviewDetailScreen from './screens/ReviewDetailScreen';
@@ -16,6 +16,9 @@ import ZukanTopScreen from './screens/ZukanTopScreen';
 import ZukanFieldListScreen from './screens/ZukanFieldListScreen';
 import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
+
+// leafletは地図画面を開くまで読み込まない（バンドルサイズ抑制のため動的import）
+const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
 import type { FieldLogEntry } from './types/zukan';
 
 export type Screen =
@@ -34,7 +37,10 @@ export type Screen =
   | { name: 'dailyAdmin' }
   | { name: 'zukan' }
   | { name: 'zukanFieldList' }
-  | { name: 'zukanFieldDetail'; entry: FieldLogEntry };
+  // 詳細・地図は「どこから来たか」を持つハブ構造。将来AI検索・関連料理等の入口が増えても、
+  // 戻る操作は常にfromへ辿るだけで済む（詳細画面を中心とした構造、Phase7A-2要件）。
+  | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen }
+  | { name: 'zukanFieldDetail'; entry: FieldLogEntry; from: Screen };
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
@@ -70,7 +76,12 @@ function AppRoutes() {
   if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;
   if (screen.name === 'zukan') return <ZukanTopScreen go={go} />;
   if (screen.name === 'zukanFieldList') return <ZukanFieldListScreen go={go} />;
-  if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} />;
+  if (screen.name === 'zukanFieldMap') return (
+    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>地図を読み込み中…</div>}>
+      <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} />
+    </Suspense>
+  );
+  if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} from={screen.from} />;
 
   return null;
 }

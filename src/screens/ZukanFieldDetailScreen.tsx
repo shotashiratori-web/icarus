@@ -2,13 +2,13 @@ import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import styles from './ZukanFieldDetailScreen.module.css';
 
-type Props = { go: (s: Screen) => void; entry: FieldLogEntry };
+type Props = { go: (s: Screen) => void; entry: FieldLogEntry; from: Screen };
 
-export default function ZukanFieldDetailScreen({ go, entry }: Props) {
+export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        <button className={styles.back} onClick={() => go({ name: 'zukanFieldList' })}>← フィールド</button>
+        <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
         <span className={styles.title}>観察記録</span>
       </header>
 
@@ -35,9 +35,11 @@ export default function ZukanFieldDetailScreen({ go, entry }: Props) {
         )}
 
         <div className={styles.linkRow}>
-          <button className={`${styles.linkBtn} ${styles.linkBtnDisabled}`} disabled>
+          <button
+            className={styles.linkBtn}
+            onClick={() => go({ name: 'zukanFieldMap', focusEntry: entry, from: { name: 'zukanFieldDetail', entry, from } })}
+          >
             📍 地図で見る
-            <span className={styles.linkBadge}>準備中</span>
           </button>
           {entry.notionUrl && (
             <a className={styles.linkBtn} href={entry.notionUrl} target="_blank" rel="noreferrer">

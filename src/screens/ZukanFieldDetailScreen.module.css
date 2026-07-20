@@ -127,15 +127,3 @@
   color: var(--color-text);
 }
 
-.linkBtnDisabled {
-  opacity: 0.5;
-}
-
-.linkBadge {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 1px var(--space-2);
-  background: var(--color-bg);
-}
