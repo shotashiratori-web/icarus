@@ -10,6 +10,8 @@ import WorkDetailScreen from './screens/WorkDetailScreen';
 import WorkFormScreen from './screens/WorkFormScreen';
 import PendingApprovalScreen from './screens/PendingApprovalScreen';
 import StaffApprovalScreen from './screens/StaffApprovalScreen';
+import DailySubmitScreen from './screens/DailySubmitScreen';
+import DailyAdminListScreen from './screens/DailyAdminListScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 export type Screen =
@@ -23,7 +25,9 @@ export type Screen =
   | { name: 'workDetail'; workId: string }
   | { name: 'workForm'; mode: 'create' }
   | { name: 'workForm'; mode: 'append'; workId: string; workTitle?: string }
-  | { name: 'staffApproval' };
+  | { name: 'staffApproval' }
+  | { name: 'daily' }
+  | { name: 'dailyAdmin' };
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
@@ -55,6 +59,8 @@ function AppRoutes() {
     />
   );
   if (screen.name === 'staffApproval') return <StaffApprovalScreen go={go} />;
+  if (screen.name === 'daily') return <DailySubmitScreen go={go} />;
+  if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;
 
   return null;
 }

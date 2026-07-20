@@ -73,11 +73,24 @@ export default function HomeScreen({ go }: Props) {
           </button>
         </div>
 
-        {staffMe?.role === 'admin' && (
-          <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
-            <span className={styles.navIcon}>🛡️</span>
-            <span>スタッフ管理</span>
+        {staffMe && (
+          <button className={styles.navBtn} onClick={() => go({ name: 'daily' })}>
+            <span className={styles.navIcon}>📝</span>
+            <span>Lift Up Daily</span>
           </button>
+        )}
+
+        {staffMe?.role === 'admin' && (
+          <div className={styles.navRow}>
+            <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
+              <span className={styles.navIcon}>🛡️</span>
+              <span>スタッフ管理</span>
+            </button>
+            <button className={styles.navBtn} onClick={() => go({ name: 'dailyAdmin' })}>
+              <span className={styles.navIcon}>📋</span>
+              <span>Daily確認</span>
+            </button>
+          </div>
         )}
 
         {(recentObservations.length > 0 || recentProcessing.length > 0) && (
