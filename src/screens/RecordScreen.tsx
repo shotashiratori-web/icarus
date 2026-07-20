@@ -2,15 +2,35 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { useNoteStore } from '../store/noteStore';
 import { getNote } from '../db/localDB';
 import { newWineNote } from '../types/wine';
+import { resizeToJpeg } from '../api/icarusApi';
 import type { Screen } from '../App';
 import styles from './RecordScreen.module.css';
 
 type Props = { noteId: string | null; go: (s: Screen) => void };
 
 export default function RecordScreen({ noteId, go }: Props) {
-  const { note, setNote, updateField, persist, clear } = useNoteStore();
+  const { note, setNote, updateField, setPhoto, persist, clear } = useNoteStore();
   const saving = useRef(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 同じファイルを連続選択できるようにリセット
+    if (!file) return;
+    setPhotoBusy(true);
+    setPhotoError('');
+    try {
+      const base64 = await resizeToJpeg(file);
+      setPhoto(`data:image/jpeg;base64,${base64}`);
+    } catch {
+      setPhotoError('写真の読み込みに失敗しました');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   // ノートを読み込む or 新規作成
   useEffect(() => {
@@ -86,6 +106,35 @@ export default function RecordScreen({ noteId, go }: Props) {
       {/* フォーム */}
       <main className={styles.main}>
         <div className={styles.form}>
+
+          {/* PHOTO */}
+          <div className={styles.field}>
+            <label className={styles.label}>PHOTO</label>
+            <button
+              type="button"
+              className={styles.photoBtn}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={photoBusy}
+            >
+              {note.label_photo_url
+                ? <img className={styles.photoPreview} src={note.label_photo_url} alt="" />
+                : <span className={styles.photoPlaceholder}>{photoBusy ? '読み込み中…' : '📷 写真を追加'}</span>}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className={styles.fileInput}
+              onChange={handlePhotoChange}
+            />
+            {note.label_photo_url && (
+              <button type="button" className={styles.photoRemoveBtn} onClick={() => setPhoto(null)}>
+                写真を削除
+              </button>
+            )}
+            {photoError && <p className={styles.photoError}>{photoError}</p>}
+          </div>
 
           {/* NAME */}
           <div className={styles.field}>

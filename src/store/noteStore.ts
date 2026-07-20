@@ -8,7 +8,7 @@ type NoteStore = {
 
   setNote: (note: WineNote) => void;
   updateField: (fieldId: keyof WineNote['fields'], data: Partial<MixedFieldData>) => void;
-  setPhoto: (url: string) => void;
+  setPhoto: (url: string | null) => void;
   setSyncStatus: (status: WineNote['sync_status']) => void;
   setNotionPageId: (id: string) => void;
   persist: () => Promise<void>;
