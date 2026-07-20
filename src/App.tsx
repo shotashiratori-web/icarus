@@ -14,8 +14,11 @@ import DailySubmitScreen from './screens/DailySubmitScreen';
 import DailyAdminListScreen from './screens/DailyAdminListScreen';
 import ZukanTopScreen from './screens/ZukanTopScreen';
 import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
+import WineListScreen from './screens/WineListScreen';
+import WineFormScreen from './screens/WineFormScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { FieldLogEntry } from './types/zukan';
+import type { WineEntity } from './types/wineEntity';
 
 // leafletはフィールドマップを開くまで読み込まない（バンドルサイズ抑制のため動的import）
 const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
@@ -42,7 +45,11 @@ export type Screen =
   // マップは唯一の入口（フィールドマップ統一方針）。詳細画面同様「どこから来たか」を持つハブ構造で、
   // 将来AI検索・関連料理等の入口が増えても、戻る操作は常にfromへ辿るだけで済む（Phase7A-2/7C要件）。
   | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen }
-  | { name: 'zukanFieldDetail'; entry: FieldLogEntry; from: Screen };
+  | { name: 'zukanFieldDetail'; entry: FieldLogEntry; from: Screen }
+  // Phase8: Wine Entity（Icarus最初の正式Entity。Food/Process/Dish/Producer等の将来Entityも同じ形の画面になる想定）
+  | { name: 'wineList' }
+  | { name: 'wineForm'; mode: 'create' }
+  | { name: 'wineForm'; mode: 'edit'; wine: WineEntity };
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
@@ -83,6 +90,10 @@ function AppRoutes() {
     </Suspense>
   );
   if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} from={screen.from} />;
+  if (screen.name === 'wineList') return <WineListScreen go={go} />;
+  if (screen.name === 'wineForm') return screen.mode === 'edit'
+    ? <WineFormScreen go={go} mode="edit" wine={screen.wine} />
+    : <WineFormScreen go={go} mode="create" />;
 
   return null;
 }
