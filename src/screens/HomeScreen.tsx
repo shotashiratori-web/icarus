@@ -80,6 +80,13 @@ export default function HomeScreen({ go }: Props) {
           </button>
         )}
 
+        {staffMe && (
+          <button className={styles.navBtn} onClick={() => go({ name: 'zukan' })}>
+            <span className={styles.navIcon}>📚</span>
+            <span>図鑑（試作版）</span>
+          </button>
+        )}
+
         {staffMe?.role === 'admin' && (
           <div className={styles.navRow}>
             <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>

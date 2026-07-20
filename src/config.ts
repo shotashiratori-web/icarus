@@ -6,6 +6,7 @@ export const GAS_PUBLIC_URL =
 
 // 既存フィールドマップ（本体は変更しない、通常遷移のみ）
 export const FIELD_MAP_URL = `${GAS_PUBLIC_URL}?action=map`;
+export const FIELD_LOGS_GEOJSON_URL = `${GAS_PUBLIC_URL}?action=field_logs_geojson`;
 
 export const FIELD_RECENT_URL = `${WORKER_URL}/field/recent`;
 export const WORK_RECENT_URL = `${WORKER_URL}/work/recent`;

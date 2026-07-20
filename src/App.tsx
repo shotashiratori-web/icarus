@@ -12,7 +12,11 @@ import PendingApprovalScreen from './screens/PendingApprovalScreen';
 import StaffApprovalScreen from './screens/StaffApprovalScreen';
 import DailySubmitScreen from './screens/DailySubmitScreen';
 import DailyAdminListScreen from './screens/DailyAdminListScreen';
+import ZukanTopScreen from './screens/ZukanTopScreen';
+import ZukanFieldListScreen from './screens/ZukanFieldListScreen';
+import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import type { FieldLogEntry } from './types/zukan';
 
 export type Screen =
   | { name: 'home' }
@@ -27,7 +31,10 @@ export type Screen =
   | { name: 'workForm'; mode: 'append'; workId: string; workTitle?: string }
   | { name: 'staffApproval' }
   | { name: 'daily' }
-  | { name: 'dailyAdmin' };
+  | { name: 'dailyAdmin' }
+  | { name: 'zukan' }
+  | { name: 'zukanFieldList' }
+  | { name: 'zukanFieldDetail'; entry: FieldLogEntry };
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
@@ -61,6 +68,9 @@ function AppRoutes() {
   if (screen.name === 'staffApproval') return <StaffApprovalScreen go={go} />;
   if (screen.name === 'daily') return <DailySubmitScreen go={go} />;
   if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;
+  if (screen.name === 'zukan') return <ZukanTopScreen go={go} />;
+  if (screen.name === 'zukanFieldList') return <ZukanFieldListScreen go={go} />;
+  if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} />;
 
   return null;
 }
