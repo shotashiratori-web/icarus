@@ -11,7 +11,7 @@ import styles from './HomeScreen.module.css';
 type Props = { go: (s: Screen) => void };
 
 export default function HomeScreen({ go }: Props) {
-  const { staffMe } = useAuth();
+  const { authState, staffMe, signInContainerRef } = useAuth();
   const [recent, setRecent] = useState<WineNote[]>([]);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
@@ -43,6 +43,13 @@ export default function HomeScreen({ go }: Props) {
       </header>
 
       <main className={styles.main}>
+        {authState === 'signedOut' && (
+          <div className={styles.signInBox}>
+            <p className={styles.signInText}>ログインが切れています。再度ログインしてください。</p>
+            <div ref={signInContainerRef} />
+          </div>
+        )}
+
         {/* Primary CTA */}
         <button
           className={styles.cta}
