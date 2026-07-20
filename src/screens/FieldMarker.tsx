@@ -15,16 +15,29 @@ type Props = {
   dimMode: boolean;
   shouldOpen: boolean;
   onOpenDetail: (entry: FieldLogEntry) => void;
+  popup?: boolean; // falseの場合、ポップアップを出さずタップで直接詳細画面へ（狭いミニマップ向け）
 };
 
-export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail }: Props) {
+export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, popup = true }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
-    if (shouldOpen) markerRef.current?.openPopup();
-  }, [shouldOpen]);
+    if (popup && shouldOpen) markerRef.current?.openPopup();
+  }, [popup, shouldOpen]);
 
   if (!dimMode && !matched) return null;
+
+  if (!popup) {
+    return (
+      <Marker
+        position={[entry.lat, entry.lng]}
+        icon={fieldMarkerIcon}
+        opacity={matched ? 1 : 0.3}
+        zIndexOffset={matched ? 1000 : 0}
+        eventHandlers={{ click: () => onOpenDetail(entry) }}
+      />
+    );
+  }
 
   return (
     <Marker
