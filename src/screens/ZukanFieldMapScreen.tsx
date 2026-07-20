@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { computeDateRange, lastYearSameLabel, type TimeFilterKey } from '../utils/fieldTimeFilter';
 import { matchesFilter } from '../utils/fieldFilter';
@@ -130,16 +133,18 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
 
               <FitFieldBounds matched={matchedEntries} skipFirst={!!focusEntry} />
 
-              {entries.map((entry) => (
-                <FieldMarker
-                  key={entry.id}
-                  entry={entry}
-                  matched={matchedIds.has(entry.id)}
-                  dimMode={dimMode}
-                  shouldOpen={focusEntry?.id === entry.id}
-                  onOpenDetail={openDetail}
-                />
-              ))}
+              <MarkerClusterGroup chunkedLoading maxClusterRadius={50} spiderfyOnMaxZoom>
+                {entries.map((entry) => (
+                  <FieldMarker
+                    key={entry.id}
+                    entry={entry}
+                    matched={matchedIds.has(entry.id)}
+                    dimMode={dimMode}
+                    shouldOpen={focusEntry?.id === entry.id}
+                    onOpenDetail={openDetail}
+                  />
+                ))}
+              </MarkerClusterGroup>
             </MapContainer>
 
             <BottomSheet
