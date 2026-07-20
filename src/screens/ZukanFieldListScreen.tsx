@@ -123,7 +123,12 @@ export default function ZukanFieldListScreen({ go }: Props) {
 
             {filtered.length === 0 && <p className={styles.empty}>該当する観察記録はありません</p>}
 
-            <div className={styles.grid} ref={listRef} onScroll={handleScroll}>
+            <div
+              key={`${searchQuery}::${kigoFilter}`}
+              className={styles.grid}
+              ref={listRef}
+              onScroll={handleScroll}
+            >
               {filtered.map((entry) => (
                 <button key={entry.id} className={styles.card} onClick={() => openDetail(entry)}>
                   <div className={styles.photoWrap}>
