@@ -1,3 +1,18 @@
+.hoverTooltip {
+  background: rgba(255, 255, 255, 0.92);
+  border: none;
+  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-sm);
+  padding: 3px var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.hoverTooltip::before {
+  border-top-color: rgba(255, 255, 255, 0.92);
+}
+
 .popup {
   display: flex;
   flex-direction: column;

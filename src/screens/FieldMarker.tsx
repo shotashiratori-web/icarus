@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Marker, Popup } from 'react-leaflet';
+import { Marker, Popup, Tooltip } from 'react-leaflet';
 import type L from 'leaflet';
 import { fieldMarkerIcon, fieldMarkerIconMatched } from '../utils/fieldMarkerIcon';
 import type { FieldLogEntry } from '../types/zukan';
@@ -36,6 +36,9 @@ export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpe
       zIndexOffset={matched ? 1000 : 0}
       ref={markerRef}
     >
+      <Tooltip direction="top" offset={[0, -34]} opacity={0.9} className={styles.hoverTooltip}>
+        {entry.foodName || '無題'}
+      </Tooltip>
       <Popup maxWidth={220}>
         {compact ? (
           <div className={styles.popup}>
