@@ -131,6 +131,15 @@ export default function DailySubmitScreen({ go }: Props) {
       </header>
 
       <main className={styles.main}>
+        {authState === 'ready' && state === 'ready' && (
+          <div className={styles.workLogSection}>
+            <span className={styles.workLogLabel}>今日の仕事</span>
+            <button className={styles.workLogBtn} onClick={() => go({ name: 'processing' })}>
+              作業ログを見る
+            </button>
+          </div>
+        )}
+
         {(authState === 'checking' || (authState === 'ready' && state === 'loading')) && (
           <div className={styles.skeleton} />
         )}
@@ -168,20 +177,20 @@ export default function DailySubmitScreen({ go }: Props) {
             )}
 
             <p className={styles.guideText}>
-              「心が動いたこと」は自分の感情や印象に残った出来事を書く欄、「余市を感じたこと」は余市らしい景色・香り・自然・人について書く欄です。迷った場合は、どちらに書いても問題ありません。
+              「①今日、一番印象に残ったこと」は自分が印象に残ったことを書く欄、「⑤今日、一番余市を感じたこと」は余市らしさを感じたことを書く欄です。迷った場合は、どちらに書いても問題ありません。
             </p>
 
-            <Field label="今日、一番心が動いたこと" value={form.movedMoment} disabled={isLocked}
-              onChange={(v) => setField('movedMoment', v)} placeholder="畑の香り、お客様の反応、生産者との会話、失敗、成功…" />
+            <Field label="①今日、一番印象に残ったこと" value={form.movedMoment} disabled={isLocked}
+              onChange={(v) => setField('movedMoment', v)} placeholder="嬉しかったこと、悔しかったこと、驚いたこと…内容は自由です" />
 
-            <Field label="今日の学び" value={form.learning} disabled={isLocked}
-              onChange={(v) => setField('learning', v)} placeholder="香り、火入れ、サービス、畑、発酵…" />
+            <Field label="②今日、気付いたこと" value={form.learning} disabled={isLocked}
+              onChange={(v) => setField('learning', v)} placeholder="料理、サービス、畑、香り、人、自然…内容は自由です" />
 
-            <Field label="今日、真似したいと思ったこと" value={form.imitate} disabled={isLocked}
-              onChange={(v) => setField('imitate', v)} placeholder="先輩・生産者・仲間・お客様から見つけたこと" />
+            <Field label="③今日、真似したいと思ったこと" value={form.imitate} disabled={isLocked}
+              onChange={(v) => setField('imitate', v)} placeholder="今日見た「良い仕事」を。先輩・生産者・仲間・お客様、誰でも構いません" />
 
             <fieldset className={styles.fieldset}>
-              <legend className={styles.legend}>明日の挑戦</legend>
+              <legend className={styles.legend}>④明日の挑戦</legend>
               <Field label="心構え" value={form.challengeMindset} disabled={isLocked}
                 onChange={(v) => setField('challengeMindset', v)} placeholder="どんな気持ちで働くか" />
               <Field label="技術・仕事" value={form.challengeSkill} disabled={isLocked}
@@ -190,11 +199,11 @@ export default function DailySubmitScreen({ go }: Props) {
                 onChange={(v) => setField('challengeAction', v)} placeholder="具体的に何を変えるか" />
             </fieldset>
 
-            <Field label="今日、一番余市を感じたこと" value={form.yoichiMoment} disabled={isLocked}
-              onChange={(v) => setField('yoichiMoment', v)} placeholder="朝露、海風、桃、畑、ワイン畑、生産者との会話…" />
+            <Field label="⑤今日、一番余市を感じたこと" value={form.yoichiMoment} disabled={isLocked}
+              onChange={(v) => setField('yoichiMoment', v)} placeholder="景色、香り、自然、人、食材…内容は自由です" />
 
             <fieldset className={styles.fieldset}>
-              <legend className={styles.legend}>困っていること（任意）</legend>
+              <legend className={styles.legend}>⑥困っていること（任意）</legend>
               <select
                 className={styles.select}
                 value={form.concernType}
@@ -216,17 +225,19 @@ export default function DailySubmitScreen({ go }: Props) {
             </fieldset>
 
             <fieldset className={styles.fieldset}>
-              <legend className={styles.legend}>今日の満足度</legend>
+              <legend className={styles.legend}>⑦今日の満足度</legend>
+              <p className={styles.satisfactionHint}>評価ではなく、自己観察です。</p>
               <div className={styles.satisfactionRow}>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
                     type="button"
-                    className={`${styles.satisfactionBtn} ${form.satisfaction === n ? styles.satisfactionBtnActive : ''}`}
+                    className={`${styles.satisfactionBtn} ${form.satisfaction !== null && n <= form.satisfaction ? styles.satisfactionBtnActive : ''}`}
                     disabled={isLocked}
                     onClick={() => setField('satisfaction', n)}
+                    aria-label={`満足度${n}`}
                   >
-                    {n}
+                    😊
                   </button>
                 ))}
               </div>
