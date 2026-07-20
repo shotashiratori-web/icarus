@@ -36,6 +36,17 @@ export default function WineDetailScreen({ go, entry }: Props) {
           </div>
         )}
 
+        {entry.photos.length > 1 && (
+          <div className={styles.sourceBox}>
+            <p className={styles.sourceLabel}>元データ（そのままの記録）</p>
+            <div className={styles.sourceImages}>
+              {entry.photos.slice(1).map((url) => (
+                <img key={url} className={styles.sourceImage} src={url} alt="元データ" />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Phase10以降: ここに関連フィールド・関連料理・関連加工・関連Daily・関連Wine Tasting NoteなどのKnowledge Relationセクションを追加する想定。
             今回は空のハブとして、画面構造のみ用意し、表示はしない。 */}
 
