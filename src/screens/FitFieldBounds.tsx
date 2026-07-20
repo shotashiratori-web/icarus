@@ -13,6 +13,10 @@ export default function FitFieldBounds({ matched, skipFirst = false }: Props) {
   const isFirstRun = useRef(true);
 
   useEffect(() => {
+    // レイアウト確定前（コンテナがまだ0幅/0高さに近い状態）にfitBoundsするとズームがずれるため、
+    // 直前に必ずコンテナサイズを再計算させる（Leaflet+動的レイアウトでの既知の対策）
+    map.invalidateSize();
+
     if (isFirstRun.current) {
       isFirstRun.current = false;
       if (skipFirst) return;
