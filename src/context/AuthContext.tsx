@@ -59,13 +59,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [authState, signInEl]);
 
-  // トークン期限切れ（401）時のみ再ログインを要求する。
+  // トークン期限切れ（401）時、まずサイレント再認証を試みる（Googleのセッションが生きていれば無言で復帰する）。
+  // それでも取得できない場合のみ、サインインボタンを出す。
   const handleTokenExpired = () => {
-    setIdToken(null);
-    setUserEmail('');
-    setStaffMe(null);
-    setAuthState('signedOut');
+    void requestSilentIdToken().then((token) => {
+      if (token) {
+        setIdToken(token);
+        setUserEmail(decodeEmail(token));
+        setAuthState('ready');
+        return;
+      }
+      setIdToken(null);
+      setUserEmail('');
+      setStaffMe(null);
+      setAuthState('signedOut');
+    });
   };
+
+  // Google IDトークンは約1時間で失効する。有効期限切れで401を待たず、
+  // ready中は一定間隔でサイレント更新し、通常利用中に再ログインを求められる頻度を減らす。
+  useEffect(() => {
+    if (authState !== 'ready') return;
+    const REFRESH_INTERVAL_MS = 45 * 60 * 1000; // 45分（トークン寿命約60分より十分前に更新）
+    const timer = setInterval(() => {
+      void requestSilentIdToken().then((token) => {
+        if (token) {
+          setIdToken(token);
+          setUserEmail(decodeEmail(token));
+        }
+        // 取得できなくても、ここでは強制サインアウトしない（次のAPI呼び出しの401で拾われる）
+      });
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [authState]);
 
   // authState が ready になったら一度だけ自分のスタッフ状態を取得する。
   useEffect(() => {
