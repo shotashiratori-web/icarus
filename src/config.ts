@@ -25,3 +25,4 @@ export const DAILY_ADMIN_COMMENT_URL = `${WORKER_URL}/admin/daily/comment`;
 export const DAILY_ADMIN_CONFIRM_URL = `${WORKER_URL}/admin/daily/confirm`;
 export const DAILY_ADMIN_REQUEST_MORE_URL = `${WORKER_URL}/admin/daily/request-more`;
 export const WINES_URL = `${WORKER_URL}/wines`;
+export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;

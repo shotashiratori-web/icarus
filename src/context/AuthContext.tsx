@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { requestSilentIdToken, renderSignInButton, disableAutoSelect } from '../api/googleAuth';
+import { exchangeForSession } from '../api/sessionApi';
 import { fetchMyStaffStatus } from '../api/staffApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import type { StaffMe } from '../types/staff';
@@ -7,7 +8,7 @@ import type { StaffMe } from '../types/staff';
 export type AuthState = 'checking' | 'ready' | 'signedOut';
 
 interface AuthContextValue {
-  idToken: string | null;
+  idToken: string | null; // 実体はWorkerが発行する長期セッショントークン（GoogleのIDトークンそのものではない）
   userEmail: string;
   authState: AuthState;
   staffMe: StaffMe | null;
@@ -18,45 +19,54 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_STORAGE_KEY = 'icarus_id_token';
+const SESSION_STORAGE_KEY = 'icarus_session_token';
+const NEAR_EXPIRY_MS = 3 * 24 * 60 * 60 * 1000; // 期限まで3日を切ったら裏で先回りして更新する
 
-function decodePayload(token: string): Record<string, unknown> | null {
+function base64UrlToString(b64url: string): string {
+  const pad = (4 - (b64url.length % 4)) % 4;
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(pad);
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function decodeSessionPayload(token: string): { email: string; exp: number } | null {
   try {
-    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const [payloadB64] = token.split('.');
+    if (!payloadB64) return null;
+    const payload = JSON.parse(base64UrlToString(payloadB64)) as { email?: unknown; exp?: unknown };
+    if (typeof payload.email !== 'string' || typeof payload.exp !== 'number') return null;
+    return { email: payload.email, exp: payload.exp };
   } catch {
     return null;
   }
 }
 
-function decodeEmail(token: string): string {
-  const payload = decodePayload(token);
-  return payload && typeof payload.email === 'string' ? payload.email : '';
+function isSessionValid(token: string): boolean {
+  const p = decodeSessionPayload(token);
+  return !!p && Date.now() < p.exp - 60_000;
 }
 
-// expの60秒前をもって切れているとみなす（境界での失敗を避けるための余裕）
-function isTokenStillValid(token: string): boolean {
-  const payload = decodePayload(token);
-  const exp = payload && typeof payload.exp === 'number' ? payload.exp : null;
-  if (!exp) return false;
-  return Date.now() < exp * 1000 - 60_000;
+function isSessionNearExpiry(token: string): boolean {
+  const p = decodeSessionPayload(token);
+  return !p || p.exp - Date.now() < NEAR_EXPIRY_MS;
 }
 
-// GoogleのIDトークンはページをリロードするたびにメモリから消えてしまっていた（トークン自体は
-// 約1時間有効なのに、保存していないため毎回作り直しになり再ログインが頻発していた）。
-// 有効な間はlocalStorageに保存して使い回す。
-function saveStoredToken(token: string): void {
-  try { localStorage.setItem(TOKEN_STORAGE_KEY, token); } catch { /* 保存できなくても致命的ではない */ }
+// セッショントークンは、有効な間はページ再読み込みをまたいで使い回す（毎回Googleへ行かない）。
+function saveSession(token: string): void {
+  try { localStorage.setItem(SESSION_STORAGE_KEY, token); } catch { /* 保存できなくても致命的ではない */ }
 }
-function loadStoredToken(): string | null {
+function loadStoredSession(): string | null {
   try {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-    return token && isTokenStillValid(token) ? token : null;
+    const token = localStorage.getItem(SESSION_STORAGE_KEY);
+    return token && isSessionValid(token) ? token : null;
   } catch {
     return null;
   }
 }
-function clearStoredToken(): void {
-  try { localStorage.removeItem(TOKEN_STORAGE_KEY); } catch { /* ignore */ }
+function clearStoredSession(): void {
+  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* ignore */ }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -66,33 +76,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
   const [staffMe, setStaffMe] = useState<StaffMe | null>(null);
 
-  const applyToken = (token: string) => {
-    saveStoredToken(token);
+  const applySession = (token: string) => {
+    saveSession(token);
     setIdToken(token);
-    setUserEmail(decodeEmail(token));
+    setUserEmail(decodeSessionPayload(token)?.email ?? '');
     setAuthState('ready');
   };
 
   const forceSignedOut = () => {
-    clearStoredToken();
+    clearStoredSession();
     setIdToken(null);
     setUserEmail('');
     setStaffMe(null);
     setAuthState('signedOut');
   };
 
-  // 起動時：保存済みの有効なトークンがあればそれを使う（再ログイン不要）。なければサイレントサインインを試みる。
+  // Googleのセッションが生きていれば、無言でIDトークンを取り直し、Workerの長期セッションへ交換する。
+  const trySilentSessionRenewal = async (): Promise<boolean> => {
+    const googleToken = await requestSilentIdToken();
+    if (!googleToken) return false;
+    const session = await exchangeForSession(googleToken);
+    if (!session) return false;
+    applySession(session.sessionToken);
+    return true;
+  };
+
+  // 起動時：保存済みの有効なセッションがあればそれを使う（再ログイン不要）。期限が近ければ裏で更新する。
+  // 保存されたセッションがなければ、Googleサイレントサインイン→セッション交換を試みる。
   useEffect(() => {
     let cancelled = false;
-    const stored = loadStoredToken();
+    const stored = loadStoredSession();
     if (stored) {
-      applyToken(stored);
+      applySession(stored);
+      if (isSessionNearExpiry(stored)) void trySilentSessionRenewal();
       return;
     }
-    requestSilentIdToken().then((token) => {
-      if (cancelled) return;
-      if (token) applyToken(token);
-      else setAuthState('signedOut');
+    trySilentSessionRenewal().then((ok) => {
+      if (!cancelled && !ok) setAuthState('signedOut');
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,32 +120,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (authState !== 'signedOut' || !signInEl) return;
-    void renderSignInButton(signInEl, applyToken);
+    void renderSignInButton(signInEl, (googleToken) => {
+      void exchangeForSession(googleToken).then((session) => {
+        if (session) applySession(session.sessionToken);
+        // 交換に失敗した場合（未承認スタッフ等）はsignedOut画面のままになる
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, signInEl]);
 
-  // トークン期限切れ（401）時、まずサイレント再認証を試みる（Googleのセッションが生きていれば無言で復帰する）。
-  // それでも取得できない場合のみ、サインインボタンを出す。
+  // セッション期限切れ（401）時、まずサイレント再認証を試みる。それでも取得できない場合のみサインイン画面へ。
   const handleTokenExpired = () => {
-    void requestSilentIdToken().then((token) => {
-      if (token) applyToken(token);
-      else forceSignedOut();
+    void trySilentSessionRenewal().then((ok) => {
+      if (!ok) forceSignedOut();
     });
   };
-
-  // Google IDトークンは約1時間で失効する。有効期限切れで401を待たず、
-  // ready中は一定間隔でサイレント更新し、通常利用中に再ログインを求められる頻度を減らす。
-  useEffect(() => {
-    if (authState !== 'ready') return;
-    const REFRESH_INTERVAL_MS = 45 * 60 * 1000; // 45分（トークン寿命約60分より十分前に更新）
-    const timer = setInterval(() => {
-      void requestSilentIdToken().then((token) => {
-        if (token) applyToken(token);
-        // 取得できなくても、ここでは強制サインアウトしない（次のAPI呼び出しの401で拾われる）
-      });
-    }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [authState]);
 
   // authState が ready になったら一度だけ自分のスタッフ状態を取得する。
   useEffect(() => {
