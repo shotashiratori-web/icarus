@@ -18,13 +18,45 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function decodeEmail(token: string): string {
+const TOKEN_STORAGE_KEY = 'icarus_id_token';
+
+function decodePayload(token: string): Record<string, unknown> | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.email === 'string' ? payload.email : '';
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
   } catch {
-    return '';
+    return null;
   }
+}
+
+function decodeEmail(token: string): string {
+  const payload = decodePayload(token);
+  return payload && typeof payload.email === 'string' ? payload.email : '';
+}
+
+// expの60秒前をもって切れているとみなす（境界での失敗を避けるための余裕）
+function isTokenStillValid(token: string): boolean {
+  const payload = decodePayload(token);
+  const exp = payload && typeof payload.exp === 'number' ? payload.exp : null;
+  if (!exp) return false;
+  return Date.now() < exp * 1000 - 60_000;
+}
+
+// GoogleのIDトークンはページをリロードするたびにメモリから消えてしまっていた（トークン自体は
+// 約1時間有効なのに、保存していないため毎回作り直しになり再ログインが頻発していた）。
+// 有効な間はlocalStorageに保存して使い回す。
+function saveStoredToken(token: string): void {
+  try { localStorage.setItem(TOKEN_STORAGE_KEY, token); } catch { /* 保存できなくても致命的ではない */ }
+}
+function loadStoredToken(): string | null {
+  try {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    return token && isTokenStillValid(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+function clearStoredToken(): void {
+  try { localStorage.removeItem(TOKEN_STORAGE_KEY); } catch { /* ignore */ }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -34,45 +66,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
   const [staffMe, setStaffMe] = useState<StaffMe | null>(null);
 
-  // アプリ起動時に一度だけサイレントサインインを試みる。以降、画面遷移では再認証しない。
+  const applyToken = (token: string) => {
+    saveStoredToken(token);
+    setIdToken(token);
+    setUserEmail(decodeEmail(token));
+    setAuthState('ready');
+  };
+
+  const forceSignedOut = () => {
+    clearStoredToken();
+    setIdToken(null);
+    setUserEmail('');
+    setStaffMe(null);
+    setAuthState('signedOut');
+  };
+
+  // 起動時：保存済みの有効なトークンがあればそれを使う（再ログイン不要）。なければサイレントサインインを試みる。
   useEffect(() => {
     let cancelled = false;
+    const stored = loadStoredToken();
+    if (stored) {
+      applyToken(stored);
+      return;
+    }
     requestSilentIdToken().then((token) => {
       if (cancelled) return;
-      if (token) {
-        setIdToken(token);
-        setUserEmail(decodeEmail(token));
-        setAuthState('ready');
-      } else {
-        setAuthState('signedOut');
-      }
+      if (token) applyToken(token);
+      else setAuthState('signedOut');
     });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (authState !== 'signedOut' || !signInEl) return;
-    void renderSignInButton(signInEl, (token) => {
-      setIdToken(token);
-      setUserEmail(decodeEmail(token));
-      setAuthState('ready');
-    });
+    void renderSignInButton(signInEl, applyToken);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, signInEl]);
 
   // トークン期限切れ（401）時、まずサイレント再認証を試みる（Googleのセッションが生きていれば無言で復帰する）。
   // それでも取得できない場合のみ、サインインボタンを出す。
   const handleTokenExpired = () => {
     void requestSilentIdToken().then((token) => {
-      if (token) {
-        setIdToken(token);
-        setUserEmail(decodeEmail(token));
-        setAuthState('ready');
-        return;
-      }
-      setIdToken(null);
-      setUserEmail('');
-      setStaffMe(null);
-      setAuthState('signedOut');
+      if (token) applyToken(token);
+      else forceSignedOut();
     });
   };
 
@@ -83,10 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const REFRESH_INTERVAL_MS = 45 * 60 * 1000; // 45分（トークン寿命約60分より十分前に更新）
     const timer = setInterval(() => {
       void requestSilentIdToken().then((token) => {
-        if (token) {
-          setIdToken(token);
-          setUserEmail(decodeEmail(token));
-        }
+        if (token) applyToken(token);
         // 取得できなくても、ここでは強制サインアウトしない（次のAPI呼び出しの401で拾われる）
       });
     }, REFRESH_INTERVAL_MS);
@@ -116,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = () => {
     disableAutoSelect();
-    handleTokenExpired();
+    forceSignedOut();
   };
 
   return (
