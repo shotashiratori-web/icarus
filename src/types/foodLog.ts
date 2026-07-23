@@ -10,7 +10,13 @@ export interface PhotoEntry {
   memo: string;
   gps?: { lat: number; lng: number; accuracy: number };
   takenAt?: string;
+  // 「一件ずつ送信」モードでのみ使用（写真ごとに大分類・場所・採取有無を持つ）
+  largeCategory?: string;
+  place?: string;
+  harvested?: string;
 }
+
+export type SubmitMode = 'batch' | 'individual';
 
 export interface CommonFields {
   largeCategory: string;

@@ -16,6 +16,7 @@ import {
   type CommonFields,
   type FoodCandidate,
   type PhotoSendResult,
+  type SubmitMode,
 } from '../types/foodLog';
 import { saveFoodLogDraft, loadFoodLogDraft, clearFoodLogDraft } from '../db/localDB';
 import type { Screen } from '../App';
@@ -59,6 +60,7 @@ export default function FoodLogScreen({ go }: Props) {
 
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [common, setCommon] = useState<CommonFields>(emptyCommonFields());
+  const [submitMode, setSubmitMode] = useState<SubmitMode>('batch');
   const [currentIdx, setCurrentIdx] = useState(0);
 
   const [sendResults, setSendResults] = useState<PhotoSendResult[]>([]);
@@ -74,12 +76,13 @@ export default function FoodLogScreen({ go }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── 下書き保存 ───────────────────────────────────────────
-  const saveDraft = useCallback(async (p: PhotoEntry[], c: CommonFields, idx: number) => {
+  const saveDraft = useCallback(async (p: PhotoEntry[], c: CommonFields, mode: SubmitMode, idx: number) => {
     if (p.length === 0) return;
     try {
       await saveFoodLogDraft({
         photos: p.map(({ previewUrl: _, ...rest }) => rest),
         commonFields: c,
+        submitMode: mode,
         currentPhotoIndex: idx,
       });
     } catch {
@@ -89,9 +92,9 @@ export default function FoodLogScreen({ go }: Props) {
 
   useEffect(() => {
     if (phase !== 'auth' && phase !== 'sending' && phase !== 'complete') {
-      void saveDraft(photos, common, currentIdx);
+      void saveDraft(photos, common, submitMode, currentIdx);
     }
-  }, [photos, common, currentIdx, phase, saveDraft]);
+  }, [photos, common, submitMode, currentIdx, phase, saveDraft]);
 
   // ── Google Sign-In ───────────────────────────────────────
   useEffect(() => {
@@ -113,6 +116,7 @@ export default function FoodLogScreen({ go }: Props) {
               previewUrl: p.base64 ? `data:image/jpeg;base64,${p.base64}` : '',
             })));
             setCommon(draft.commonFields);
+            setSubmitMode(draft.submitMode ?? 'batch');
             setCurrentIdx(draft.currentPhotoIndex);
             setDraftRestored(true);
           }
@@ -204,6 +208,7 @@ export default function FoodLogScreen({ go }: Props) {
 
   // ── バリデーション ────────────────────────────────────────
   const commonErrors = (): string[] => {
+    if (submitMode === 'individual') return []; // 一件ずつ送信では各写真側でチェックする
     const errs: string[] = [];
     if (!common.largeCategory) errs.push('大分類');
     if (!common.place.trim())  errs.push('場所');
@@ -215,11 +220,21 @@ export default function FoodLogScreen({ go }: Props) {
     if (!p.food.trim()) errs.push('食材名');
     if (!p.phase)       errs.push('フェーズ');
     if (!p.base64)      errs.push('写真');
+    if (submitMode === 'individual') {
+      if (!p.largeCategory) errs.push('大分類');
+      if (!(p.place ?? '').trim()) errs.push('場所');
+    }
     return errs;
   };
 
   const allPhotoErrors = () =>
     photos.flatMap((p, i) => photoErrors(p).map(e => `写真${i + 1}: ${e}`));
+
+  // 送信時に使う共通項目。一件ずつ送信では、その写真自身の値を使う。
+  const commonFieldsFor = (p: PhotoEntry): CommonFields =>
+    submitMode === 'individual'
+      ? { largeCategory: p.largeCategory ?? '', place: p.place ?? '', harvested: p.harvested ?? '不明' }
+      : common;
 
   // ── 送信 ─────────────────────────────────────────────────
   const startSend = async () => {
@@ -231,7 +246,7 @@ export default function FoodLogScreen({ go }: Props) {
       results[i] = { ...results[i], status: 'sending' };
       setSendResults([...results]);
       try {
-        const res = await submitPhotoEntry(photos[i], common, idToken);
+        const res = await submitPhotoEntry(photos[i], commonFieldsFor(photos[i]), idToken);
         results[i] = { ...results[i], status: 'success', result: res };
       } catch (err) {
         if (err instanceof TokenExpiredError) {
@@ -253,6 +268,7 @@ export default function FoodLogScreen({ go }: Props) {
   const reset = () => {
     setPhotos([]);
     setCommon(emptyCommonFields());
+    setSubmitMode('batch');
     setCurrentIdx(0);
     setSendResults([]);
     setDraftRestored(false);
@@ -263,6 +279,7 @@ export default function FoodLogScreen({ go }: Props) {
     window.google?.accounts.id.disableAutoSelect();
     setIdToken(''); setUserEmail('');
     setPhotos([]); setCommon(emptyCommonFields());
+    setSubmitMode('batch');
     setCurrentIdx(0); setDraftRestored(false);
     void clearFoodLogDraft();
     setPhase('auth');
@@ -353,8 +370,42 @@ export default function FoodLogScreen({ go }: Props) {
             onChange={handleFileChange}
           />
 
-          {/* 共通設定（写真が1枚以上あるときだけ表示） */}
+          {/* 送信方法（写真が1枚以上あるときだけ表示） */}
           {photos.length > 0 && (
+            <fieldset className={styles.fieldset}>
+              <legend className={styles.fieldLabel}>送信方法</legend>
+              <div className={styles.segmented}>
+                <label className={`${styles.segItem} ${submitMode === 'batch' ? styles.segActive : ''}`}>
+                  <input
+                    type="radio"
+                    name="submitMode"
+                    checked={submitMode === 'batch'}
+                    onChange={() => setSubmitMode('batch')}
+                    className={styles.hidden}
+                  />
+                  まとめて送信
+                </label>
+                <label className={`${styles.segItem} ${submitMode === 'individual' ? styles.segActive : ''}`}>
+                  <input
+                    type="radio"
+                    name="submitMode"
+                    checked={submitMode === 'individual'}
+                    onChange={() => setSubmitMode('individual')}
+                    className={styles.hidden}
+                  />
+                  一件ずつ送信
+                </label>
+              </div>
+              <p className={styles.photoHint}>
+                {submitMode === 'batch'
+                  ? '大分類・場所・採取有無を全ての写真に共通で使います'
+                  : '大分類・場所・採取有無を写真ごとに個別に入力します（次の画面で入力）'}
+              </p>
+            </fieldset>
+          )}
+
+          {/* 共通設定（まとめて送信のときだけ表示） */}
+          {photos.length > 0 && submitMode === 'batch' && (
             <div className={styles.commonSection}>
               <p className={styles.commonSectionTitle}>共通設定（全 {photos.length} 枚に適用）</p>
 
@@ -530,6 +581,53 @@ export default function FoodLogScreen({ go }: Props) {
             </select>
           </label>
 
+          {/* 一件ずつ送信のときだけ、この写真専用の大分類・場所・採取有無 */}
+          {submitMode === 'individual' && (
+            <>
+              <label className={styles.fieldLabel}>
+                大分類 <span className={styles.required}>*</span>
+                <select
+                  className={styles.selectInput}
+                  value={photo.largeCategory ?? ''}
+                  onChange={e => updatePhoto(photo.localId, 'largeCategory', e.target.value)}
+                >
+                  <option value="">選択してください</option>
+                  {LARGE_CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </label>
+
+              <label className={styles.fieldLabel}>
+                場所 <span className={styles.required}>*</span>
+                <input
+                  type="text"
+                  className={styles.textInput}
+                  placeholder="例: なな山、余市川"
+                  value={photo.place ?? ''}
+                  onChange={e => updatePhoto(photo.localId, 'place', e.target.value)}
+                />
+              </label>
+
+              <fieldset className={styles.fieldset}>
+                <legend className={styles.fieldLabel}>採取有無</legend>
+                <div className={styles.segmented}>
+                  {HARVESTED_OPTIONS.map(o => (
+                    <label key={o} className={`${styles.segItem} ${(photo.harvested ?? '不明') === o ? styles.segActive : ''}`}>
+                      <input
+                        type="radio"
+                        name={`harvested-${photo.localId}`}
+                        value={o}
+                        checked={(photo.harvested ?? '不明') === o}
+                        onChange={() => updatePhoto(photo.localId, 'harvested', o)}
+                        className={styles.hidden}
+                      />
+                      {o}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </>
+          )}
+
           {/* メモ */}
           <label className={styles.fieldLabel}>
             メモ
@@ -575,11 +673,13 @@ export default function FoodLogScreen({ go }: Props) {
           <span className={styles.headerTitle}>送信内容の確認</span>
         </header>
         <main className={styles.confirmMain}>
-          <dl className={styles.confirmCommon}>
-            <dt>大分類</dt> <dd>{common.largeCategory}</dd>
-            <dt>場所</dt>   <dd>{common.place}</dd>
-            <dt>採取</dt>   <dd>{common.harvested}</dd>
-          </dl>
+          {submitMode === 'batch' && (
+            <dl className={styles.confirmCommon}>
+              <dt>大分類</dt> <dd>{common.largeCategory}</dd>
+              <dt>場所</dt>   <dd>{common.place}</dd>
+              <dt>採取</dt>   <dd>{common.harvested}</dd>
+            </dl>
+          )}
           {photos.map((p, i) => (
             <div key={p.localId} className={styles.confirmPhoto}>
               <img src={p.previewUrl} alt="" className={styles.confirmThumb} />
@@ -587,6 +687,9 @@ export default function FoodLogScreen({ go }: Props) {
                 <p className={styles.confirmPhotoNum}>写真 {i + 1} {p.date && `· ${p.date}`}</p>
                 <p className={styles.confirmPhotoFood}>{p.food}</p>
                 <p className={styles.confirmPhotoSub}>{p.phase}{p.memo ? ` / ${p.memo.slice(0, 20)}` : ''}</p>
+                {submitMode === 'individual' && (
+                  <p className={styles.confirmPhotoSub}>{p.largeCategory} · {p.place} · 採取{p.harvested ?? '不明'}</p>
+                )}
                 {p.gps && <p className={styles.confirmPhotoGps}>📍 GPS あり</p>}
               </div>
               <button className={styles.confirmEditBtn} onClick={() => { setCurrentIdx(i); setPhase('photoEdit'); }}>編集</button>

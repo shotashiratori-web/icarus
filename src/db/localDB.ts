@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { WineNote } from '../types/wine';
-import type { PhotoEntry, CommonFields } from '../types/foodLog';
+import type { PhotoEntry, CommonFields, SubmitMode } from '../types/foodLog';
 
 const DB_NAME = 'icarus';
 const DB_VERSION = 2;
@@ -11,6 +11,7 @@ export interface FoodLogDraft {
   id: 'current';
   photos: Array<Omit<PhotoEntry, 'previewUrl'>>;
   commonFields: CommonFields;
+  submitMode?: SubmitMode;
   currentPhotoIndex: number;
   savedAt: string;
 }
