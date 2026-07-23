@@ -90,15 +90,23 @@ export async function fetchFoodCandidates(): Promise<FoodCandidate[]> {
   }
 }
 
-export async function fetchGps(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
-  if (!navigator.geolocation) return null;
+function getPositionOnce(options: PositionOptions): Promise<GeolocationPosition | null> {
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      (pos) => resolve(pos),
       () => resolve(null),
-      { timeout: 8000, maximumAge: 60000 },
+      options,
     );
   });
+}
+
+export async function fetchGps(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
+  if (!navigator.geolocation) return null;
+  const options: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 };
+  // 屋外での取得失敗（電波待ち・タイムアウト）に備え、1回失敗しても自動でもう一度だけ試す
+  const pos = (await getPositionOnce(options)) ?? (await getPositionOnce(options));
+  if (!pos) return null;
+  return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
 }
 
 export async function resizeToJpeg(

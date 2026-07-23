@@ -151,6 +151,8 @@ export default function FoodLogScreen({ go }: Props) {
     const toProcess = files.slice(0, remaining);
     setPhotoProcessing(true);
     try {
+      // このバッチで追加する写真は同じ場所で撮ったものとみなし、GPSは1回だけ取得して全員に適用する
+      const gps = await fetchGps();
       const newEntries = await Promise.all(
         toProcess.map(async (file) => {
           const [base64, exif] = await Promise.all([
@@ -164,6 +166,7 @@ export default function FoodLogScreen({ go }: Props) {
             previewUrl: `data:image/jpeg;base64,${base64}`,
             date: exif?.date ?? '',
             takenAt: exif?.takenAt,
+            gps: gps ?? undefined,
           };
         }),
       );
