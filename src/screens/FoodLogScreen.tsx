@@ -9,7 +9,7 @@ import {
   emptyPhotoEntry,
   todayString,
   LARGE_CATEGORY_OPTIONS,
-  PHASE_OPTIONS,
+  getPhaseOptions,
   HARVESTED_OPTIONS,
   MAX_PHOTOS,
   type PhotoEntry,
@@ -475,6 +475,9 @@ export default function FoodLogScreen({ go }: Props) {
     const photo = photos[currentIdx];
     const pErrs = photoErrors(photo);
     const allDone = allPhotoErrors().length === 0;
+    // 一件ずつ送信ではこの写真自身の大分類、まとめて送信では共通の大分類でフェーズ選択肢を切り替える
+    const categoryForPhase = submitMode === 'individual' ? (photo.largeCategory ?? '') : common.largeCategory;
+    const phaseOptions = getPhaseOptions(categoryForPhase);
 
     return (
       <div className={styles.root}>
@@ -577,7 +580,7 @@ export default function FoodLogScreen({ go }: Props) {
             フェーズ <span className={styles.required}>*</span>
             <select className={styles.selectInput} value={photo.phase} onChange={e => updatePhoto(photo.localId, 'phase', e.target.value)}>
               <option value="">選択してください</option>
-              {PHASE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              {phaseOptions.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           </label>
 

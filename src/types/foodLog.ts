@@ -58,9 +58,21 @@ export const LARGE_CATEGORY_OPTIONS = [
   '植物', '魚介', '肉', '乳', 'キノコ', '海藻', '発酵', 'その他',
 ] as const;
 
+// 植物向け（既定・フォールバック）
 export const PHASE_OPTIONS = [
   '新芽', '若葉', '蕾', '開花', '結実', '収穫', '枯れ', 'その他',
 ] as const;
+
+// キノコ向け（大分類=キノコのときだけ使用）
+export const MUSHROOM_PHASE_OPTIONS = [
+  '発生（芽出し）', '幼菌', '生育中', '成菌（傘開き）', '胞子放出', '収穫', '枯れ・腐敗', 'その他',
+] as const;
+
+// 大分類ごとの状態（フェーズ）選択肢を返す。専用の分類がない大分類は植物向けの一覧を流用する。
+export function getPhaseOptions(largeCategory: string): readonly string[] {
+  if (largeCategory === 'キノコ') return MUSHROOM_PHASE_OPTIONS;
+  return PHASE_OPTIONS;
+}
 
 export const HARVESTED_OPTIONS = ['あり', 'なし', '不明'] as const;
 
