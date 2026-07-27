@@ -17,6 +17,7 @@ import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import WineListScreen from './screens/WineListScreen';
 import WineDetailScreen from './screens/WineDetailScreen';
 import WineFormScreen from './screens/WineFormScreen';
+import MetaDebugScreen from './screens/MetaDebugScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
@@ -52,13 +53,25 @@ export type Screen =
   | { name: 'wineForm'; mode: 'create' }
   | { name: 'wineForm'; mode: 'edit'; wine: WineEntity }
   // Phase9: ワイン図鑑（閲覧専用）。今回は入口が一覧のみのため、フィールド詳細のような再帰from構造は持たない
-  | { name: 'wineDetail'; entry: WineEntity };
+  | { name: 'wineDetail'; entry: WineEntity }
+  // 画像メタデータ調査用デバッグ画面。認証不要・データ送信なし（?debug=metaで直接開ける）
+  | { name: 'metaDebug' };
+
+function initialScreen(): Screen {
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
+    return { name: 'metaDebug' };
+  }
+  return { name: 'home' };
+}
 
 function AppRoutes() {
-  const [screen, setScreen] = useState<Screen>({ name: 'home' });
+  const [screen, setScreen] = useState<Screen>(initialScreen);
   const { authState, staffMe } = useAuth();
 
   const go = (s: Screen) => setScreen(s);
+
+  // メタデータ調査画面は認証不要・データ送信なしのため、承認ゲートより先に描画する
+  if (screen.name === 'metaDebug') return <MetaDebugScreen go={go} />;
 
   // 優先順位: Loading（checking） → SignedOut → PendingApproval → 既存画面
   // checking/signedOut は各画面が個別に処理する既存の慣例をそのまま活かし、

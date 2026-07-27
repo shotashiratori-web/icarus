@@ -1,0 +1,105 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.back {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  line-height: 1.6;
+}
+
+.dropZone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  cursor: pointer;
+  min-height: 140px;
+}
+
+.dropZoneActive {
+  border-color: var(--color-primary);
+  background: var(--color-bg);
+}
+
+.dropZoneText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.resultBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.resultActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.actionBtn {
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.jsonOutput {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  max-height: 60vh;
+  overflow-y: auto;
+}
