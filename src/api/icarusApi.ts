@@ -1,4 +1,4 @@
-import { parse as parseExif } from 'exifr';
+import { parse as parseExif, gps as parseExifGps } from 'exifr';
 import { WORKER_URL, GAS_PUBLIC_URL } from '../config';
 import type { PhotoEntry, CommonFields, FoodLogSuccess, FoodLogApiError, FoodCandidate } from '../types/foodLog';
 
@@ -11,6 +11,17 @@ export async function extractExifDate(file: File): Promise<{ date: string; taken
     if (isNaN(d.getTime())) return null;
     const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return { date, takenAt: d.toISOString() };
+  } catch {
+    return null;
+  }
+}
+
+// 写真自体に埋め込まれた撮影地点（EXIF GPSタグ）を読む。無ければnull（ライブ位置情報へのフォールバックは呼び出し側で行う）
+export async function extractExifGps(file: File): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const coords = await parseExifGps(file);
+    if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') return null;
+    return { lat: coords.latitude, lng: coords.longitude };
   } catch {
     return null;
   }

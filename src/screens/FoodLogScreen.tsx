@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GOOGLE_CLIENT_ID } from '../config';
 import {
   submitPhotoEntry, resizeToJpeg, fetchGps, fetchFoodCandidates,
-  extractExifDate, TokenExpiredError,
+  extractExifDate, extractExifGps, TokenExpiredError,
 } from '../api/icarusApi';
 import {
   emptyCommonFields,
@@ -155,13 +155,15 @@ export default function FoodLogScreen({ go }: Props) {
     const toProcess = files.slice(0, remaining);
     setPhotoProcessing(true);
     try {
-      // このバッチで追加する写真は同じ場所で撮ったものとみなし、GPSは1回だけ取得して全員に適用する
-      const gps = await fetchGps();
+      // 写真自体のEXIF GPSを最優先で使う（撮影場所と登録場所がずれるケースに対応）。
+      // EXIFにGPSが無い写真（スクショ・位置情報オフの端末など）だけ、同じ場所で撮ったものとみなし
+      // ライブ位置情報を1回だけ取得して共有で補う
       const newEntries = await Promise.all(
         toProcess.map(async (file) => {
-          const [base64, exif] = await Promise.all([
+          const [base64, exif, exifGps] = await Promise.all([
             resizeToJpeg(file),
             extractExifDate(file),
+            extractExifGps(file),
           ]);
           const entry = emptyPhotoEntry();
           return {
@@ -170,10 +172,20 @@ export default function FoodLogScreen({ go }: Props) {
             previewUrl: `data:image/jpeg;base64,${base64}`,
             date: exif?.date ?? '',
             takenAt: exif?.takenAt,
-            gps: gps ?? undefined,
+            gps: exifGps ? { ...exifGps, accuracy: 0 } : undefined,
           };
         }),
       );
+
+      if (newEntries.some((entry) => !entry.gps)) {
+        const liveGps = await fetchGps();
+        if (liveGps) {
+          for (const entry of newEntries) {
+            if (!entry.gps) entry.gps = liveGps;
+          }
+        }
+      }
+
       setPhotos(prev => [...prev, ...newEntries]);
     } catch (err) {
       alert(err instanceof Error ? err.message : '写真の処理に失敗しました');
