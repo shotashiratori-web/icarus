@@ -249,7 +249,8 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
     }
 
     // 保留一覧からの編集中はそもそも下書きスロットに書き込んでいないので、無関係な下書きを消さないよう対象外にする
-    if (!editItemId) await clearFoodLogDraft();
+    // (IndexedDBが一時的に開けない場合でも、送信結果の画面遷移は必ず行う)
+    if (!editItemId) await clearFoodLogDraft().catch(() => {});
     // 保留一覧からの編集→再送のときは、完了画面を出さずそのまま一覧へ戻る。
     // 成功していればqueueから消えており、まだ保留ならlastErrorが更新された状態で残っている。
     if (editItemId) {

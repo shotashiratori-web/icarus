@@ -21,8 +21,14 @@ export async function submitWithFallback<T>(
   const { entity, itemId, payload, title, photoThumbnail, displayDate, idToken } = params;
   const now = new Date().toISOString();
 
-  const existing = await queueDB.get(itemId);
+  // IndexedDBが開けない(他タブによるブロック等)場合でも、既存件は「無し」扱いで処理を続ける。
+  // ここで例外を投げると呼び出し元(startSend等)がUIを進められなくなるため、必ずどちらかの結果を返す。
+  const existing = await queueDB.get(itemId).catch(() => undefined);
   const attempts = (existing?.attempts ?? 0) + 1;
+
+  // queueへの永続化に失敗しても(表示中の)itemはそのまま返す。次のIndexedDB操作で再度永続化を試みる。
+  const persistUpsert = (item: SubmissionItem<T>) => useSubmissionQueue.getState().upsert(item).catch(() => {});
+  const persistRemove = (id: string) => useSubmissionQueue.getState().remove(id).catch(() => {});
 
   if (!idToken) {
     const item: SubmissionItem<T> = {
@@ -38,14 +44,14 @@ export async function submitWithFallback<T>(
       attempts,
       lastError: authExpiredError({ entity, payloadId: itemId }),
     };
-    await useSubmissionQueue.getState().upsert(item);
+    await persistUpsert(item);
     return { ok: false, item };
   }
 
   const adapter = getAdapter(entity);
   try {
     await adapter.submit(payload, idToken);
-    if (existing) await useSubmissionQueue.getState().remove(itemId);
+    if (existing) await persistRemove(itemId);
     return { ok: true };
   } catch (err) {
     const item: SubmissionItem<T> = {
@@ -61,7 +67,7 @@ export async function submitWithFallback<T>(
       attempts,
       lastError: adapter.mapError(err, { entity, payloadId: itemId }),
     };
-    await useSubmissionQueue.getState().upsert(item);
+    await persistUpsert(item);
     return { ok: false, item };
   }
 }
