@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GOOGLE_CLIENT_ID } from '../config';
 import {
-  submitPhotoEntry, resizeToJpeg, fetchGps, fetchFoodCandidates,
-  extractExifDate, extractExifGps, TokenExpiredError,
+  resizeToJpeg, fetchGps, fetchFoodCandidates,
+  extractExifDate, extractExifGps,
 } from '../api/icarusApi';
 import {
   emptyCommonFields,
@@ -19,44 +18,21 @@ import {
   type SubmitMode,
 } from '../types/foodLog';
 import { saveFoodLogDraft, loadFoodLogDraft, clearFoodLogDraft } from '../db/localDB';
+import { useAuth } from '../context/AuthContext';
+import { submitWithFallback } from '../submission/orchestrator';
+import * as queueDB from '../submission/queueDB';
+import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
 import type { Screen } from '../App';
 import styles from './FoodLogScreen.module.css';
 
-type Phase = 'auth' | 'photoSelect' | 'photoEdit' | 'confirm' | 'sending' | 'complete';
+type Phase = 'photoSelect' | 'photoEdit' | 'confirm' | 'sending' | 'complete';
 
-type Props = { go: (s: Screen) => void };
+type Props = { go: (s: Screen) => void; editItemId?: string };
 
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: {
-            client_id: string;
-            callback: (res: { credential: string }) => void;
-            auto_select?: boolean;
-          }) => void;
-          renderButton: (el: HTMLElement, config: object) => void;
-          disableAutoSelect: () => void;
-        };
-      };
-    };
-  }
-}
-
-function decodeJwtEmail(token: string): string {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.email === 'string' ? payload.email : '';
-  } catch {
-    return '';
-  }
-}
-
-export default function FoodLogScreen({ go }: Props) {
-  const [phase, setPhase] = useState<Phase>('auth');
-  const [idToken, setIdToken] = useState('');
-  const [userEmail, setUserEmail] = useState('');
+export default function FoodLogScreen({ go, editItemId }: Props) {
+  const { idToken, userEmail, authState, signInContainerRef, handleTokenExpired, signOut: authSignOut } = useAuth();
+  const [phase, setPhase] = useState<Phase>('photoSelect');
+  const initializedRef = useRef(false);
 
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [common, setCommon] = useState<CommonFields>(emptyCommonFields());
@@ -69,10 +45,8 @@ export default function FoodLogScreen({ go }: Props) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [photoProcessing, setPhotoProcessing] = useState(false);
-  const [authError, setAuthError] = useState('');
   const [draftRestored, setDraftRestored] = useState(false);
 
-  const googleBtnRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── 下書き保存 ───────────────────────────────────────────
@@ -91,61 +65,54 @@ export default function FoodLogScreen({ go }: Props) {
   }, []);
 
   useEffect(() => {
-    if (phase !== 'auth' && phase !== 'sending' && phase !== 'complete') {
+    // 保留一覧からの編集中は、通常の下書き（単一スロット）を上書きしない
+    if (editItemId) return;
+    if (phase !== 'sending' && phase !== 'complete') {
       void saveDraft(photos, common, submitMode, currentIdx);
     }
-  }, [photos, common, submitMode, currentIdx, phase, saveDraft]);
+  }, [photos, common, submitMode, currentIdx, phase, saveDraft, editItemId]);
 
-  // ── Google Sign-In ───────────────────────────────────────
+  // ── 初回サインイン時に一度だけ：食材候補の取得 + 下書き復元 ──────
+  // 保留一覧からの編集(editItemId)のときは、下書きではなくqueueの内容を復元するので対象外
   useEffect(() => {
-    if (phase !== 'auth') return;
-
-    const init = () => {
-      if (!window.google) return;
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async (res) => {
-          setIdToken(res.credential);
-          setUserEmail(decodeJwtEmail(res.credential));
-          fetchFoodCandidates().then(setFoodCandidates);
-
-          const draft = await loadFoodLogDraft();
-          if (draft && draft.photos.length > 0) {
-            setPhotos(draft.photos.map(p => ({
-              ...p,
-              previewUrl: p.base64 ? `data:image/jpeg;base64,${p.base64}` : '',
-            })));
-            setCommon(draft.commonFields);
-            setSubmitMode(draft.submitMode ?? 'batch');
-            setCurrentIdx(draft.currentPhotoIndex);
-            setDraftRestored(true);
-          }
-          setPhase('photoSelect');
-        },
-        auto_select: false,
-      });
-      if (googleBtnRef.current) {
-        window.google.accounts.id.renderButton(googleBtnRef.current, {
-          type: 'standard', text: 'signin_with', size: 'large', locale: 'ja', width: 280,
-        });
+    if (authState !== 'ready' || initializedRef.current || editItemId) return;
+    initializedRef.current = true;
+    fetchFoodCandidates().then(setFoodCandidates);
+    loadFoodLogDraft().then((draft) => {
+      if (draft && draft.photos.length > 0) {
+        setPhotos(draft.photos.map(p => ({
+          ...p,
+          previewUrl: p.base64 ? `data:image/jpeg;base64,${p.base64}` : '',
+        })));
+        setCommon(draft.commonFields);
+        setSubmitMode(draft.submitMode ?? 'batch');
+        setCurrentIdx(draft.currentPhotoIndex);
+        setDraftRestored(true);
       }
-    };
+    });
+  }, [authState, editItemId]);
 
-    if (window.google) {
-      init();
-    } else {
-      const scriptId = 'gsi-script';
-      if (!document.getElementById(scriptId)) {
-        const s = document.createElement('script');
-        s.id = scriptId;
-        s.src = 'https://accounts.google.com/gsi/client';
-        s.async = true;
-        s.defer = true;
-        s.onload = init;
-        document.body.appendChild(s);
-      }
-    }
-  }, [phase]);
+  // ── 保留一覧からの編集：queueの1件を復元してphotoEditへ ─────────
+  useEffect(() => {
+    if (!editItemId || authState !== 'ready' || initializedRef.current) return;
+    initializedRef.current = true;
+    fetchFoodCandidates().then(setFoodCandidates);
+    queueDB.get(editItemId).then((item) => {
+      if (!item) { setPhase('photoSelect'); return; } // 既に再送/削除済み
+      const payload = item.payload as FoodLogSubmissionPayload;
+      const restoredPhoto: PhotoEntry = {
+        ...payload.photo,
+        previewUrl: payload.photo.base64 ? `data:image/jpeg;base64,${payload.photo.base64}` : '',
+        largeCategory: payload.common.largeCategory,
+        place: payload.common.place,
+        harvested: payload.common.harvested,
+      };
+      setPhotos([restoredPhoto]);
+      setSubmitMode('individual');
+      setCurrentIdx(0);
+      setPhase('photoEdit');
+    });
+  }, [editItemId, authState]);
 
   // ── 写真追加（EXIF 日付自動抽出） ─────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,31 +216,46 @@ export default function FoodLogScreen({ go }: Props) {
       : common;
 
   // ── 送信 ─────────────────────────────────────────────────
+  // 送信できなかった写真は「エラー」ではなく「保留」としてSubmission Frameworkのqueueへ格納する。
+  // 失敗してもここで例外は投げない（submitWithFallbackは常に成功/保留のいずれかで解決する）。
   const startSend = async () => {
     setPhase('sending');
-    const results: PhotoSendResult[] = photos.map((_, i) => ({ photoIndex: i, status: 'pending' }));
+    const results: PhotoSendResult[] = photos.map((_, i) => ({ photoIndex: i, status: 'idle' }));
     setSendResults([...results]);
 
     for (let i = 0; i < photos.length; i++) {
       results[i] = { ...results[i], status: 'sending' };
       setSendResults([...results]);
-      try {
-        const res = await submitPhotoEntry(photos[i], commonFieldsFor(photos[i]), idToken);
-        results[i] = { ...results[i], status: 'success', result: res };
-      } catch (err) {
-        if (err instanceof TokenExpiredError) {
-          setIdToken('');
-          setUserEmail('');
-          setPhase('auth');
-          setAuthError(err.message);
-          return;
-        }
-        results[i] = { ...results[i], status: 'error', error: err instanceof Error ? err.message : '送信に失敗しました' };
+
+      const { previewUrl: _pv, ...photoForPayload } = photos[i];
+      const payload: FoodLogSubmissionPayload = { photo: photoForPayload, common: commonFieldsFor(photos[i]) };
+      const outcome = await submitWithFallback({
+        entity: 'foodLog',
+        itemId: photos[i].requestId,
+        payload,
+        title: photos[i].food || '(食材名未入力)',
+        photoThumbnail: photos[i].previewUrl,
+        displayDate: photos[i].date,
+        idToken,
+      });
+
+      if (outcome.ok) {
+        results[i] = { ...results[i], status: 'success' };
+      } else {
+        results[i] = { ...results[i], status: 'queued' };
+        if (outcome.item.lastError?.code === 'AUTH_EXPIRED') handleTokenExpired();
       }
       setSendResults([...results]);
     }
 
-    await clearFoodLogDraft();
+    // 保留一覧からの編集中はそもそも下書きスロットに書き込んでいないので、無関係な下書きを消さないよう対象外にする
+    if (!editItemId) await clearFoodLogDraft();
+    // 保留一覧からの編集→再送のときは、完了画面を出さずそのまま一覧へ戻る。
+    // 成功していればqueueから消えており、まだ保留ならlastErrorが更新された状態で残っている。
+    if (editItemId) {
+      go({ name: 'pendingList' });
+      return;
+    }
     setPhase('complete');
   };
 
@@ -288,13 +270,12 @@ export default function FoodLogScreen({ go }: Props) {
   };
 
   const signOut = () => {
-    window.google?.accounts.id.disableAutoSelect();
-    setIdToken(''); setUserEmail('');
     setPhotos([]); setCommon(emptyCommonFields());
     setSubmitMode('batch');
     setCurrentIdx(0); setDraftRestored(false);
     void clearFoodLogDraft();
-    setPhase('auth');
+    initializedRef.current = false;
+    authSignOut();
   };
 
   // ── 食材候補フィルター ─────────────────────────────────────
@@ -307,7 +288,21 @@ export default function FoodLogScreen({ go }: Props) {
   // ════════════════════════════════════════════════════════
 
   // ── 認証 ─────────────────────────────────────────────────
-  if (phase === 'auth') {
+  if (authState === 'checking') {
+    return (
+      <div className={styles.root}>
+        <header className={styles.header}>
+          <button className={styles.backBtn} onClick={() => go({ name: 'home' })}>← 戻る</button>
+          <span className={styles.headerTitle}>食材ログ</span>
+        </header>
+        <main className={styles.authMain}>
+          <div className={styles.spinner} />
+        </main>
+      </div>
+    );
+  }
+
+  if (authState === 'signedOut') {
     return (
       <div className={styles.root}>
         <header className={styles.header}>
@@ -316,9 +311,8 @@ export default function FoodLogScreen({ go }: Props) {
         </header>
         <main className={styles.authMain}>
           <div className={styles.authCard}>
-            <p className={styles.authLead}>Googleアカウントでログインしてください。</p>
-            {authError && <p className={styles.errorBanner}>{authError}</p>}
-            <div ref={googleBtnRef} className={styles.googleBtnWrap} />
+            <p className={styles.authLead}>ログインが切れています。再度ログインしてください。</p>
+            <div ref={signInContainerRef} className={styles.googleBtnWrap} />
           </div>
         </main>
       </div>
@@ -733,7 +727,7 @@ export default function FoodLogScreen({ go }: Props) {
             {sendResults.map((r, i) => (
               <span key={i} className={`${styles.sendDot} ${
                 r.status === 'success' ? styles.sendDotOk :
-                r.status === 'error'   ? styles.sendDotErr :
+                r.status === 'queued'  ? styles.sendDotErr :
                 r.status === 'sending' ? styles.sendDotActive : ''
               }`} />
             ))}
@@ -746,7 +740,7 @@ export default function FoodLogScreen({ go }: Props) {
   // ── 完了 ──────────────────────────────────────────────────
   if (phase === 'complete') {
     const successCount = sendResults.filter(r => r.status === 'success').length;
-    const errorCount   = sendResults.filter(r => r.status === 'error').length;
+    const queuedCount  = sendResults.filter(r => r.status === 'queued').length;
     return (
       <div className={styles.root}>
         <header className={styles.header}>
@@ -754,12 +748,18 @@ export default function FoodLogScreen({ go }: Props) {
           <span className={styles.headerTitle}>送信完了</span>
         </header>
         <main className={styles.completeMain}>
-          <div className={errorCount === 0 ? styles.successIcon : styles.warnIcon}>
-            {errorCount === 0 ? '✓' : '!'}
+          <div className={queuedCount === 0 ? styles.successIcon : styles.warnIcon}>
+            {queuedCount === 0 ? '✓' : '🟡'}
           </div>
-          <p className={styles.successFood}>
-            {successCount} 件 記録しました{errorCount > 0 ? ` / ${errorCount} 件 エラー` : ''}
-          </p>
+          {queuedCount === 0 ? (
+            <p className={styles.successFood}>{successCount} 件 記録しました</p>
+          ) : (
+            <p className={styles.successFood}>
+              🟡 {queuedCount}件を保留しました。<br />
+              通信またはサーバーの都合で送信できませんでした。<br />
+              データは保存されています。あとから再送できます。
+            </p>
+          )}
           <div className={styles.resultList}>
             {sendResults.map((r, i) => (
               <div key={i} className={`${styles.resultItem} ${r.status === 'success' ? styles.resultOk : styles.resultErr}`}>
@@ -767,12 +767,15 @@ export default function FoodLogScreen({ go }: Props) {
                 <div className={styles.resultInfo}>
                   <p className={styles.resultFood}>{photos[i].food}</p>
                   {r.status === 'success' && r.result && <p className={styles.resultMeta}>行 {r.result.row}</p>}
-                  {r.status === 'error' && <p className={styles.resultError}>{r.error}</p>}
+                  {r.status === 'queued' && <p className={styles.resultError}>保留中（あとで再送できます）</p>}
                 </div>
-                <span className={styles.resultStatus}>{r.status === 'success' ? '✓' : '✗'}</span>
+                <span className={styles.resultStatus}>{r.status === 'success' ? '✓' : '🟡'}</span>
               </div>
             ))}
           </div>
+          {queuedCount > 0 && (
+            <button className={styles.primaryBtn} onClick={() => go({ name: 'pendingList' })}>保留一覧を見る</button>
+          )}
           <button className={styles.primaryBtn} onClick={reset}>続けて記録する</button>
           <button className={styles.secondaryBtn} onClick={() => go({ name: 'home' })}>ホームへ戻る</button>
         </main>

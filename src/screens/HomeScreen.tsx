@@ -3,6 +3,8 @@ import { getAllNotes } from '../db/localDB';
 import { fetchRecentFieldObservations, fetchRecentWorkLogs } from '../api/fieldApi';
 import { requestSilentIdToken } from '../api/googleAuth';
 import { useAuth } from '../context/AuthContext';
+import { useSubmissionQueue, selectCountsByEntity } from '../submission/queueStore';
+import { ENTITY_LABELS, type SubmissionEntity } from '../submission/types';
 import type { FieldObservation, WorkLogItem } from '../types/fieldLog';
 import type { WineNote } from '../types/wine';
 import type { Screen } from '../App';
@@ -15,9 +17,12 @@ export default function HomeScreen({ go }: Props) {
   const [recent, setRecent] = useState<WineNote[]>([]);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
+  const pendingItems = useSubmissionQueue((s) => s.items);
+  const pendingCounts = selectCountsByEntity(pendingItems);
 
   useEffect(() => {
     getAllNotes().then(all => setRecent(all.slice(0, 5)));
+    void useSubmissionQueue.getState().refresh();
   }, []);
 
   // 最近の観察・最近の作業（失敗してもホーム画面全体には影響させない）
@@ -108,6 +113,21 @@ export default function HomeScreen({ go }: Props) {
               <span>画像メタデータ調査</span>
             </button>
           </div>
+        )}
+
+        {pendingItems.length > 0 && (
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>📤 保留中</h2>
+            </div>
+            <button className={styles.pendingSummaryBtn} onClick={() => go({ name: 'pendingList' })}>
+              {Object.entries(pendingCounts).map(([entity, count]) => (
+                <span key={entity} className={styles.pendingRow}>
+                  🟡 {ENTITY_LABELS[entity as SubmissionEntity]}　{count}件
+                </span>
+              ))}
+            </button>
+          </section>
         )}
 
         {(recentObservations.length > 0 || recentProcessing.length > 0) && (

@@ -4,6 +4,7 @@ import RecordScreen from './screens/RecordScreen';
 import ReviewDetailScreen from './screens/ReviewDetailScreen';
 import NoteListScreen from './screens/NoteListScreen';
 import FoodLogScreen from './screens/FoodLogScreen';
+import PendingListScreen from './screens/PendingListScreen';
 import FieldScreen from './screens/FieldScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
 import WorkDetailScreen from './screens/WorkDetailScreen';
@@ -19,6 +20,7 @@ import WineDetailScreen from './screens/WineDetailScreen';
 import WineFormScreen from './screens/WineFormScreen';
 import MetaDebugScreen from './screens/MetaDebugScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
 
@@ -34,7 +36,9 @@ export type Screen =
   | { name: 'record'; noteId: string | null }
   | { name: 'review'; noteId: string }
   | { name: 'list' }
-  | { name: 'foodLog' }
+  | { name: 'foodLog'; editItemId?: string }
+  // Submission Framework v1: 保留（送信できず再送待ち）の記録一覧。入口はHomeScreenの保留サマリー
+  | { name: 'pendingList' }
   | { name: 'field' }
   | { name: 'processing' }
   | { name: 'workDetail'; workId: string }
@@ -84,7 +88,8 @@ function AppRoutes() {
   if (screen.name === 'record')     return <RecordScreen noteId={screen.noteId} go={go} />;
   if (screen.name === 'review')     return <ReviewDetailScreen noteId={screen.noteId} go={go} />;
   if (screen.name === 'list')       return <NoteListScreen go={go} />;
-  if (screen.name === 'foodLog')    return <FoodLogScreen go={go} />;
+  if (screen.name === 'foodLog')    return <FoodLogScreen go={go} editItemId={screen.editItemId} />;
+  if (screen.name === 'pendingList') return <PendingListScreen go={go} />;
   if (screen.name === 'field')      return <FieldScreen go={go} />;
   if (screen.name === 'processing') return <ProcessingScreen go={go} />;
   if (screen.name === 'workDetail') return <WorkDetailScreen go={go} workId={screen.workId} />;

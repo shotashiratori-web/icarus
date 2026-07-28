@@ -3,9 +3,10 @@ import type { WineNote } from '../types/wine';
 import type { PhotoEntry, CommonFields, SubmitMode } from '../types/foodLog';
 
 const DB_NAME = 'icarus';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = 'notes';
 const DRAFT_STORE = 'food_log_draft';
+export const QUEUE_STORE = 'submission_queue';
 
 export interface FoodLogDraft {
   id: 'current';
@@ -18,7 +19,7 @@ export interface FoodLogDraft {
 
 let _db: IDBPDatabase | null = null;
 
-async function getDB() {
+export async function getDB() {
   if (!_db) {
     _db = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {
@@ -29,6 +30,11 @@ async function getDB() {
         }
         if (!db.objectStoreNames.contains(DRAFT_STORE)) {
           db.createObjectStore(DRAFT_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+          const store = db.createObjectStore(QUEUE_STORE, { keyPath: 'id' });
+          store.createIndex('by_entity', 'entity');
+          store.createIndex('by_updatedAt', 'updatedAt');
         }
       },
     });

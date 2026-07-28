@@ -29,13 +29,13 @@ export interface FoodCandidate {
   category: string;
 }
 
-export type PhotoSendStatus = 'pending' | 'sending' | 'success' | 'error';
+// 'queued' = 送信できず保留（Submission Frameworkのqueueへ格納済み）。「失敗」ではなく「あとで再送できる」状態。
+export type PhotoSendStatus = 'idle' | 'sending' | 'success' | 'queued';
 
 export interface PhotoSendResult {
   photoIndex: number;
   status: PhotoSendStatus;
   result?: FoodLogSuccess;
-  error?: string;
 }
 
 export interface FoodLogSuccess {
