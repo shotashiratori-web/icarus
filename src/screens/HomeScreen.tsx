@@ -103,6 +103,10 @@ export default function HomeScreen({ go }: Props) {
               <span className={styles.navIcon}>📋</span>
               <span>Daily確認</span>
             </button>
+            <button className={styles.navBtn} onClick={() => go({ name: 'spotList' })}>
+              <span className={styles.navIcon}>📍</span>
+              <span>スポット管理</span>
+            </button>
             <button className={styles.navBtn} onClick={() => go({ name: 'metaDebug' })}>
               <span className={styles.navIcon}>🔬</span>
               <span>画像メタデータ調査</span>
