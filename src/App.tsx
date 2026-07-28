@@ -18,11 +18,15 @@ import ZukanFieldDetailScreen from './screens/ZukanFieldDetailScreen';
 import WineListScreen from './screens/WineListScreen';
 import WineDetailScreen from './screens/WineDetailScreen';
 import WineFormScreen from './screens/WineFormScreen';
+import SpotListScreen from './screens/SpotListScreen';
+import SpotDetailScreen from './screens/SpotDetailScreen';
+import SpotFormScreen from './screens/SpotFormScreen';
 import MetaDebugScreen from './screens/MetaDebugScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
+import type { SpotEntity } from './types/spotEntity';
 
 // leafletはフィールドマップを開くまで読み込まない（バンドルサイズ抑制のため動的import）
 const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
@@ -58,6 +62,11 @@ export type Screen =
   | { name: 'wineForm'; mode: 'edit'; wine: WineEntity }
   // Phase9: ワイン図鑑（閲覧専用）。今回は入口が一覧のみのため、フィールド詳細のような再帰from構造は持たない
   | { name: 'wineDetail'; entry: WineEntity }
+  // Spot Entity（管理画面のみ。Spot図鑑〈閲覧UI〉は次Phase。入口はHomeScreenのadmin向けnavRow）
+  | { name: 'spotList' }
+  | { name: 'spotForm'; mode: 'create' }
+  | { name: 'spotForm'; mode: 'edit'; spot: SpotEntity }
+  | { name: 'spotDetail'; entry: SpotEntity }
   // 画像メタデータ調査用デバッグ画面。認証不要・データ送信なし（?debug=metaで直接開ける）
   | { name: 'metaDebug' };
 
@@ -116,6 +125,11 @@ function AppRoutes() {
   if (screen.name === 'wineForm') return screen.mode === 'edit'
     ? <WineFormScreen go={go} mode="edit" wine={screen.wine} />
     : <WineFormScreen go={go} mode="create" />;
+  if (screen.name === 'spotList') return <SpotListScreen go={go} />;
+  if (screen.name === 'spotDetail') return <SpotDetailScreen go={go} entry={screen.entry} />;
+  if (screen.name === 'spotForm') return screen.mode === 'edit'
+    ? <SpotFormScreen go={go} mode="edit" spot={screen.spot} />
+    : <SpotFormScreen go={go} mode="create" />;
 
   return null;
 }
