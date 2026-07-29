@@ -27,3 +27,4 @@ export const DAILY_ADMIN_REQUEST_MORE_URL = `${WORKER_URL}/admin/daily/request-m
 export const WINES_URL = `${WORKER_URL}/wines`;
 export const SPOTS_URL = `${WORKER_URL}/spots`;
 export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
+export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { resizeToJpeg, extractExifDate, extractExifGps } from '../api/icarusApi';
+import { resizeToJpeg, extractExifDate, extractExifGps, sha256Hex, checkPhotoHashes } from '../api/icarusApi';
 import { emptyCommonFields, emptyPhotoEntry, todayString, type PhotoEntry } from '../types/foodLog';
 import { useAuth } from '../context/AuthContext';
 import { submitWithFallback } from '../submission/orchestrator';
@@ -17,8 +17,16 @@ interface Item {
   requestId: string;
   fileName: string;
   fileBlob: Blob;
+  fileHash: string;
   status: PhotoBatchStatus;
   previewUrl?: string;
+}
+
+// 選択直後、キューに積む前の重複チェック待ち状態
+interface PendingFile {
+  file: File;
+  hash: string;
+  isDuplicate: boolean;
 }
 
 const STATUS_LABEL: Record<PhotoBatchStatus, string> = {
@@ -40,6 +48,8 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
   const [dragActive, setDragActive] = useState(false);
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
   const [dbError, setDbError] = useState(false);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[] | null>(null);
   const batchIdRef = useRef<string>(crypto.randomUUID());
   const pauseRef = useRef(false);
 
@@ -54,6 +64,7 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
             requestId: it.requestId,
             fileName: it.fileName,
             fileBlob: it.fileBlob,
+            fileHash: it.fileHash ?? '',
             status: it.status,
           })),
         ]);
@@ -62,40 +73,68 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
       .catch(() => setDbError(true));
   }, []);
 
-  const addFiles = async (files: File[]) => {
+  // 写真選択直後: SHA-256を計算し、サーバーに登録済みかどうかをまとめて確認する。
+  // 重複チェック自体に失敗しても写真の取り込みは止めない（fail-open。新規として扱う）
+  const handleIncomingFiles = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    setCheckingDuplicates(true);
+    try {
+      const hashes = await Promise.all(imageFiles.map((f) => sha256Hex(f)));
+      let existing: Set<string>;
+      try {
+        existing = idToken ? await checkPhotoHashes(hashes, idToken) : new Set();
+      } catch {
+        existing = new Set();
+      }
+      setPendingFiles(imageFiles.map((file, i) => ({
+        file, hash: hashes[i], isDuplicate: existing.has(hashes[i]),
+      })));
+    } finally {
+      setCheckingDuplicates(false);
+    }
+  };
+
+  // 重複チェック結果の確認後、実際にキュー（IndexedDB）へ積む
+  const commitPendingFiles = async (mode: 'newOnly' | 'all') => {
+    const toQueue = (pendingFiles ?? []).filter((p) => mode === 'all' || !p.isDuplicate);
     const now = new Date().toISOString();
     const newItems: Item[] = [];
     try {
-      for (const file of imageFiles) {
+      for (const p of toQueue) {
         const requestId = crypto.randomUUID();
         await putBatchItem({
           requestId,
           batchId: batchIdRef.current,
-          fileName: file.name,
-          fileBlob: file,
+          fileName: p.file.name,
+          fileBlob: p.file,
+          fileHash: p.hash,
           status: 'queued',
           createdAt: now,
           updatedAt: now,
         });
-        newItems.push({ requestId, fileName: file.name, fileBlob: file, status: 'queued' });
+        newItems.push({ requestId, fileName: p.file.name, fileBlob: p.file, fileHash: p.hash, status: 'queued' });
       }
     } catch {
       setDbError(true);
+      setPendingFiles(null);
       return;
     }
     setItems((prev) => [...prev, ...newItems]);
+    setPendingFiles(null);
   };
 
+  const cancelPendingFiles = () => setPendingFiles(null);
+
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    void addFiles(Array.from(e.target.files ?? []));
+    void handleIncomingFiles(Array.from(e.target.files ?? []));
     e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragActive(false);
-    void addFiles(Array.from(e.dataTransfer.files ?? []));
+    void handleIncomingFiles(Array.from(e.dataTransfer.files ?? []));
   };
 
   const updateLocalItem = (requestId: string, patch: Partial<Item>) => {
@@ -123,6 +162,8 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
         date: exif?.date || todayString(),
         takenAt: exif?.takenAt,
         gps: exifGps ? { ...exifGps, accuracy: 0 } : undefined,
+        fileHash: item.fileHash || undefined,
+        fileName: item.fileName,
       };
       const { previewUrl: _pv, ...photoForPayload } = entry;
       const payload: FoodLogSubmissionPayload = { photo: photoForPayload, common: emptyCommonFields() };
@@ -204,6 +245,39 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
             <p className={styles.errorText}>{DB_ERROR_TITLE}</p>
             <p className={styles.errorText}>{DB_ERROR_HINT}</p>
             <button className={styles.retryBtn} onClick={() => window.location.reload()}>再読み込み</button>
+          </div>
+        ) : pendingFiles ? (
+          <div className={styles.dupCheckBox}>
+            <p className={styles.dupCheckSummary}>{pendingFiles.length}枚選択</p>
+            <div className={styles.summaryRow}>
+              <span>新規 {pendingFiles.filter((p) => !p.isDuplicate).length}枚</span>
+              <span>登録済み {pendingFiles.filter((p) => p.isDuplicate).length}枚</span>
+            </div>
+            <ul className={styles.dupCheckList}>
+              {pendingFiles.map((p) => (
+                <li
+                  key={p.hash + p.file.name}
+                  className={p.isDuplicate ? styles.dupCheckItemDup : styles.dupCheckItemNew}
+                >
+                  {p.isDuplicate ? `⚠ ${p.file.name}（登録済み）` : `✓ ${p.file.name}`}
+                </li>
+              ))}
+            </ul>
+            <div className={styles.actionsRow}>
+              <button
+                className={styles.sendBtn}
+                onClick={() => void commitPendingFiles('newOnly')}
+                disabled={pendingFiles.every((p) => p.isDuplicate)}
+              >
+                {pendingFiles.filter((p) => !p.isDuplicate).length}枚だけ送信
+              </button>
+              <button className={styles.pauseBtn} onClick={() => void commitPendingFiles('all')}>すべて送信</button>
+              <button className={styles.pauseBtn} onClick={cancelPendingFiles}>キャンセル</button>
+            </div>
+          </div>
+        ) : checkingDuplicates ? (
+          <div className={styles.dropZone}>
+            <span className={styles.dropZoneText}>重複チェック中…</span>
           </div>
         ) : (
           <div

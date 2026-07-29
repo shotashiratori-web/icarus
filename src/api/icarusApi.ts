@@ -1,5 +1,5 @@
 import { parse as parseExif, gps as parseExifGps } from 'exifr';
-import { WORKER_URL, GAS_PUBLIC_URL } from '../config';
+import { WORKER_URL, GAS_PUBLIC_URL, PHOTO_HASH_CHECK_URL } from '../config';
 import type { PhotoEntry, CommonFields, FoodLogSuccess, FoodLogApiError, FoodCandidate } from '../types/foodLog';
 
 export async function extractExifDate(file: File): Promise<{ date: string; takenAt: string } | null> {
@@ -65,6 +65,8 @@ export async function submitPhotoEntry(
         longitude: photo.gps?.lng,
         gpsAccuracy: photo.gps?.accuracy,
         takenAt: photo.takenAt,
+        fileHash: photo.fileHash,
+        fileName: photo.fileName,
       }),
     });
   } catch {
@@ -87,6 +89,38 @@ export async function submitPhotoEntry(
   }
 
   return json as FoodLogSuccess;
+}
+
+// 重複写真チェック用。元ファイル（リサイズ前）のバイト列からSHA-256を計算する
+export async function sha256Hex(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const PHOTO_HASH_CHECK_CHUNK_SIZE = 200; // サーバー側の上限と合わせる。将来数千件規模でも同じAPIをチャンクして呼ぶだけで対応できる
+
+// サーバーに既に登録済みのハッシュ集合を返す。200件ずつチャンクして問い合わせる
+export async function checkPhotoHashes(hashes: string[], idToken: string): Promise<Set<string>> {
+  const existing = new Set<string>();
+  for (let i = 0; i < hashes.length; i += PHOTO_HASH_CHECK_CHUNK_SIZE) {
+    const chunk = hashes.slice(i, i + PHOTO_HASH_CHECK_CHUNK_SIZE);
+    const res = await fetch(PHOTO_HASH_CHECK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ hashes: chunk }),
+    });
+    if (!res.ok) throw new Error(`重複チェックに失敗しました (HTTP ${res.status})`);
+    const json = (await res.json()) as { status: string; existing?: string[] };
+    if (json.status !== 'success' || !Array.isArray(json.existing)) {
+      throw new Error('重複チェックのレスポンスが不正です');
+    }
+    for (const h of json.existing) existing.add(h);
+  }
+  return existing;
 }
 
 export async function fetchFoodCandidates(): Promise<FoodCandidate[]> {

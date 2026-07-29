@@ -110,6 +110,38 @@
   background: var(--color-bg);
 }
 
+.dupCheckBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.dupCheckSummary {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+}
+
+.dupCheckList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: var(--font-size-xs);
+}
+
+.dupCheckItemNew {
+  color: var(--color-synced);
+}
+
+.dupCheckItemDup {
+  color: var(--color-failed);
+}
+
 .summaryRow {
   display: flex;
   gap: var(--space-4);

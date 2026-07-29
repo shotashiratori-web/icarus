@@ -10,6 +10,7 @@ export interface PhotoBatchItem {
   batchId: string;
   fileName: string;
   fileBlob: Blob;
+  fileHash: string; // 重複写真チェック用のSHA-256（元ファイルのバイト列）
   status: PhotoBatchStatus;
   createdAt: string;
   updatedAt: string;

@@ -14,6 +14,9 @@ export interface PhotoEntry {
   largeCategory?: string;
   place?: string;
   harvested?: string;
+  // PC一括写真送信の重複チェック用（元ファイルのSHA-256）。他画面では未設定のまま
+  fileHash?: string;
+  fileName?: string;
 }
 
 export type SubmitMode = 'batch' | 'individual';
