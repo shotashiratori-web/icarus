@@ -27,7 +27,7 @@ export async function fetchFieldLogEntries(): Promise<FieldLogEntry[]> {
     const [lng, lat] = f.geometry.coordinates;
     const { foodName, place, date, memo, photoUrl, notionUrl, elevation, kigo, recordedAt } = f.properties;
     return {
-      id: buildFieldLogId(date, lat, lng),
+      id: buildFieldLogId(date, lat, lng, recordedAt),
       foodName, place, date, memo, photoUrl, notionUrl, elevation, kigo, lat, lng,
       recordedAt: recordedAt || '',
     };

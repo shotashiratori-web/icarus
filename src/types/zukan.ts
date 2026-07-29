@@ -1,5 +1,5 @@
 export interface FieldLogEntry {
-  id: string; // 仮ID（date+lat+lngから生成）。将来、正式なIDに置き換える前提の暫定キー
+  id: string; // 仮ID（recordedAt+date+lat+lngから生成）。将来、正式なIDに置き換える前提の暫定キー
   foodName: string;
   place: string;
   date: string;
@@ -34,6 +34,10 @@ export interface FieldLogGeoJson {
   features: FieldLogGeoJsonFeature[];
 }
 
-export function buildFieldLogId(date: string, lat: number, lng: number): string {
-  return `${date}_${lat.toFixed(6)}_${lng.toFixed(6)}`;
+// date+lat+lngだけでは、同じ日付・同じ地点で複数回記録した場合にIDが衝突する
+// （実際に286件中20組で衝突し、並び替え時のReact keyの衝突→再描画不具合の原因になっていた）。
+// recordedAtは登録ごとに一意（秒単位）なので、あれば付加して衝突を防ぐ
+export function buildFieldLogId(date: string, lat: number, lng: number, recordedAt?: string): string {
+  const base = `${date}_${lat.toFixed(6)}_${lng.toFixed(6)}`;
+  return recordedAt ? `${base}_${recordedAt}` : base;
 }
