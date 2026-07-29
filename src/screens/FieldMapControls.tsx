@@ -1,4 +1,5 @@
 import type { TimeFilterKey } from '../utils/fieldTimeFilter';
+import type { FieldSortMode } from '../store/zukanFieldStore';
 import styles from './FieldMapControls.module.css';
 
 type Props = {
@@ -20,8 +21,17 @@ type Props = {
   dimMode: boolean;
   onDimModeChange: (dim: boolean) => void;
 
+  sortMode: FieldSortMode;
+  onSortModeChange: (mode: FieldSortMode) => void;
+
   statusText: string;
 };
+
+const SORT_OPTIONS: { key: FieldSortMode; label: string }[] = [
+  { key: 'addedDesc', label: '追加が新しい順' },
+  { key: 'addedAsc', label: '追加が古い順' },
+  { key: 'takenDesc', label: '撮影日時順' },
+];
 
 const TIME_PRESETS: { key: TimeFilterKey; label: string; star?: boolean }[] = [
   { key: 'last-year-same', label: '去年の同じ時期', star: true },
@@ -37,6 +47,7 @@ export default function FieldMapControls({
   timeFilter, onTimeFilterChange, yearOptions,
   customDateStart, customDateEnd, onCustomDateChange,
   dimMode, onDimModeChange,
+  sortMode, onSortModeChange,
   statusText,
 }: Props) {
   return (
@@ -122,6 +133,18 @@ export default function FieldMapControls({
         <button className={`${styles.dBtn} ${!dimMode ? styles.dBtnActive : ''}`} onClick={() => onDimModeChange(false)}>
           対象外を非表示
         </button>
+      </div>
+
+      <div className={styles.sortBar}>
+        {SORT_OPTIONS.map(({ key, label }) => (
+          <button
+            key={key}
+            className={`${styles.fBtn} ${sortMode === key ? styles.fBtnActive : ''}`}
+            onClick={() => onSortModeChange(key)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className={styles.status}>{statusText}</div>

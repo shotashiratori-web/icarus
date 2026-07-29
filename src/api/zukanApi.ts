@@ -25,10 +25,11 @@ export async function fetchFieldLogEntries(): Promise<FieldLogEntry[]> {
 
   return json.features.map((f) => {
     const [lng, lat] = f.geometry.coordinates;
-    const { foodName, place, date, memo, photoUrl, notionUrl, elevation, kigo } = f.properties;
+    const { foodName, place, date, memo, photoUrl, notionUrl, elevation, kigo, recordedAt } = f.properties;
     return {
       id: buildFieldLogId(date, lat, lng),
       foodName, place, date, memo, photoUrl, notionUrl, elevation, kigo, lat, lng,
+      recordedAt: recordedAt || '',
     };
   });
 }

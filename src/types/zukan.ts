@@ -10,6 +10,7 @@ export interface FieldLogEntry {
   kigo: string;
   lat: number;
   lng: number;
+  recordedAt: string; // Icarusへ登録された日時（撮影日時=dateとは別。追加順ソート用）
 }
 
 interface FieldLogGeoJsonFeature {
@@ -24,6 +25,7 @@ interface FieldLogGeoJsonFeature {
     notionUrl: string;
     elevation: number | null;
     kigo: string;
+    recordedAt?: string;
   };
 }
 

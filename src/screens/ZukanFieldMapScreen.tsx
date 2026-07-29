@@ -24,6 +24,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
     listScrollTop, setListScrollTop, sheetSnap, setSheetSnap,
     timeFilter, setTimeFilter, customDateStart, customDateEnd, setCustomDateRange,
     dimMode, setDimMode,
+    sortMode, setSortMode,
   } = useZukanFieldStore();
 
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +117,8 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
               onCustomDateChange={setCustomDateRange}
               dimMode={dimMode}
               onDimModeChange={setDimMode}
+              sortMode={sortMode}
+              onSortModeChange={setSortMode}
               statusText={statusText}
             />
 

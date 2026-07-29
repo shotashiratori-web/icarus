@@ -6,8 +6,24 @@ import type { SheetSnap } from '../types/sheet';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
+// 撮影日時順（デフォルトの観察日ベース）とは別に、Icarusへ登録された順の並び替えを提供する
+export type FieldSortMode = 'takenDesc' | 'addedDesc' | 'addedAsc';
+
+function sortFieldEntries(entries: FieldLogEntry[], mode: FieldSortMode): FieldLogEntry[] {
+  const sorted = [...entries];
+  if (mode === 'addedDesc') {
+    sorted.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+  } else if (mode === 'addedAsc') {
+    sorted.sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  } else {
+    sorted.sort((a, b) => b.date.localeCompare(a.date));
+  }
+  return sorted;
+}
+
 type ZukanFieldStore = {
   entries: FieldLogEntry[];
+  sortMode: FieldSortMode;
   loadState: LoadState;
   errorMessage: string;
 
@@ -28,6 +44,7 @@ type ZukanFieldStore = {
   // データはフィールドマップ画面内で共有する。既に読み込み済みなら再fetchしない
   ensureLoaded: () => Promise<void>;
   reload: () => Promise<void>;
+  setSortMode: (mode: FieldSortMode) => void;
   setSearchQuery: (q: string) => void;
   setKigoFilter: (k: string) => void;
   setListScrollTop: (top: number) => void;
@@ -39,6 +56,7 @@ type ZukanFieldStore = {
 
 export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   entries: [],
+  sortMode: 'addedDesc',
   loadState: 'idle',
   errorMessage: '',
   searchQuery: '',
@@ -60,13 +78,14 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
     set({ loadState: 'loading', errorMessage: '' });
     try {
       const items = await fetchFieldLogEntries();
-      items.sort((a, b) => b.date.localeCompare(a.date));
-      set({ entries: items, loadState: 'ready' });
+      set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
     } catch (e) {
       const message = e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました';
       set({ loadState: 'error', errorMessage: message });
     }
   },
+
+  setSortMode: (mode) => set((state) => ({ sortMode: mode, entries: sortFieldEntries(state.entries, mode) })),
 
   setSearchQuery: (q) => set({ searchQuery: q }),
   setKigoFilter: (k) => set({ kigoFilter: k }),

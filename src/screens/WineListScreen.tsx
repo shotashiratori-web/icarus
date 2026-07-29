@@ -9,7 +9,7 @@ import styles from './WineListScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
 type LoadState = 'loading' | 'ready' | 'error';
-type SortKey = 'updated' | 'title';
+type SortKey = 'added' | 'updated' | 'title';
 
 export default function WineListScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
@@ -17,7 +17,7 @@ export default function WineListScreen({ go }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('updated');
+  const [sortKey, setSortKey] = useState<SortKey>('added');
   const [varietyFilter, setVarietyFilter] = useState('');
 
   const load = async (token: string) => {
@@ -52,7 +52,8 @@ export default function WineListScreen({ go }: Props) {
     });
     const sorted = [...list];
     if (sortKey === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
-    else sorted.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    else if (sortKey === 'updated') sorted.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    else sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return sorted;
   }, [items, searchQuery, sortKey, varietyFilter]);
 
@@ -96,6 +97,7 @@ export default function WineListScreen({ go }: Props) {
                 placeholder="ワイン名・生産者・品種・産地で検索"
               />
               <select className={styles.sortSelect} value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
+                <option value="added">追加が新しい順</option>
                 <option value="updated">更新順</option>
                 <option value="title">名前順</option>
               </select>
