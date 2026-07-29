@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { resizeToJpeg, extractExifDate, extractExifGps, sha256Hex, checkPhotoHashes } from '../api/icarusApi';
+import {
+  resizeToJpeg, extractExifDate, extractExifGps, sha256Hex, checkPhotoHashes,
+  isHeicFile, convertHeicToJpeg,
+} from '../api/icarusApi';
 import { emptyCommonFields, emptyPhotoEntry, todayString, type PhotoEntry } from '../types/foodLog';
 import { useAuth } from '../context/AuthContext';
 import { submitWithFallback } from '../submission/orchestrator';
@@ -20,6 +23,7 @@ interface Item {
   fileHash: string;
   status: PhotoBatchStatus;
   previewUrl?: string;
+  lastError?: string;
 }
 
 // 選択直後、キューに積む前の重複チェック待ち状態
@@ -34,6 +38,7 @@ const STATUS_LABEL: Record<PhotoBatchStatus, string> = {
   processing: '処理中…',
   completed: '送信済み',
   pending: '保留（あとで再送）',
+  error: 'エラー',
 };
 
 // IndexedDBのアップグレードが他タブにブロックされ、getDB()がタイムアウトした場合のUI文言。
@@ -66,6 +71,7 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
             fileBlob: it.fileBlob,
             fileHash: it.fileHash ?? '',
             status: it.status,
+            lastError: it.lastError,
           })),
         ]);
         setHasStartedOnce(true);
@@ -143,31 +149,50 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
 
   // 1件処理する。送信前にprocessingへ永続化し、タブが閉じられても「どこまで進んだか」が残るようにする。
   // requestIdは常に固定（キュー投入時に採番したもの）を使い、再開時の再送でもGAS側の重複排除に乗る。
+  //
+  // 前半（HEIC変換・リサイズ・EXIF抽出）の失敗は、未対応形式や壊れたファイルなど
+  // リトライしても直らない恒久的な失敗として扱い、'error'へ移して次の写真へ進む（'queued'には戻さない＝自動再送しない）。
+  // 後半（実際の送信）の失敗は、通信断・5xx・認証切れなど一時的な失敗として扱い、
+  // 従来どおり'pending'（保留一覧から再送可能）にする。
   const processOne = async (item: Item) => {
     updateLocalItem(item.requestId, { status: 'processing' });
     await updateBatchItemStatus(item.requestId, 'processing');
+
+    const file = item.fileBlob as File;
+    let base64: string;
+    let exif: { date: string; takenAt: string } | null;
+    let exifGps: { lat: number; lng: number } | null;
     try {
-      const file = item.fileBlob as File;
-      const [base64, exif, exifGps] = await Promise.all([
-        resizeToJpeg(file),
+      // EXIF/GPSはHEIC変換で失われるため、常に元ファイルから取得する
+      const jpegFile = isHeicFile(file) ? await convertHeicToJpeg(file) : file;
+      [base64, exif, exifGps] = await Promise.all([
+        resizeToJpeg(jpegFile),
         extractExifDate(file),
         extractExifGps(file),
       ]);
-      const previewUrl = `data:image/jpeg;base64,${base64}`;
-      const entry: PhotoEntry = {
-        ...emptyPhotoEntry(),
-        requestId: item.requestId,
-        base64,
-        previewUrl,
-        date: exif?.date || todayString(),
-        takenAt: exif?.takenAt,
-        gps: exifGps ? { ...exifGps, accuracy: 0 } : undefined,
-        fileHash: item.fileHash || undefined,
-        fileName: item.fileName,
-      };
-      const { previewUrl: _pv, ...photoForPayload } = entry;
-      const payload: FoodLogSubmissionPayload = { photo: photoForPayload, common: emptyCommonFields() };
+    } catch {
+      const message = isHeicFile(file) ? 'HEIC変換に失敗しました' : '画像を開けませんでした';
+      updateLocalItem(item.requestId, { status: 'error', lastError: message });
+      await updateBatchItemStatus(item.requestId, 'error', message);
+      return;
+    }
 
+    const previewUrl = `data:image/jpeg;base64,${base64}`;
+    const entry: PhotoEntry = {
+      ...emptyPhotoEntry(),
+      requestId: item.requestId,
+      base64,
+      previewUrl,
+      date: exif?.date || todayString(),
+      takenAt: exif?.takenAt,
+      gps: exifGps ? { ...exifGps, accuracy: 0 } : undefined,
+      fileHash: item.fileHash || undefined,
+      fileName: item.fileName,
+    };
+    const { previewUrl: _pv, ...photoForPayload } = entry;
+    const payload: FoodLogSubmissionPayload = { photo: photoForPayload, common: emptyCommonFields() };
+
+    try {
       const outcome = await submitWithFallback({
         entity: 'foodLog',
         itemId: entry.requestId,
@@ -187,10 +212,20 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
         if (outcome.item.lastError?.code === 'AUTH_EXPIRED') handleTokenExpired();
       }
     } catch {
-      // EXIF抽出等、送信より前の処理が失敗した場合。requestIdは維持したままqueuedへ戻し、再試行できるようにする
+      // 送信呼び出し自体が想定外に例外を投げた場合。一時的な失敗として扱い、再試行できるようqueuedへ戻す
       updateLocalItem(item.requestId, { status: 'queued' });
       await updateBatchItemStatus(item.requestId, 'queued');
     }
+  };
+
+  const retryErrorItem = async (requestId: string) => {
+    updateLocalItem(requestId, { status: 'queued', lastError: undefined });
+    await updateBatchItemStatus(requestId, 'queued');
+  };
+
+  const excludeErrorItem = async (requestId: string) => {
+    setItems((prev) => prev.filter((it) => it.requestId !== requestId));
+    await deleteBatchItem(requestId);
   };
 
   const startSend = async () => {
@@ -214,7 +249,7 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
       acc[it.status] += 1;
       return acc;
     },
-    { queued: 0, processing: 0, completed: 0, pending: 0 } as Record<PhotoBatchStatus, number>,
+    { queued: 0, processing: 0, completed: 0, pending: 0, error: 0 } as Record<PhotoBatchStatus, number>,
   );
 
   const hasQueued = counts.queued > 0;
@@ -302,9 +337,10 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
         {items.length > 0 && (
           <>
             <div className={styles.summaryRow}>
-              <span>残り: {counts.queued}</span>
               <span>完了: {counts.completed}</span>
               <span>保留: {counts.pending}</span>
+              <span>エラー: {counts.error}</span>
+              <span>待機中: {counts.queued}</span>
               {counts.processing > 0 && <span>処理中: {counts.processing}</span>}
             </div>
 
@@ -338,6 +374,15 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
                   <div className={styles.itemBody}>
                     <p className={styles.itemName}>{it.fileName}</p>
                     <span className={styles.itemStatus}>{STATUS_LABEL[it.status]}</span>
+                    {it.status === 'error' && (
+                      <>
+                        {it.lastError && <span className={styles.itemErrorMsg}>{it.lastError}</span>}
+                        <div className={styles.itemErrorActions}>
+                          <button className={styles.retryBtn} onClick={() => void retryErrorItem(it.requestId)}>再試行</button>
+                          <button className={styles.retryBtn} onClick={() => void excludeErrorItem(it.requestId)}>除外</button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </li>
               ))}

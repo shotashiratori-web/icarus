@@ -154,6 +154,25 @@ export async function fetchGps(): Promise<{ lat: number; lng: number; accuracy: 
   return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
 }
 
+// ChromeなどはHEIC/HEIFをnew Image()/canvasでネイティブデコードできないため、
+// resizeToJpeg()へ渡す前にJPEGへ変換しておく必要がある。判定は拡張子とMIME type両方を見る
+// （PCの設定によりFile.typeが空文字になることがあるため、拡張子だけでは取りこぼす場合がある）
+export function isHeicFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  return name.endsWith('.heic') || name.endsWith('.heif')
+    || type === 'image/heic' || type === 'image/heif';
+}
+
+// heic2any（WASM同梱）は実際にHEICファイルに遭遇したときだけ読み込む
+export async function convertHeicToJpeg(file: File): Promise<File> {
+  const { default: heic2any } = await import('heic2any');
+  const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+  const blob = Array.isArray(result) ? result[0] : result;
+  const jpegName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+  return new File([blob], jpegName, { type: 'image/jpeg' });
+}
+
 export async function resizeToJpeg(
   file: File,
   maxPx = 2048,
