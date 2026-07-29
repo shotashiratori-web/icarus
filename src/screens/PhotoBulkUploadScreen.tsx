@@ -1,27 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resizeToJpeg, extractExifDate, extractExifGps } from '../api/icarusApi';
 import { emptyCommonFields, emptyPhotoEntry, todayString, type PhotoEntry } from '../types/foodLog';
 import { useAuth } from '../context/AuthContext';
 import { submitWithFallback } from '../submission/orchestrator';
 import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
+import {
+  putBatchItem, updateBatchItemStatus, deleteBatchItem, recoverIncompleteBatchItems,
+  type PhotoBatchStatus,
+} from '../db/photoBatchDB';
 import type { Screen } from '../App';
 import styles from './PhotoBulkUploadScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
-type ItemStatus = 'idle' | 'processing' | 'success' | 'queued' | 'error';
 
 interface Item {
-  file: File;
-  status: ItemStatus;
+  requestId: string;
+  fileName: string;
+  fileBlob: Blob;
+  status: PhotoBatchStatus;
   previewUrl?: string;
 }
 
-const STATUS_LABEL: Record<ItemStatus, string> = {
-  idle: '待機中',
+const STATUS_LABEL: Record<PhotoBatchStatus, string> = {
+  queued: '待機中',
   processing: '処理中…',
-  success: '送信済み',
-  queued: '保留（あとで再送）',
-  error: '処理失敗',
+  completed: '送信済み',
+  pending: '保留（あとで再送）',
 };
 
 export default function PhotoBulkUploadScreen({ go }: Props) {
@@ -29,32 +33,69 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [hasStartedOnce, setHasStartedOnce] = useState(false);
+  const batchIdRef = useRef<string>(crypto.randomUUID());
+  const pauseRef = useRef(false);
 
-  const addFiles = (files: File[]) => {
+  // 起動時: 前回タブが閉じられた/再読み込みされたことで中断されたバッチがあれば復元する
+  useEffect(() => {
+    recoverIncompleteBatchItems().then((recovered) => {
+      if (recovered.length === 0) return;
+      setItems((prev) => [
+        ...prev,
+        ...recovered.map((it) => ({
+          requestId: it.requestId,
+          fileName: it.fileName,
+          fileBlob: it.fileBlob,
+          status: it.status,
+        })),
+      ]);
+      setHasStartedOnce(true);
+    });
+  }, []);
+
+  const addFiles = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
-    setItems((prev) => [...prev, ...imageFiles.map((file) => ({ file, status: 'idle' as ItemStatus }))]);
+    const now = new Date().toISOString();
+    const newItems: Item[] = [];
+    for (const file of imageFiles) {
+      const requestId = crypto.randomUUID();
+      await putBatchItem({
+        requestId,
+        batchId: batchIdRef.current,
+        fileName: file.name,
+        fileBlob: file,
+        status: 'queued',
+        createdAt: now,
+        updatedAt: now,
+      });
+      newItems.push({ requestId, fileName: file.name, fileBlob: file, status: 'queued' });
+    }
+    setItems((prev) => [...prev, ...newItems]);
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    addFiles(Array.from(e.target.files ?? []));
+    void addFiles(Array.from(e.target.files ?? []));
     e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragActive(false);
-    addFiles(Array.from(e.dataTransfer.files ?? []));
+    void addFiles(Array.from(e.dataTransfer.files ?? []));
   };
 
-  const updateItem = (idx: number, patch: Partial<Item>) => {
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const updateLocalItem = (requestId: string, patch: Partial<Item>) => {
+    setItems((prev) => prev.map((it) => (it.requestId === requestId ? { ...it, ...patch } : it)));
   };
 
-  // 1枚ずつ順番に処理する（EXIF抽出・base64化・送信）。同時に複数枚をメモリへ持たないための逐次処理。
-  const processOne = async (idx: number) => {
-    const file = items[idx].file;
-    updateItem(idx, { status: 'processing' });
+  // 1件処理する。送信前にprocessingへ永続化し、タブが閉じられても「どこまで進んだか」が残るようにする。
+  // requestIdは常に固定（キュー投入時に採番したもの）を使い、再開時の再送でもGAS側の重複排除に乗る。
+  const processOne = async (item: Item) => {
+    updateLocalItem(item.requestId, { status: 'processing' });
+    await updateBatchItemStatus(item.requestId, 'processing');
     try {
+      const file = item.fileBlob as File;
       const [base64, exif, exifGps] = await Promise.all([
         resizeToJpeg(file),
         extractExifDate(file),
@@ -63,6 +104,7 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
       const previewUrl = `data:image/jpeg;base64,${base64}`;
       const entry: PhotoEntry = {
         ...emptyPhotoEntry(),
+        requestId: item.requestId,
         base64,
         previewUrl,
         date: exif?.date || todayString(),
@@ -76,30 +118,41 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
         entity: 'foodLog',
         itemId: entry.requestId,
         payload,
-        title: `(食材名未入力) ${file.name}`,
+        title: `(食材名未入力) ${item.fileName}`,
         photoThumbnail: previewUrl,
         displayDate: entry.date,
         idToken,
       });
 
       if (outcome.ok) {
-        updateItem(idx, { status: 'success', previewUrl });
+        updateLocalItem(item.requestId, { status: 'completed', previewUrl });
+        await deleteBatchItem(item.requestId);
       } else {
-        updateItem(idx, { status: 'queued', previewUrl });
+        updateLocalItem(item.requestId, { status: 'pending', previewUrl });
+        await updateBatchItemStatus(item.requestId, 'pending');
         if (outcome.item.lastError?.code === 'AUTH_EXPIRED') handleTokenExpired();
       }
     } catch {
-      updateItem(idx, { status: 'error' });
+      // EXIF抽出等、送信より前の処理が失敗した場合。requestIdは維持したままqueuedへ戻し、再試行できるようにする
+      updateLocalItem(item.requestId, { status: 'queued' });
+      await updateBatchItemStatus(item.requestId, 'queued');
     }
   };
 
   const startSend = async () => {
     setSending(true);
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].status === 'success' || items[i].status === 'queued') continue;
-      await processOne(i);
+    setHasStartedOnce(true);
+    pauseRef.current = false;
+    const toProcess = items.filter((it) => it.status === 'queued');
+    for (const item of toProcess) {
+      if (pauseRef.current) break;
+      await processOne(item);
     }
     setSending(false);
+  };
+
+  const requestPause = () => {
+    pauseRef.current = true;
   };
 
   const counts = items.reduce(
@@ -107,8 +160,10 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
       acc[it.status] += 1;
       return acc;
     },
-    { idle: 0, processing: 0, success: 0, queued: 0, error: 0 } as Record<ItemStatus, number>,
+    { queued: 0, processing: 0, completed: 0, pending: 0 } as Record<PhotoBatchStatus, number>,
   );
+
+  const hasQueued = counts.queued > 0;
 
   return (
     <div className={styles.root}>
@@ -128,6 +183,7 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
         <p className={styles.description}>
           食材名・場所などは入力せず、写真だけをまとめて送信します。撮影日時・GPSは写真から自動取得します。
           送信後は食材ログに「未整理」の記録として保存され、あとから食材名などを追記できます。
+          選択した写真は送信前に端末へ保存されるため、送信中にタブを閉じても後で再開できます。
         </p>
 
         <div
@@ -151,38 +207,42 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
         {items.length > 0 && (
           <>
             <div className={styles.summaryRow}>
-              <span>選択中: {items.length}件</span>
-              <span>送信済み: {counts.success}</span>
-              <span>保留: {counts.queued}</span>
-              {counts.error > 0 && <span className={styles.errorCount}>失敗: {counts.error}</span>}
+              <span>残り: {counts.queued}</span>
+              <span>完了: {counts.completed}</span>
+              <span>保留: {counts.pending}</span>
+              {counts.processing > 0 && <span>処理中: {counts.processing}</span>}
             </div>
 
-            <button
-              className={styles.sendBtn}
-              onClick={startSend}
-              disabled={!idToken || sending || items.every((it) => it.status === 'success' || it.status === 'queued')}
-            >
-              {sending ? '送信中…' : '送信を開始する'}
-            </button>
+            <div className={styles.actionsRow}>
+              <button
+                className={styles.sendBtn}
+                onClick={startSend}
+                disabled={!idToken || sending || !hasQueued}
+              >
+                {sending ? '送信中…' : hasStartedOnce ? '再開する' : '送信を開始する'}
+              </button>
+              {sending && (
+                <button className={styles.pauseBtn} onClick={requestPause}>
+                  送信を中断
+                </button>
+              )}
+            </div>
 
-            {counts.error > 0 && !sending && (
-              <p className={styles.errorHint}>
-                処理に失敗した写真があります。この画面を離れると失われます。「再試行」を押してください。
+            {counts.pending > 0 && (
+              <p className={styles.hintText}>
+                保留中の写真は
+                <button className={styles.linkBtn} onClick={() => go({ name: 'pendingList' })}>保留一覧</button>
+                から再送できます。
               </p>
             )}
 
             <ul className={styles.list}>
-              {items.map((it, idx) => (
-                <li key={idx} className={styles.item}>
+              {items.map((it) => (
+                <li key={it.requestId} className={styles.item}>
                   {it.previewUrl && <img src={it.previewUrl} alt="" className={styles.thumb} />}
                   <div className={styles.itemBody}>
-                    <p className={styles.itemName}>{it.file.name}</p>
+                    <p className={styles.itemName}>{it.fileName}</p>
                     <span className={styles.itemStatus}>{STATUS_LABEL[it.status]}</span>
-                    {it.status === 'error' && (
-                      <button className={styles.retryBtn} onClick={() => void processOne(idx)} disabled={sending}>
-                        再試行
-                      </button>
-                    )}
                   </div>
                 </li>
               ))}

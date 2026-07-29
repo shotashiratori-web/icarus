@@ -3,10 +3,12 @@ import type { WineNote } from '../types/wine';
 import type { PhotoEntry, CommonFields, SubmitMode } from '../types/foodLog';
 
 const DB_NAME = 'icarus';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = 'notes';
 const DRAFT_STORE = 'food_log_draft';
 export const QUEUE_STORE = 'submission_queue';
+// PC一括写真送信のバッチ永続化。送信開始前にqueued状態で全件保存し、タブを閉じても再開できるようにする
+export const PHOTO_BATCH_STORE = 'photo_batch_items';
 
 export interface FoodLogDraft {
   id: 'current';
@@ -48,6 +50,11 @@ export async function getDB() {
             const store = db.createObjectStore(QUEUE_STORE, { keyPath: 'id' });
             store.createIndex('by_entity', 'entity');
             store.createIndex('by_updatedAt', 'updatedAt');
+          }
+          if (!db.objectStoreNames.contains(PHOTO_BATCH_STORE)) {
+            const store = db.createObjectStore(PHOTO_BATCH_STORE, { keyPath: 'requestId' });
+            store.createIndex('by_batchId', 'batchId');
+            store.createIndex('by_status', 'status');
           }
         },
         blocked() {

@@ -92,11 +92,13 @@
   color: var(--color-text-sub);
 }
 
-.errorCount {
-  color: var(--color-accent);
+.actionsRow {
+  display: flex;
+  gap: var(--space-3);
 }
 
 .sendBtn {
+  flex: 1;
   font-size: var(--font-size-base);
   font-weight: 700;
   padding: var(--space-4);
@@ -109,9 +111,18 @@
   opacity: 0.5;
 }
 
-.errorHint {
+.pauseBtn {
   font-size: var(--font-size-sm);
-  color: var(--color-accent);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.linkBtn {
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  padding: 0 var(--space-1);
 }
 
 .list {
@@ -156,13 +167,4 @@
 .itemStatus {
   font-size: var(--font-size-xs);
   color: var(--color-text-sub);
-}
-
-.retryBtn {
-  align-self: flex-start;
-  font-size: var(--font-size-xs);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
 }
