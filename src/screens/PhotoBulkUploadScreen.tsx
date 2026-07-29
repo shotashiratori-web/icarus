@@ -28,48 +28,61 @@ const STATUS_LABEL: Record<PhotoBatchStatus, string> = {
   pending: '保留（あとで再送）',
 };
 
+// IndexedDBのアップグレードが他タブにブロックされ、getDB()がタイムアウトした場合のUI文言。
+// localDB側の内部エラーメッセージとは別に、この画面固有の案内文として固定で表示する。
+const DB_ERROR_TITLE = '写真の保存準備ができませんでした。';
+const DB_ERROR_HINT = '別のタブでIcarusが開かれている可能性があります。他のIcarusタブを閉じて、この画面を再読み込みしてください。';
+
 export default function PhotoBulkUploadScreen({ go }: Props) {
   const { idToken, authState, handleTokenExpired, signInContainerRef } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
+  const [dbError, setDbError] = useState(false);
   const batchIdRef = useRef<string>(crypto.randomUUID());
   const pauseRef = useRef(false);
 
   // 起動時: 前回タブが閉じられた/再読み込みされたことで中断されたバッチがあれば復元する
   useEffect(() => {
-    recoverIncompleteBatchItems().then((recovered) => {
-      if (recovered.length === 0) return;
-      setItems((prev) => [
-        ...prev,
-        ...recovered.map((it) => ({
-          requestId: it.requestId,
-          fileName: it.fileName,
-          fileBlob: it.fileBlob,
-          status: it.status,
-        })),
-      ]);
-      setHasStartedOnce(true);
-    });
+    recoverIncompleteBatchItems()
+      .then((recovered) => {
+        if (recovered.length === 0) return;
+        setItems((prev) => [
+          ...prev,
+          ...recovered.map((it) => ({
+            requestId: it.requestId,
+            fileName: it.fileName,
+            fileBlob: it.fileBlob,
+            status: it.status,
+          })),
+        ]);
+        setHasStartedOnce(true);
+      })
+      .catch(() => setDbError(true));
   }, []);
 
   const addFiles = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
     const now = new Date().toISOString();
     const newItems: Item[] = [];
-    for (const file of imageFiles) {
-      const requestId = crypto.randomUUID();
-      await putBatchItem({
-        requestId,
-        batchId: batchIdRef.current,
-        fileName: file.name,
-        fileBlob: file,
-        status: 'queued',
-        createdAt: now,
-        updatedAt: now,
-      });
-      newItems.push({ requestId, fileName: file.name, fileBlob: file, status: 'queued' });
+    try {
+      for (const file of imageFiles) {
+        const requestId = crypto.randomUUID();
+        await putBatchItem({
+          requestId,
+          batchId: batchIdRef.current,
+          fileName: file.name,
+          fileBlob: file,
+          status: 'queued',
+          createdAt: now,
+          updatedAt: now,
+        });
+        newItems.push({ requestId, fileName: file.name, fileBlob: file, status: 'queued' });
+      }
+    } catch {
+      setDbError(true);
+      return;
     }
     setItems((prev) => [...prev, ...newItems]);
   };
@@ -186,23 +199,31 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
           選択した写真は送信前に端末へ保存されるため、送信中にタブを閉じても後で再開できます。
         </p>
 
-        <div
-          className={`${styles.dropZone} ${dragActive ? styles.dropZoneActive : ''}`}
-          onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={handleDrop}
-          onClick={() => document.getElementById('photoBulkInput')?.click()}
-        >
-          <span className={styles.dropZoneText}>クリックして写真を選択、またはここに複数の写真をドラッグ&ドロップ</span>
-          <input
-            id="photoBulkInput"
-            type="file"
-            accept="image/*"
-            multiple
-            className={styles.hiddenInput}
-            onChange={handleFileInput}
-          />
-        </div>
+        {dbError ? (
+          <div className={styles.errorBox}>
+            <p className={styles.errorText}>{DB_ERROR_TITLE}</p>
+            <p className={styles.errorText}>{DB_ERROR_HINT}</p>
+            <button className={styles.retryBtn} onClick={() => window.location.reload()}>再読み込み</button>
+          </div>
+        ) : (
+          <div
+            className={`${styles.dropZone} ${dragActive ? styles.dropZoneActive : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+            onClick={() => document.getElementById('photoBulkInput')?.click()}
+          >
+            <span className={styles.dropZoneText}>クリックして写真を選択、またはここに複数の写真をドラッグ&ドロップ</span>
+            <input
+              id="photoBulkInput"
+              type="file"
+              accept="image/*"
+              multiple
+              className={styles.hiddenInput}
+              onChange={handleFileInput}
+            />
+          </div>
+        )}
 
         {items.length > 0 && (
           <>

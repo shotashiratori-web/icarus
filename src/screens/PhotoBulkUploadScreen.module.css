@@ -85,6 +85,31 @@
   display: none;
 }
 
+.errorBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-failed);
+}
+
+.retryBtn {
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
 .summaryRow {
   display: flex;
   gap: var(--space-4);
