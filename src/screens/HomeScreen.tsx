@@ -125,6 +125,10 @@ export default function HomeScreen({ go }: Props) {
               <span className={styles.navIcon}>🔬</span>
               <span>画像メタデータ調査</span>
             </button>
+            <button className={styles.navBtn} onClick={() => go({ name: 'photoHashRepair' })}>
+              <span className={styles.navIcon}>🩹</span>
+              <span>写真ハッシュ補完</span>
+            </button>
           </div>
         )}
 

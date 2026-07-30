@@ -1,5 +1,5 @@
 import { parse as parseExif, gps as parseExifGps } from 'exifr';
-import { WORKER_URL, GAS_PUBLIC_URL, PHOTO_HASH_CHECK_URL } from '../config';
+import { WORKER_URL, GAS_PUBLIC_URL, PHOTO_HASH_CHECK_URL, PHOTO_HASH_REGISTER_URL } from '../config';
 import type { PhotoEntry, CommonFields, FoodLogSuccess, FoodLogApiError, FoodCandidate } from '../types/foodLog';
 
 export async function extractExifDate(file: File): Promise<{ date: string; takenAt: string } | null> {
@@ -121,6 +121,40 @@ export async function checkPhotoHashes(hashes: string[], idToken: string): Promi
     for (const h of json.existing) existing.add(h);
   }
   return existing;
+}
+
+export interface PhotoHashRegisterResult {
+  registered: number;
+  alreadyExisting: number;
+  failed: number;
+}
+
+// 補完登録専用（管理者限定）。Food Log再送信は発生しない。200件ずつチャンクして呼ぶ
+export async function registerPhotoHashes(
+  items: { hash: string; fileName: string }[],
+  idToken: string,
+): Promise<PhotoHashRegisterResult> {
+  const total: PhotoHashRegisterResult = { registered: 0, alreadyExisting: 0, failed: 0 };
+  for (let i = 0; i < items.length; i += PHOTO_HASH_CHECK_CHUNK_SIZE) {
+    const chunk = items.slice(i, i + PHOTO_HASH_CHECK_CHUNK_SIZE);
+    const res = await fetch(PHOTO_HASH_REGISTER_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ items: chunk }),
+    });
+    if (!res.ok) throw new Error(`補完登録に失敗しました (HTTP ${res.status})`);
+    const json = (await res.json()) as { status: string } & Partial<PhotoHashRegisterResult>;
+    if (json.status !== 'success' || typeof json.registered !== 'number') {
+      throw new Error('補完登録のレスポンスが不正です');
+    }
+    total.registered += json.registered;
+    total.alreadyExisting += json.alreadyExisting ?? 0;
+    total.failed += json.failed ?? 0;
+  }
+  return total;
 }
 
 export async function fetchFoodCandidates(): Promise<FoodCandidate[]> {

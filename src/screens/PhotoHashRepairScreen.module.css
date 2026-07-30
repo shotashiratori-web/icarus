@@ -1,0 +1,143 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.back {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.hintText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  line-height: 1.6;
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-failed);
+}
+
+.dropZone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  cursor: pointer;
+  min-height: 140px;
+}
+
+.dropZoneText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.summaryBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.summaryTitle {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+}
+
+.summaryRow {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: var(--font-size-xs);
+}
+
+.itemNew {
+  color: var(--color-synced);
+}
+
+.itemExisting {
+  color: var(--color-text-sub);
+}
+
+.actionsRow {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.registerBtn {
+  flex: 1;
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+}
+
+.registerBtn:disabled {
+  opacity: 0.5;
+}
+
+.cancelBtn {
+  font-size: var(--font-size-sm);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}

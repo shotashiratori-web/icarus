@@ -23,6 +23,7 @@ import SpotDetailScreen from './screens/SpotDetailScreen';
 import SpotFormScreen from './screens/SpotFormScreen';
 import MetaDebugScreen from './screens/MetaDebugScreen';
 import PhotoBulkUploadScreen from './screens/PhotoBulkUploadScreen';
+import PhotoHashRepairScreen from './screens/PhotoHashRepairScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
@@ -71,7 +72,8 @@ export type Screen =
   // 画像メタデータ調査用デバッグ画面。認証不要・データ送信なし（?debug=metaで直接開ける）
   | { name: 'metaDebug' }
   // PC一括写真送信。食材名等は入力せず写真だけを既存Food Log経路へ送る（未整理として後から編集）
-  | { name: 'photoBulkUpload' };
+  | { name: 'photoBulkUpload' }
+  | { name: 'photoHashRepair' };
 
 function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
@@ -134,6 +136,7 @@ function AppRoutes() {
     ? <SpotFormScreen go={go} mode="edit" spot={screen.spot} />
     : <SpotFormScreen go={go} mode="create" />;
   if (screen.name === 'photoBulkUpload') return <PhotoBulkUploadScreen go={go} />;
+  if (screen.name === 'photoHashRepair') return <PhotoHashRepairScreen go={go} />;
 
   return null;
 }
