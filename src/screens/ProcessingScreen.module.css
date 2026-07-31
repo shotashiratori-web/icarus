@@ -43,11 +43,56 @@
 .skeletonItem { height:64px; border-radius:var(--radius-md); background:linear-gradient(90deg, var(--color-border) 25%, var(--color-bg) 50%, var(--color-border) 75%); background-size:200% 100%; animation:shimmer 1.4s ease-in-out infinite; }
 @keyframes shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
 
-.empty { text-align:center; color:var(--color-text-sub); font-size:var(--font-size-sm); padding:var(--space-8) 0; }
+.empty { display:flex; flex-direction:column; align-items:center; gap:var(--space-3); text-align:center; color:var(--color-text-sub); font-size:var(--font-size-sm); padding:var(--space-8) 0; }
+.clearLinkBtn { font-size:var(--font-size-sm); font-weight:600; color:var(--color-primary); text-decoration:underline; background:none; border:none; padding:0; cursor:pointer; }
 
 .errorBox { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-3); padding:var(--space-4); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); }
+.inlineErrorBox {
+  display:flex; align-items:center; justify-content:space-between; gap:var(--space-3);
+  padding:var(--space-3) var(--space-4); border-radius:var(--radius-md);
+  background:var(--color-surface); border:1px solid var(--color-failed);
+}
 .errorText { font-size:var(--font-size-sm); color:var(--color-failed); }
-.retryBtn { font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); }
+.retryBtn { font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); flex-shrink:0; }
 
 .signInBox { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-3); padding:var(--space-4); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); }
 .hintText { font-size:var(--font-size-sm); color:var(--color-text-sub); }
+
+.searchBar { display:flex; gap:var(--space-2); }
+.searchInput {
+  flex:1; min-width:0; font-size:var(--font-size-base); padding:var(--space-3);
+  border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface); font-family:inherit;
+}
+.searchInput:disabled { opacity:0.6; }
+.searchBtn {
+  flex-shrink:0; padding:var(--space-3) var(--space-4); font-size:var(--font-size-sm); font-weight:600;
+  border-radius:var(--radius-sm); background:var(--color-primary); color:var(--color-primary-fg); border:none;
+}
+.searchBtn:disabled { opacity:0.6; }
+
+.searchActions { display:flex; gap:var(--space-3); }
+.filterToggleBtn, .clearBtn {
+  font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-4);
+  border-radius:var(--radius-sm); background:var(--color-surface); border:1px solid var(--color-border); color:inherit;
+}
+
+.filterPanel {
+  display:flex; flex-direction:column; gap:var(--space-3); padding:var(--space-4);
+  border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border);
+}
+.filterRow { display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; }
+.filterLabel { font-size:var(--font-size-sm); font-weight:600; flex-shrink:0; min-width:4em; }
+.dateInput { font-size:var(--font-size-sm); padding:var(--space-2); border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-bg); font-family:inherit; }
+.fieldError { font-size:var(--font-size-xs); color:var(--color-failed); }
+
+.radioGroup { display:flex; gap:var(--space-3); flex-wrap:wrap; }
+.radioLabel { display:flex; align-items:center; gap:4px; font-size:var(--font-size-sm); }
+
+.applyFilterBtn {
+  align-self:flex-start; font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-4);
+  border-radius:var(--radius-sm); background:var(--color-primary); color:var(--color-primary-fg); border:none;
+}
+.applyFilterBtn:disabled { opacity:0.6; }
+
+.resultCount { font-size:var(--font-size-xs); color:var(--color-text-sub); }
+.searchingHint { font-size:var(--font-size-xs); color:var(--color-text-sub); }

@@ -1,58 +1,68 @@
-import { useEffect, useState } from 'react';
-import { searchWorkLogs, NetworkUnknownError } from '../api/workApi';
+import { useEffect } from 'react';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
-import type { WorkSearchItem } from '../types/workLog';
+import {
+  useWorkSearchStore, isFiltered, type HasPhotoOption, type WorkSearchConditions,
+} from '../store/workSearchStore';
 import type { Screen } from '../App';
 import styles from './ProcessingScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
-type LoadState = 'loading' | 'ready' | 'error';
 
-const INITIAL_LIMIT = 20;
+const HAS_PHOTO_LABELS: Record<HasPhotoOption, string> = {
+  all: 'すべて',
+  withPhoto: '写真あり',
+  withoutPhoto: '写真なし',
+};
+const HAS_PHOTO_OPTIONS: HasPhotoOption[] = ['all', 'withPhoto', 'withoutPhoto'];
+
+function resultCountText(applied: WorkSearchConditions, totalCount: number, shown: number): string {
+  const label = isFiltered(applied) ? '検索結果' : '全';
+  const base = `${label}${totalCount}件`;
+  return shown < totalCount ? `${base}（現在${shown}件表示）` : base;
+}
 
 export default function ProcessingScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
-  const [items, setItems] = useState<WorkSearchItem[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  // 検索UI・「さらに読み込む」はUnit D/Eで使う。ここでは状態として保持するのみ
-  const [pageMeta, setPageMeta] = useState({ limit: INITIAL_LIMIT, offset: 0, hasMore: false });
-  const [state, setState] = useState<LoadState>('loading');
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const load = async (token: string) => {
-    setState('loading');
-    try {
-      const result = await searchWorkLogs({ limit: INITIAL_LIMIT, offset: 0 }, token);
-      setItems(result.items);
-      setTotalCount(result.totalCount);
-      setPageMeta({ limit: result.limit, offset: result.offset, hasMore: result.hasMore });
-      setState('ready');
-    } catch (e) {
-      if (e instanceof TokenExpiredError) {
-        handleTokenExpired();
-        return;
-      }
-      setErrorMessage(
-        e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました',
-      );
-      setState('error');
-    }
-  };
-
-  const retry = () => {
-    if (idToken) void load(idToken);
-  };
+  const store = useWorkSearchStore();
 
   useEffect(() => {
-    if (authState === 'ready' && idToken) void load(idToken);
+    if (authState === 'ready' && idToken) {
+      store.ensureLoaded(idToken).catch((e) => {
+        if (e instanceof TokenExpiredError) handleTokenExpired();
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, idToken]);
 
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('[work/search] pageMeta', pageMeta);
-    }
-  }, [pageMeta]);
+  const submit = () => {
+    if (!idToken) return;
+    store.applyDraft(idToken).catch((e) => {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+    });
+  };
+
+  const handleClear = () => {
+    if (!idToken) return;
+    store.clear(idToken).catch((e) => {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+    });
+  };
+
+  const handleRetry = () => {
+    if (!idToken) return;
+    store.retry(idToken).catch((e) => {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+    });
+  };
+
+  const isBusy = store.loadState === 'loading' || store.loadState === 'searching';
+  const filtered = isFiltered(store.applied);
+  const showInitialSkeleton = authState === 'checking' || (authState === 'ready' && store.loadState === 'loading');
+  const showFullError = authState === 'ready' && store.loadState === 'error' && store.items.length === 0;
+  const showInlineError = store.loadState === 'error' && store.items.length > 0;
+  const showEmpty = store.loadState === 'ready' && store.items.length === 0;
+  const showList = store.items.length > 0;
 
   return (
     <div className={styles.root}>
@@ -67,9 +77,88 @@ export default function ProcessingScreen({ go }: Props) {
         </button>
 
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>最近の作業{state === 'ready' && totalCount > 0 ? `（全${totalCount}件）` : ''}</h2>
+          <h2 className={styles.sectionTitle}>最近の作業</h2>
 
-          {(authState === 'checking' || (authState === 'ready' && state === 'loading')) && (
+          {authState === 'ready' && (
+            <>
+              <div className={styles.searchBar}>
+                <input
+                  className={styles.searchInput}
+                  type="text"
+                  value={store.draft.query}
+                  disabled={isBusy}
+                  placeholder="作業ID・内容・キャプションで検索"
+                  onChange={(e) => store.setDraftQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+                />
+                <button className={styles.searchBtn} disabled={isBusy} onClick={submit}>検索</button>
+              </div>
+
+              <div className={styles.searchActions}>
+                <button
+                  className={styles.filterToggleBtn}
+                  onClick={() => store.setFilterPanelOpen(!store.filterPanelOpen)}
+                  aria-expanded={store.filterPanelOpen}
+                >
+                  絞り込み{filtered ? ' ●' : ''}
+                </button>
+                <button className={styles.clearBtn} disabled={isBusy} onClick={handleClear}>クリア</button>
+              </div>
+
+              {store.filterPanelOpen && (
+                <div className={styles.filterPanel}>
+                  <div className={styles.filterRow}>
+                    <label className={styles.filterLabel}>開始日</label>
+                    <input
+                      className={styles.dateInput}
+                      type="date"
+                      value={store.draft.dateStart}
+                      disabled={isBusy}
+                      onChange={(e) => store.setDraftDateStart(e.target.value)}
+                    />
+                  </div>
+                  <div className={styles.filterRow}>
+                    <label className={styles.filterLabel}>終了日</label>
+                    <input
+                      className={styles.dateInput}
+                      type="date"
+                      value={store.draft.dateEnd}
+                      disabled={isBusy}
+                      onChange={(e) => store.setDraftDateEnd(e.target.value)}
+                    />
+                  </div>
+                  {store.dateRangeError && <p className={styles.fieldError}>{store.dateRangeError}</p>}
+
+                  <div className={styles.filterRow}>
+                    <span className={styles.filterLabel}>写真</span>
+                    <div className={styles.radioGroup}>
+                      {HAS_PHOTO_OPTIONS.map((opt) => (
+                        <label key={opt} className={styles.radioLabel}>
+                          <input
+                            type="radio"
+                            name="hasPhotoOption"
+                            checked={store.draft.hasPhotoOption === opt}
+                            disabled={isBusy}
+                            onChange={() => store.setDraftHasPhotoOption(opt)}
+                          />
+                          {HAS_PHOTO_LABELS[opt]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button className={styles.applyFilterBtn} disabled={isBusy} onClick={submit}>絞り込みを適用</button>
+                </div>
+              )}
+
+              {store.hasLoadedOnce && store.totalCount > 0 && (
+                <p className={styles.resultCount}>{resultCountText(store.applied, store.totalCount, store.items.length)}</p>
+              )}
+              {store.loadState === 'searching' && <p className={styles.searchingHint}>検索中…</p>}
+            </>
+          )}
+
+          {showInitialSkeleton && (
             <div className={styles.skeletonList}>
               {[0, 1, 2].map((i) => (
                 <div key={i} className={styles.skeletonItem} />
@@ -84,20 +173,30 @@ export default function ProcessingScreen({ go }: Props) {
             </div>
           )}
 
-          {authState === 'ready' && state === 'error' && (
+          {showFullError && (
             <div className={styles.errorBox}>
-              <p className={styles.errorText}>{errorMessage}</p>
-              <button className={styles.retryBtn} onClick={retry}>再読み込み</button>
+              <p className={styles.errorText}>{store.errorMessage}</p>
+              <button className={styles.retryBtn} onClick={handleRetry}>再読み込み</button>
             </div>
           )}
 
-          {state === 'ready' && items.length === 0 && (
-            <p className={styles.empty}>最近の作業はありません。</p>
+          {showInlineError && (
+            <div className={styles.inlineErrorBox}>
+              <p className={styles.errorText}>{store.errorMessage}</p>
+              <button className={styles.retryBtn} onClick={handleRetry}>再試行</button>
+            </div>
           )}
 
-          {state === 'ready' && items.length > 0 && (
+          {showEmpty && (
+            <div className={styles.empty}>
+              <p>{filtered ? '条件に一致する作業はありません' : '最近の作業はありません。'}</p>
+              {filtered && <button className={styles.clearLinkBtn} onClick={handleClear}>条件をクリア</button>}
+            </div>
+          )}
+
+          {showList && (
             <div className={styles.list}>
-              {items.map((item) => (
+              {store.items.map((item) => (
                 <button
                   key={item.workId}
                   className={styles.item}
