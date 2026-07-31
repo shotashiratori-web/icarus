@@ -14,11 +14,9 @@ const INITIAL_LIMIT = 20;
 export default function ProcessingScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const [items, setItems] = useState<WorkSearchItem[]>([]);
-  // 検索UI・「さらに読み込む」はUnit D/Eで使う。ここでは状態として保持するのみ
   const [totalCount, setTotalCount] = useState(0);
-  const [limit, setLimit] = useState(INITIAL_LIMIT);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  // 検索UI・「さらに読み込む」はUnit D/Eで使う。ここでは状態として保持するのみ
+  const [pageMeta, setPageMeta] = useState({ limit: INITIAL_LIMIT, offset: 0, hasMore: false });
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -28,9 +26,7 @@ export default function ProcessingScreen({ go }: Props) {
       const result = await searchWorkLogs({ limit: INITIAL_LIMIT, offset: 0 }, token);
       setItems(result.items);
       setTotalCount(result.totalCount);
-      setLimit(result.limit);
-      setOffset(result.offset);
-      setHasMore(result.hasMore);
+      setPageMeta({ limit: result.limit, offset: result.offset, hasMore: result.hasMore });
       setState('ready');
     } catch (e) {
       if (e instanceof TokenExpiredError) {
@@ -51,6 +47,12 @@ export default function ProcessingScreen({ go }: Props) {
   useEffect(() => {
     if (authState === 'ready' && idToken) void load(idToken);
   }, [authState, idToken]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[work/search] pageMeta', pageMeta);
+    }
+  }, [pageMeta]);
 
   return (
     <div className={styles.root}>
