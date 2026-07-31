@@ -43,6 +43,12 @@ type WorkSearchStore = {
   dateRangeError: string;
   hasLoadedOnce: boolean;
 
+  // 画面上のitems（重複除外後）とは別に、サーバーから累積で何件取得済みかを管理する。
+  // 「さらに読み込む」の次回offsetは、重複除外で減り得るitems.lengthではなく、この値を使う
+  serverLoadedCount: number;
+  isLoadingMore: boolean;
+  loadMoreError: string;
+
   // 一覧画面に戻ってきても同じ絞り込みパネルの開閉状態を復元するため保持する
   filterPanelOpen: boolean;
   setFilterPanelOpen: (open: boolean) => void;
@@ -57,7 +63,19 @@ type WorkSearchStore = {
   applyDraft: (token: string) => Promise<void>;
   retry: (token: string) => Promise<void>;
   clear: (token: string) => Promise<void>;
+  loadMore: (token: string) => Promise<void>;
 };
+
+function buildSearchParams(conditions: WorkSearchConditions, offset: number) {
+  return {
+    query: conditions.query.trim() || undefined,
+    dateStart: conditions.dateStart || undefined,
+    dateEnd: conditions.dateEnd || undefined,
+    hasPhoto: hasPhotoParam(conditions.hasPhotoOption),
+    limit: PAGE_LIMIT,
+    offset,
+  };
+}
 
 async function runSearch(
   set: (partial: Partial<WorkSearchStore>) => void,
@@ -66,18 +84,17 @@ async function runSearch(
   conditions: WorkSearchConditions,
 ): Promise<void> {
   const hadItems = get().items.length > 0;
-  set({ loadState: hadItems ? 'searching' : 'loading', errorMessage: '' });
+  set({
+    loadState: hadItems ? 'searching' : 'loading',
+    errorMessage: '',
+    isLoadingMore: false,
+    loadMoreError: '',
+  });
   try {
-    const result = await searchWorkLogs({
-      query: conditions.query.trim() || undefined,
-      dateStart: conditions.dateStart || undefined,
-      dateEnd: conditions.dateEnd || undefined,
-      hasPhoto: hasPhotoParam(conditions.hasPhotoOption),
-      limit: PAGE_LIMIT,
-      offset: 0,
-    }, token);
+    const result = await searchWorkLogs(buildSearchParams(conditions, 0), token);
     set({
       items: result.items,
+      serverLoadedCount: result.items.length,
       totalCount: result.totalCount,
       limit: result.limit,
       offset: result.offset,
@@ -107,6 +124,9 @@ export const useWorkSearchStore = create<WorkSearchStore>((set, get) => ({
   errorMessage: '',
   dateRangeError: '',
   hasLoadedOnce: false,
+  serverLoadedCount: 0,
+  isLoadingMore: false,
+  loadMoreError: '',
   filterPanelOpen: false,
 
   setFilterPanelOpen: (open) => set({ filterPanelOpen: open }),
@@ -137,5 +157,32 @@ export const useWorkSearchStore = create<WorkSearchStore>((set, get) => ({
   clear: async (token) => {
     set({ draft: EMPTY_CONDITIONS, applied: EMPTY_CONDITIONS, dateRangeError: '' });
     await runSearch(set, get, token, EMPTY_CONDITIONS);
+  },
+
+  loadMore: async (token) => {
+    const state = get();
+    if (state.isLoadingMore || !state.hasMore) return;
+    set({ isLoadingMore: true, loadMoreError: '' });
+    try {
+      const result = await searchWorkLogs(buildSearchParams(state.applied, state.serverLoadedCount), token);
+      const existingIds = new Set(get().items.map((i) => i.workId));
+      const newItems = result.items.filter((i) => !existingIds.has(i.workId));
+      set((s) => ({
+        items: [...s.items, ...newItems],
+        serverLoadedCount: s.serverLoadedCount + result.items.length,
+        totalCount: result.totalCount,
+        limit: result.limit,
+        offset: result.offset,
+        hasMore: result.hasMore,
+        isLoadingMore: false,
+      }));
+    } catch (e) {
+      if (e instanceof TokenExpiredError) {
+        set({ isLoadingMore: false });
+        throw e;
+      }
+      const message = e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました';
+      set({ isLoadingMore: false, loadMoreError: message });
+    }
   },
 }));

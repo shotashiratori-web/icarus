@@ -18,8 +18,7 @@ const HAS_PHOTO_OPTIONS: HasPhotoOption[] = ['all', 'withPhoto', 'withoutPhoto']
 
 function resultCountText(applied: WorkSearchConditions, totalCount: number, shown: number): string {
   const label = isFiltered(applied) ? '検索結果' : '全';
-  const base = `${label}${totalCount}件`;
-  return shown < totalCount ? `${base}（現在${shown}件表示）` : base;
+  return `${label}${totalCount}件中${shown}件を表示`;
 }
 
 export default function ProcessingScreen({ go }: Props) {
@@ -52,6 +51,13 @@ export default function ProcessingScreen({ go }: Props) {
   const handleRetry = () => {
     if (!idToken) return;
     store.retry(idToken).catch((e) => {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+    });
+  };
+
+  const handleLoadMore = () => {
+    if (!idToken) return;
+    store.loadMore(idToken).catch((e) => {
       if (e instanceof TokenExpiredError) handleTokenExpired();
     });
   };
@@ -226,6 +232,23 @@ export default function ProcessingScreen({ go }: Props) {
                 </button>
               ))}
             </div>
+          )}
+
+          {showList && store.loadMoreError && (
+            <div className={styles.inlineErrorBox}>
+              <p className={styles.errorText}>{store.loadMoreError}</p>
+              <button className={styles.retryBtn} onClick={handleLoadMore}>再試行</button>
+            </div>
+          )}
+
+          {showList && store.hasMore && (
+            <button
+              className={styles.loadMoreBtn}
+              disabled={store.isLoadingMore || isBusy}
+              onClick={handleLoadMore}
+            >
+              {store.isLoadingMore ? '読み込み中…' : `残り${store.totalCount - store.items.length}件を読み込む`}
+            </button>
           )}
         </section>
       </main>
