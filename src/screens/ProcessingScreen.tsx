@@ -96,7 +96,10 @@ export default function ProcessingScreen({ go }: Props) {
                     <div className={styles.photoPlaceholder}>🧂</div>
                   )}
                   <div className={styles.info}>
-                    <p className={styles.name}>{item.processingName || '無題の作業'}</p>
+                    <div className={styles.titleRow}>
+                      <p className={styles.name}>{item.processingName || '無題の作業'}</p>
+                      <span className={styles.workId}>{item.workId}</span>
+                    </div>
                     {item.memo && <p className={styles.sub}>{item.memo}</p>}
                     <p className={styles.date}>{item.datetime.slice(0, 16).replace('T', ' ')}</p>
                   </div>

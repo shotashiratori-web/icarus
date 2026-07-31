@@ -11,13 +11,25 @@
 .newWorkBtn { padding:var(--space-4); background:var(--color-primary); color:var(--color-primary-fg); border:none; border-radius:var(--radius-md); font-size:var(--font-size-base); font-weight:600; cursor:pointer; }
 
 .list { display:flex; flex-direction:column; gap:var(--space-3); }
-.item { display:flex; align-items:center; gap:var(--space-4); padding:var(--space-3); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); width:100%; text-align:left; cursor:pointer; font:inherit; color:inherit; }
-.photo { width:64px; height:64px; object-fit:cover; border-radius:var(--radius-sm); flex-shrink:0; background:var(--color-bg); }
-.photoPlaceholder { width:64px; height:64px; border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; }
-.info { flex:1; min-width:0; }
+.item {
+  display:flex; align-items:center; gap:var(--space-4); padding:var(--space-3);
+  border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border);
+  width:100%; text-align:left; cursor:pointer; font:inherit; color:inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.item:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.photo { width:72px; height:72px; object-fit:cover; border-radius:var(--radius-sm); flex-shrink:0; background:var(--color-bg); }
+.photoPlaceholder { width:72px; height:72px; border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0; }
+.info { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.titleRow { display:flex; align-items:baseline; gap:var(--space-2); min-width:0; }
 .name { font-size:var(--font-size-base); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.sub { font-size:var(--font-size-sm); color:var(--color-text-sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.date { font-size:var(--font-size-xs); color:var(--color-text-sub); margin-top:2px; }
+.workId {
+  flex-shrink:0; font-size:var(--font-size-xs); color:var(--color-text-sub);
+  font-variant-numeric: tabular-nums; background:var(--color-bg); border:1px solid var(--color-border);
+  border-radius:var(--radius-sm); padding:1px var(--space-2);
+}
+.sub { font-size:var(--font-size-sm); color:var(--color-text-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.date { font-size:var(--font-size-xs); color:var(--color-text-sub); }
 
 .skeletonList { display:flex; flex-direction:column; gap:var(--space-3); }
 .skeletonItem { height:64px; border-radius:var(--radius-md); background:linear-gradient(90deg, var(--color-border) 25%, var(--color-bg) 50%, var(--color-border) 75%); background-size:200% 100%; animation:shimmer 1.4s ease-in-out infinite; }
