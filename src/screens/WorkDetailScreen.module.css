@@ -37,3 +37,30 @@
 
 .signInBox { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-3); padding:var(--space-4); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); }
 .hintText { font-size:var(--font-size-sm); color:var(--color-text-sub); }
+
+.photoStrip { display:flex; gap:var(--space-2); overflow-x:auto; padding-bottom:var(--space-1); -webkit-overflow-scrolling:touch; }
+.photoThumbBtn { flex-shrink:0; padding:0; border:1px solid var(--color-border); border-radius:var(--radius-sm); overflow:hidden; cursor:pointer; background:none; }
+.photoThumb { width:72px; height:72px; object-fit:cover; display:block; }
+
+.lightboxOverlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:2000;
+  display:flex; align-items:center; justify-content:center; padding:var(--space-4);
+}
+.lightboxContent {
+  position:relative; max-width:100%; max-height:100%;
+  display:flex; flex-direction:column; align-items:center; gap:var(--space-2);
+}
+.lightboxImg { max-width:100%; max-height:70vh; object-fit:contain; border-radius:var(--radius-sm); }
+.lightboxClose {
+  position:absolute; top:-40px; right:0; color:#fff; font-size:20px; line-height:1;
+  padding:var(--space-2); background:none; border:none; cursor:pointer;
+}
+.lightboxNav {
+  position:absolute; top:50%; transform:translateY(-50%); color:#fff; font-size:36px; line-height:1;
+  padding:var(--space-2) var(--space-3); background:rgba(0,0,0,0.35); border:none; border-radius:var(--radius-sm); cursor:pointer;
+}
+.lightboxPrev { left:-8px; }
+.lightboxNext { right:-8px; }
+.lightboxFooter { text-align:center; color:#fff; }
+.lightboxCaption { font-size:var(--font-size-sm); margin:0 0 4px; }
+.lightboxCount { font-size:var(--font-size-xs); color:rgba(255,255,255,0.7); margin:0; }

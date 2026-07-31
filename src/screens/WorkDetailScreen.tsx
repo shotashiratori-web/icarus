@@ -14,6 +14,25 @@ export default function WorkDetailScreen({ go, workId }: Props) {
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
+
+  const photos = detail?.photos ?? [];
+  const closeGallery = () => setGalleryIndex(null);
+  const showPrev = () => setGalleryIndex((i) => (i === null ? null : Math.max(0, i - 1)));
+  const showNext = () => setGalleryIndex((i) => (i === null ? null : Math.min(photos.length - 1, i + 1)));
+
+  // ギャラリー表示中はEscで閉じる、矢印キーで前後移動できるようにする
+  useEffect(() => {
+    if (galleryIndex === null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeGallery();
+      else if (e.key === 'ArrowLeft') showPrev();
+      else if (e.key === 'ArrowRight') showNext();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galleryIndex, photos.length]);
 
   const load = async (token: string) => {
     setState('loading');
@@ -99,6 +118,23 @@ export default function WorkDetailScreen({ go, workId }: Props) {
               </button>
             </section>
 
+            {photos.length > 0 && (
+              <section className={styles.section}>
+                <h2 className={styles.sectionTitle}>写真 ({photos.length})</h2>
+                <div className={styles.photoStrip}>
+                  {photos.map((p, i) => (
+                    <button
+                      key={p.photoUrl}
+                      className={styles.photoThumbBtn}
+                      onClick={() => setGalleryIndex(i)}
+                    >
+                      <img src={p.photoUrl} alt="" className={styles.photoThumb} loading="lazy" />
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section className={styles.section}>
               <h2 className={styles.sectionTitle}>記録 ({detail.entries.length})</h2>
               {detail.entries.length === 0 && (
@@ -124,6 +160,25 @@ export default function WorkDetailScreen({ go, workId }: Props) {
           </>
         )}
       </main>
+
+      {galleryIndex !== null && photos[galleryIndex] && (
+        <div className={styles.lightboxOverlay} onClick={closeGallery}>
+          <div className={styles.lightboxContent} onClick={(e) => e.stopPropagation()}>
+            <button className={styles.lightboxClose} onClick={closeGallery} aria-label="閉じる">✕</button>
+            {galleryIndex > 0 && (
+              <button className={`${styles.lightboxNav} ${styles.lightboxPrev}`} onClick={showPrev} aria-label="前の写真">‹</button>
+            )}
+            <img src={photos[galleryIndex].photoUrl} alt="" className={styles.lightboxImg} />
+            {galleryIndex < photos.length - 1 && (
+              <button className={`${styles.lightboxNav} ${styles.lightboxNext}`} onClick={showNext} aria-label="次の写真">›</button>
+            )}
+            <div className={styles.lightboxFooter}>
+              {photos[galleryIndex].caption && <p className={styles.lightboxCaption}>{photos[galleryIndex].caption}</p>}
+              <p className={styles.lightboxCount}>{galleryIndex + 1} / {photos.length}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
