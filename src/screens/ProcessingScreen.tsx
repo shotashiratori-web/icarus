@@ -58,6 +58,7 @@ export default function ProcessingScreen({ go }: Props) {
 
   const isBusy = store.loadState === 'loading' || store.loadState === 'searching';
   const filtered = isFiltered(store.applied);
+  const panelFiltered = store.applied.dateStart !== '' || store.applied.dateEnd !== '' || store.applied.hasPhotoOption !== 'all';
   const showInitialSkeleton = authState === 'checking' || (authState === 'ready' && store.loadState === 'loading');
   const showFullError = authState === 'ready' && store.loadState === 'error' && store.items.length === 0;
   const showInlineError = store.loadState === 'error' && store.items.length > 0;
@@ -100,7 +101,7 @@ export default function ProcessingScreen({ go }: Props) {
                   onClick={() => store.setFilterPanelOpen(!store.filterPanelOpen)}
                   aria-expanded={store.filterPanelOpen}
                 >
-                  絞り込み{filtered ? ' ●' : ''}
+                  絞り込み{panelFiltered ? ' ●' : ''}
                 </button>
                 <button className={styles.clearBtn} disabled={isBusy} onClick={handleClear}>クリア</button>
               </div>
