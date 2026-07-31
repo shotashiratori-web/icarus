@@ -10,6 +10,7 @@ export const FIELD_LOGS_GEOJSON_URL = `${GAS_PUBLIC_URL}?action=field_logs_geojs
 export const FIELD_RECENT_URL = `${WORKER_URL}/field/recent`;
 export const WORK_RECENT_URL = `${WORKER_URL}/work/recent`;
 export const WORK_DETAIL_URL = `${WORKER_URL}/work/detail`;
+export const WORK_SEARCH_URL = `${WORKER_URL}/work/search`;
 export const WORK_SUBMIT_URL = `${WORKER_URL}/work`;
 export const STAFF_ME_URL = `${WORKER_URL}/staff/me`;
 export const STAFF_ROSTER_URL = `${WORKER_URL}/admin/staff`;

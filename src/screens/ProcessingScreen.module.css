@@ -31,6 +31,14 @@
 .sub { font-size:var(--font-size-sm); color:var(--color-text-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .date { font-size:var(--font-size-xs); color:var(--color-text-sub); }
 
+.metaRow { display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap; }
+.typeTag {
+  font-size:var(--font-size-xs); color:var(--color-text-sub); background:var(--color-bg);
+  border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:1px var(--space-2);
+}
+.photoCountTag { font-size:var(--font-size-xs); color:var(--color-text-sub); }
+.startDate { font-size:var(--font-size-xs); color:var(--color-text-sub); }
+
 .skeletonList { display:flex; flex-direction:column; gap:var(--space-3); }
 .skeletonItem { height:64px; border-radius:var(--radius-md); background:linear-gradient(90deg, var(--color-border) 25%, var(--color-bg) 50%, var(--color-border) 75%); background-size:200% 100%; animation:shimmer 1.4s ease-in-out infinite; }
 @keyframes shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }

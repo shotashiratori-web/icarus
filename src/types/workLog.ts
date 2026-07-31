@@ -60,6 +60,36 @@ export interface WorkDetailSuccess {
   item: WorkDetail;
 }
 
+// /work/search（Phase 1 第2段階）用。作業ID単位に集約済みの一覧項目
+export interface WorkSearchItem {
+  workId: string;
+  title: string;
+  type: string;
+  startDate: string;
+  lastUpdatedAt: string;
+  representativePhotoUrl: string;
+  photoCount: number;
+  summary: string;
+}
+
+export interface WorkSearchParams {
+  query?: string;
+  dateStart?: string;
+  dateEnd?: string;
+  hasPhoto?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface WorkSearchSuccess {
+  status: 'success';
+  items: WorkSearchItem[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 export function nowLocalDatetimeString(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
