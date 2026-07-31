@@ -11,6 +11,8 @@ export interface FieldLogEntry {
   lat: number;
   lng: number;
   recordedAt: string; // Icarusへ登録された日時（撮影日時=dateとは別。追加順ソート用）
+  eventId: string; // Sheetsの行を一意に特定するキー（重複検知・削除で使用）。古いレコードでは空の場合がある
+  takenAt: string; // 撮影日時（秒単位）。dateは日付単位に丸めているため重複検知にはこちらを使う
 }
 
 interface FieldLogGeoJsonFeature {
@@ -26,6 +28,8 @@ interface FieldLogGeoJsonFeature {
     elevation: number | null;
     kigo: string;
     recordedAt?: string;
+    eventId?: string;
+    takenAt?: string;
   };
 }
 

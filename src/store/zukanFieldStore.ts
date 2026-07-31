@@ -21,6 +21,25 @@ function sortFieldEntries(entries: FieldLogEntry[], mode: FieldSortMode): FieldL
   return sorted;
 }
 
+// 撮影日時（秒単位）+GPSが完全一致するレコードを重複候補とみなす。
+// 同じグループ内では最初に登録された1件（recordedAtが最も古い）だけを残し、残りを候補としてマークする。
+export function computeDuplicateCandidateIds(entries: FieldLogEntry[]): Set<string> {
+  const groups = new Map<string, FieldLogEntry[]>();
+  for (const e of entries) {
+    if (!e.takenAt) continue;
+    const key = `${e.takenAt}_${e.lat.toFixed(6)}_${e.lng.toFixed(6)}`;
+    const list = groups.get(key);
+    if (list) list.push(e); else groups.set(key, [e]);
+  }
+  const candidates = new Set<string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+    for (let i = 1; i < sorted.length; i++) candidates.add(sorted[i].id);
+  }
+  return candidates;
+}
+
 type ZukanFieldStore = {
   entries: FieldLogEntry[];
   sortMode: FieldSortMode;

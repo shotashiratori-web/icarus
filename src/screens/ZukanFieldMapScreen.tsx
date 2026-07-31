@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import { useZukanFieldStore } from '../store/zukanFieldStore';
+import { useZukanFieldStore, computeDuplicateCandidateIds } from '../store/zukanFieldStore';
 import { computeDateRange, lastYearSameLabel, type TimeFilterKey } from '../utils/fieldTimeFilter';
 import { matchesFilter } from '../utils/fieldFilter';
+import { deleteFieldLogEntries } from '../api/zukanApi';
+import { useAuth } from '../context/AuthContext';
 import FieldMapControls from './FieldMapControls';
 import FieldMarker from './FieldMarker';
 import FitFieldBounds from './FitFieldBounds';
@@ -26,8 +28,45 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
     dimMode, setDimMode,
     sortMode, setSortMode,
   } = useZukanFieldStore();
+  const { idToken, staffMe } = useAuth();
+  const isAdmin = staffMe?.role === 'admin';
+
+  const [manageMode, setManageMode] = useState(false);
+  const [showDupOnly, setShowDupOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  const duplicateIds = useMemo(() => computeDuplicateCandidateIds(entries), [entries]);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDelete = async () => {
+    const targets = entries.filter((e) => selectedIds.has(e.id) && e.eventId);
+    if (targets.length === 0) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (!idToken) throw new Error('ログインが必要です');
+      await deleteFieldLogEntries(targets.map((t) => t.eventId), idToken);
+      setSelectedIds(new Set());
+      setConfirming(false);
+      await reload();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : '削除に失敗しました');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => { void ensureLoaded(); }, [ensureLoaded]);
 
@@ -62,10 +101,10 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
     [timeFilter, customDateStart, customDateEnd],
   );
 
-  const matchedEntries = useMemo(
-    () => entries.filter((e) => matchesFilter(e, dateRange, kigoFilter, searchQuery)),
-    [entries, searchQuery, kigoFilter, dateRange],
-  );
+  const matchedEntries = useMemo(() => {
+    const base = entries.filter((e) => matchesFilter(e, dateRange, kigoFilter, searchQuery));
+    return showDupOnly ? base.filter((e) => duplicateIds.has(e.id)) : base;
+  }, [entries, searchQuery, kigoFilter, dateRange, showDupOnly, duplicateIds]);
   const matchedIds = useMemo(() => new Set(matchedEntries.map((e) => e.id)), [matchedEntries]);
 
   const isFiltering = timeFilter !== 'all' || !!kigoFilter || !!searchQuery.trim();
@@ -122,6 +161,27 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
               statusText={statusText}
             />
 
+            {isAdmin && duplicateIds.size > 0 && (
+              <div className={styles.dupBar}>
+                <span className={styles.dupBarText}>重複候補 {duplicateIds.size}件</span>
+                <button
+                  className={styles.dupBarBtn}
+                  onClick={() => setShowDupOnly((v) => !v)}
+                >
+                  {showDupOnly ? 'すべて表示' : '重複候補のみ表示'}
+                </button>
+                <button
+                  className={styles.dupBarBtn}
+                  onClick={() => {
+                    setManageMode((v) => !v);
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  {manageMode ? '選択をやめる' : '選択して削除'}
+                </button>
+              </div>
+            )}
+
             <MapContainer center={initialCenter} zoom={initialZoom} className={styles.mapWrap}>
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>'
@@ -162,26 +222,61 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                 <p className={styles.empty}>該当する観察記録はありません</p>
               ) : (
                 <div key={`${searchQuery}::${kigoFilter}`} className={styles.grid}>
-                  {matchedEntries.map((entry) => (
-                    <button key={entry.id} className={styles.card} onClick={() => openDetail(entry)}>
-                      <div className={styles.photoWrap}>
-                        {entry.photoUrl
-                          ? <img className={styles.photo} src={entry.photoUrl} alt={entry.foodName} loading="lazy" />
-                          : <div className={styles.photoPlaceholder}>写真なし</div>}
-                      </div>
-                      <div className={styles.cardBody}>
-                        <span className={styles.foodName}>{entry.foodName || '無題'}</span>
-                        <span className={styles.metaRow}>
-                          <span className={styles.place}>📍 {entry.place || '場所不明'}</span>
-                          <span className={styles.date}>{entry.date}</span>
-                        </span>
-                        {entry.kigo && <span className={styles.tag}>{entry.kigo}</span>}
-                      </div>
-                    </button>
-                  ))}
+                  {matchedEntries.map((entry) => {
+                    const isDup = duplicateIds.has(entry.id);
+                    const isSelected = selectedIds.has(entry.id);
+                    const selectable = manageMode && isDup && !!entry.eventId;
+                    return (
+                      <button
+                        key={entry.id}
+                        className={`${styles.card} ${isSelected ? styles.cardSelected : ''}`}
+                        onClick={() => (selectable ? toggleSelected(entry.id) : openDetail(entry))}
+                      >
+                        {selectable && (
+                          <span className={styles.selectMark}>{isSelected ? '☑' : '☐'}</span>
+                        )}
+                        <div className={styles.photoWrap}>
+                          {entry.photoUrl
+                            ? <img className={styles.photo} src={entry.photoUrl} alt={entry.foodName} loading="lazy" />
+                            : <div className={styles.photoPlaceholder}>写真なし</div>}
+                        </div>
+                        <div className={styles.cardBody}>
+                          <span className={styles.foodName}>{entry.foodName || '無題'}</span>
+                          <span className={styles.metaRow}>
+                            <span className={styles.place}>📍 {entry.place || '場所不明'}</span>
+                            <span className={styles.date}>{entry.date}</span>
+                          </span>
+                          {entry.kigo && <span className={styles.tag}>{entry.kigo}</span>}
+                          {isDup && <span className={styles.dupTag}>⚠ 重複候補</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </BottomSheet>
+
+            {manageMode && selectedIds.size > 0 && (
+              <div className={styles.deleteBar}>
+                {!confirming ? (
+                  <>
+                    <span>{selectedIds.size}件選択中</span>
+                    <button className={styles.deleteBtn} onClick={() => setConfirming(true)}>削除する</button>
+                  </>
+                ) : (
+                  <>
+                    <span>本当に{selectedIds.size}件削除しますか？（Sheets行削除・元に戻せません）</span>
+                    <button className={styles.deleteBtn} onClick={() => void handleDelete()} disabled={deleting}>
+                      {deleting ? '削除中…' : '実行する'}
+                    </button>
+                    <button className={styles.cancelDeleteBtn} onClick={() => setConfirming(false)} disabled={deleting}>
+                      キャンセル
+                    </button>
+                  </>
+                )}
+                {deleteError && <span className={styles.deleteErrorText}>{deleteError}</span>}
+              </div>
+            )}
           </>
         )}
       </main>
