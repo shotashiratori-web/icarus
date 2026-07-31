@@ -25,6 +25,13 @@ type Props = {
   onSortModeChange: (mode: FieldSortMode) => void;
 
   statusText: string;
+
+  // 重複候補の表示・管理（管理者のみ）。duplicateCountが0またはundefinedなら何も表示しない
+  duplicateCount?: number;
+  showDupOnly?: boolean;
+  onToggleShowDupOnly?: () => void;
+  manageMode?: boolean;
+  onToggleManageMode?: () => void;
 };
 
 const SORT_OPTIONS: { key: FieldSortMode; label: string }[] = [
@@ -49,6 +56,7 @@ export default function FieldMapControls({
   dimMode, onDimModeChange,
   sortMode, onSortModeChange,
   statusText,
+  duplicateCount, showDupOnly, onToggleShowDupOnly, manageMode, onToggleManageMode,
 }: Props) {
   return (
     <div className={styles.root}>
@@ -146,6 +154,18 @@ export default function FieldMapControls({
           </button>
         ))}
       </div>
+
+      {!!duplicateCount && duplicateCount > 0 && (
+        <div className={styles.dupBar}>
+          <span className={styles.dupBarText}>重複候補 {duplicateCount}件</span>
+          <button className={styles.dupBarBtn} onClick={onToggleShowDupOnly}>
+            {showDupOnly ? 'すべて表示' : '重複候補のみ表示'}
+          </button>
+          <button className={styles.dupBarBtn} onClick={onToggleManageMode}>
+            {manageMode ? '選択をやめる' : '選択して削除'}
+          </button>
+        </div>
+      )}
 
       <div className={styles.status}>{statusText}</div>
     </div>

@@ -159,28 +159,15 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
               sortMode={sortMode}
               onSortModeChange={setSortMode}
               statusText={statusText}
+              duplicateCount={isAdmin ? duplicateIds.size : 0}
+              showDupOnly={showDupOnly}
+              onToggleShowDupOnly={() => setShowDupOnly((v) => !v)}
+              manageMode={manageMode}
+              onToggleManageMode={() => {
+                setManageMode((v) => !v);
+                setSelectedIds(new Set());
+              }}
             />
-
-            {isAdmin && duplicateIds.size > 0 && (
-              <div className={styles.dupBar}>
-                <span className={styles.dupBarText}>重複候補 {duplicateIds.size}件</span>
-                <button
-                  className={styles.dupBarBtn}
-                  onClick={() => setShowDupOnly((v) => !v)}
-                >
-                  {showDupOnly ? 'すべて表示' : '重複候補のみ表示'}
-                </button>
-                <button
-                  className={styles.dupBarBtn}
-                  onClick={() => {
-                    setManageMode((v) => !v);
-                    setSelectedIds(new Set());
-                  }}
-                >
-                  {manageMode ? '選択をやめる' : '選択して削除'}
-                </button>
-              </div>
-            )}
 
             <MapContainer center={initialCenter} zoom={initialZoom} className={styles.mapWrap}>
               <TileLayer
