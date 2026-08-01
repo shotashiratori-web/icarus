@@ -1,5 +1,6 @@
-import { FIELD_LOGS_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL } from '../config';
+import { FIELD_LOGS_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_UPDATE_ENTRY_URL } from '../config';
 import { buildFieldLogId, type FieldLogEntry, type FieldLogGeoJson } from '../types/zukan';
+import { TokenExpiredError } from './icarusApi';
 
 export class NetworkUnknownError extends Error {
   constructor() {
@@ -70,4 +71,66 @@ export async function deleteFieldLogEntries(eventIds: string[], idToken: string)
     throw new Error(json.message || '削除に失敗しました');
   }
   return { deleted: json.deleted ?? 0, notFound: json.notFound ?? 0, results: json.results ?? [] };
+}
+
+export interface FieldUpdateEntryResult {
+  entryId: string;
+  updatedFields: string[];
+  noChange: boolean;
+  sheetUpdated: boolean;
+  notionSynced: boolean;
+  historySaved: boolean;
+  warning: string;
+  memo: string;
+}
+
+// フィールドログのメモ更新（管理者限定）。actorはクライアントから送らない（Worker側が認証結果から生成する）。
+export async function updateFieldLogEntryMemo(
+  entryId: string,
+  memo: string,
+  idToken: string,
+): Promise<FieldUpdateEntryResult> {
+  let res: Response;
+  try {
+    res = await fetch(FIELD_UPDATE_ENTRY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ entryId, changes: { memo } }),
+    });
+  } catch {
+    throw new Error('通信エラーが発生しました。もう一度お試しください。');
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new TokenExpiredError('ログインの有効期限が切れました。入力内容はこの画面に残っています。再度ログインしてください。');
+  }
+
+  let json: Record<string, unknown>;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error('通信エラーが発生しました。もう一度お試しください。');
+  }
+
+  if (json.status !== 'success') {
+    if (res.status === 404 || res.status === 409) {
+      throw new Error('この記録は更新できませんでした。画面を開き直してください。');
+    }
+    throw new Error('保存に失敗しました。もう一度お試しください。');
+  }
+
+  const entry = (json.entry as { memo?: unknown } | undefined) ?? {};
+  return {
+    entryId: typeof json.entryId === 'string' ? json.entryId : entryId,
+    updatedFields: Array.isArray(json.updatedFields) ? (json.updatedFields as string[]) : [],
+    noChange: json.noChange === true,
+    sheetUpdated: json.sheetUpdated === true,
+    notionSynced: json.notionSynced === true,
+    historySaved: json.historySaved === true,
+    warning: typeof json.warning === 'string' ? json.warning : '',
+    memo: typeof entry.memo === 'string' ? entry.memo : memo,
+  };
 }

@@ -31,3 +31,4 @@ export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
 export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;
 export const PHOTO_HASH_REGISTER_URL = `${WORKER_URL}/photo-hashes/register`;
 export const FIELD_DELETE_ENTRIES_URL = `${WORKER_URL}/field/delete-entries`;
+export const FIELD_UPDATE_ENTRY_URL = `${WORKER_URL}/field/update-entry`;
