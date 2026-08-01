@@ -56,22 +56,15 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const hasDiff = draftMemo !== originalMemo;
 
   const handleBack = () => {
-    if (!isEditing) {
+    if (!isEditing || !hasDiff) {
       go(from);
-      return;
-    }
-    if (!hasDiff) {
-      setIsEditing(false);
       return;
     }
     setShowUnsavedConfirm(true);
   };
 
-  const discardAndReturnToView = () => {
-    setDraftMemo(originalMemo);
-    setSaveError('');
-    setShowUnsavedConfirm(false);
-    setIsEditing(false);
+  const discardAndLeave = () => {
+    go(from);
   };
 
   const continueEditing = () => {
@@ -182,7 +175,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
               <p className={styles.confirmText}>保存されていない変更があります</p>
               <div className={styles.confirmBtns}>
                 <button className={styles.continueBtn} onClick={continueEditing}>編集を続ける</button>
-                <button className={styles.discardBtn} onClick={discardAndReturnToView}>変更を破棄して戻る</button>
+                <button className={styles.discardBtn} onClick={discardAndLeave}>変更を破棄して戻る</button>
               </div>
             </div>
           ) : (
