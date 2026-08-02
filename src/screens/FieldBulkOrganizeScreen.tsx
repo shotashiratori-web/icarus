@@ -23,6 +23,15 @@ type NavAction = 'prev' | 'next' | 'skip';
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
 
+// takenAt（撮影日時・秒単位のISO文字列）から時刻部分だけを取り出す。同じ日に複数回撮った写真の区別に使う
+function formatTakenTime(takenAt: string): string {
+  if (!takenAt) return '';
+  const d = new Date(takenAt);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();
   const canEdit = staffMe?.role === 'admin';
@@ -399,7 +408,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
             </div>
 
             <div className={styles.infoRow}>
-              <span className={styles.dateText}>📅 {currentEntry.date}</span>
+              <span className={styles.dateText}>
+                📅 {currentEntry.date}
+                {formatTakenTime(currentEntry.takenAt) && ` ${formatTakenTime(currentEntry.takenAt)}`}
+              </span>
               <span className={styles.gpsText}>
                 {hasGps ? `📍 GPSあり（緯度 ${currentEntry.lat.toFixed(5)}, 経度 ${currentEntry.lng.toFixed(5)}）` : '📍 GPSなし'}
               </span>
