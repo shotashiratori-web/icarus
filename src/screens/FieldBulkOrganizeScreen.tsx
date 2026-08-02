@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
-import { updateFieldLogEntry, deleteFieldLogEntries, type FieldUpdateEntryChanges } from '../api/zukanApi';
+import { updateFieldLogEntry, deleteFieldLogEntries, classifyFieldPhoto, type FieldUpdateEntryChanges } from '../api/zukanApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
@@ -73,6 +73,11 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
+  // AIによる一次判定（食材写真かどうかだけを見る。種の同定はしない・参考表示のみで削除は人が行う）
+  const [classifyResult, setClassifyResult] = useState<{ isFieldSubject: boolean; reason: string } | null>(null);
+  const [isClassifying, setIsClassifying] = useState(false);
+  const [classifyError, setClassifyError] = useState('');
+
   // 通信が不安定な現場での利用を想定し、写真の読み込み中・失敗を明示する
   // （枠の背景色が画面背景と近く、何もフィードバックがないと「壊れている」ように見えるため）
   const [photoLoadState, setPhotoLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
@@ -126,6 +131,8 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setPendingNavAction(null);
     setDeleteConfirming(false);
     setDeleteError('');
+    setClassifyResult(null);
+    setClassifyError('');
     setShowFoodNameSuggestions(false);
     setPhotoLoadState('loading');
     setPhotoRetryKey(0);
@@ -311,6 +318,23 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       setDeleteError(e instanceof Error ? e.message : '削除に失敗しました。もう一度お試しください。');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // AIに「食材写真かどうか」だけを判定させる（参考表示。削除は既存の管理者操作を人が実行する）
+  const handleClassify = async () => {
+    if (isClassifying || !idToken || !currentEntry?.photoUrl) return;
+    setIsClassifying(true);
+    setClassifyError('');
+    setClassifyResult(null);
+    try {
+      const result = await classifyFieldPhoto(getSmallPreviewUrl(currentEntry.photoUrl), idToken);
+      setClassifyResult(result);
+    } catch (e) {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+      setClassifyError(e instanceof Error ? e.message : 'AI判定に失敗しました。もう一度お試しください。');
+    } finally {
+      setIsClassifying(false);
     }
   };
 
@@ -592,6 +616,26 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                     <button className={styles.deleteLinkBtn} onClick={() => setDeleteConfirming(true)}>
                       🗑 フィールドログ対象外として削除する（料理・メモ書きなど）
                     </button>
+
+                    <div className={styles.classifyRow}>
+                      <button
+                        className={styles.classifyBtn}
+                        onClick={() => void handleClassify()}
+                        disabled={isClassifying}
+                      >
+                        {isClassifying ? 'AIで確認中…' : '🔍 AIで食材写真か確認する'}
+                      </button>
+                      {classifyError && <p className={styles.errorText}>{classifyError}</p>}
+                      {classifyResult && (
+                        classifyResult.isFieldSubject ? (
+                          <p className={styles.classifyOk}>✅ 食材の写真のようです{classifyResult.reason && `（${classifyResult.reason}）`}</p>
+                        ) : (
+                          <p className={styles.classifyWarn}>
+                            ⚠️ 食材写真ではないかもしれません{classifyResult.reason && `（${classifyResult.reason}）`}。削除を検討してください
+                          </p>
+                        )
+                      )}
+                    </div>
                   </>
                 )}
               </div>

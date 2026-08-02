@@ -1,4 +1,4 @@
-import { FIELD_LOGS_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_UPDATE_ENTRY_URL } from '../config';
+import { FIELD_LOGS_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_UPDATE_ENTRY_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
 import { buildFieldLogId, type FieldLogEntry, type FieldLogGeoJson } from '../types/zukan';
 import { TokenExpiredError } from './icarusApi';
 
@@ -148,5 +148,48 @@ export async function updateFieldLogEntry(
     historySaved: json.historySaved === true,
     warning: typeof json.warning === 'string' ? json.warning : '',
     entry,
+  };
+}
+
+export interface ClassifyFieldPhotoResult {
+  isFieldSubject: boolean;
+  reason: string;
+}
+
+// 一括写真整理のAI一次判定（管理者限定）。「食材写真かどうか」だけを判定し、種の同定はしない。
+// あくまで参考表示であり、削除は既存の管理者操作（deleteFieldLogEntries）を人が実行する。
+export async function classifyFieldPhoto(photoUrl: string, idToken: string): Promise<ClassifyFieldPhotoResult> {
+  let res: Response;
+  try {
+    res = await fetch(FIELD_CLASSIFY_PHOTO_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ photoUrl }),
+    });
+  } catch {
+    throw new Error('通信エラーが発生しました。もう一度お試しください。');
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new TokenExpiredError('ログインの有効期限が切れました。再度ログインしてください。');
+  }
+
+  let json: Record<string, unknown>;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error('AI判定に失敗しました。もう一度お試しください。');
+  }
+
+  if (json.status !== 'success' || typeof json.isFieldSubject !== 'boolean') {
+    throw new Error(typeof json.message === 'string' ? json.message : 'AI判定に失敗しました。');
+  }
+
+  return {
+    isFieldSubject: json.isFieldSubject,
+    reason: typeof json.reason === 'string' ? json.reason : '',
   };
 }
