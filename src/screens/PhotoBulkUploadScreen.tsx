@@ -55,6 +55,9 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
   const [dbError, setDbError] = useState(false);
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[] | null>(null);
+  // 「すべて送信」は登録済み写真も含めて再送信してしまう操作のため、重複が1件でもある場合は
+  // ワンクリックで実行させず、確認をもう一段挟む（誤って既存の観察を重複登録してしまう事故の再発防止）
+  const [confirmSendAllDupes, setConfirmSendAllDupes] = useState(false);
   const batchIdRef = useRef<string>(crypto.randomUUID());
   const pauseRef = useRef(false);
 
@@ -128,9 +131,13 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
     }
     setItems((prev) => [...prev, ...newItems]);
     setPendingFiles(null);
+    setConfirmSendAllDupes(false);
   };
 
-  const cancelPendingFiles = () => setPendingFiles(null);
+  const cancelPendingFiles = () => {
+    setPendingFiles(null);
+    setConfirmSendAllDupes(false);
+  };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     void handleIncomingFiles(Array.from(e.target.files ?? []));
@@ -298,17 +305,40 @@ export default function PhotoBulkUploadScreen({ go }: Props) {
                 </li>
               ))}
             </ul>
-            <div className={styles.actionsRow}>
-              <button
-                className={styles.sendBtn}
-                onClick={() => void commitPendingFiles('newOnly')}
-                disabled={pendingFiles.every((p) => p.isDuplicate)}
-              >
-                {pendingFiles.filter((p) => !p.isDuplicate).length}枚だけ送信
-              </button>
-              <button className={styles.pauseBtn} onClick={() => void commitPendingFiles('all')}>すべて送信</button>
-              <button className={styles.pauseBtn} onClick={cancelPendingFiles}>キャンセル</button>
-            </div>
+            {confirmSendAllDupes ? (
+              <div className={styles.actionsRow}>
+                <p className={styles.errorText}>
+                  登録済み{pendingFiles.filter((p) => p.isDuplicate).length}枚を含めて送信します。同じ観察が重複登録される可能性があります。よろしいですか？
+                </p>
+                <button className={styles.pauseBtn} onClick={() => void commitPendingFiles('all')}>
+                  重複を含めて送信する
+                </button>
+                <button className={styles.pauseBtn} onClick={() => setConfirmSendAllDupes(false)}>キャンセル</button>
+              </div>
+            ) : (
+              <div className={styles.actionsRow}>
+                <button
+                  className={styles.sendBtn}
+                  onClick={() => void commitPendingFiles('newOnly')}
+                  disabled={pendingFiles.every((p) => p.isDuplicate)}
+                >
+                  {pendingFiles.filter((p) => !p.isDuplicate).length}枚だけ送信
+                </button>
+                <button
+                  className={styles.pauseBtn}
+                  onClick={() => {
+                    if (pendingFiles.some((p) => p.isDuplicate)) {
+                      setConfirmSendAllDupes(true);
+                    } else {
+                      void commitPendingFiles('all');
+                    }
+                  }}
+                >
+                  すべて送信
+                </button>
+                <button className={styles.pauseBtn} onClick={cancelPendingFiles}>キャンセル</button>
+              </div>
+            )}
           </div>
         ) : checkingDuplicates ? (
           <div className={styles.dropZone}>
