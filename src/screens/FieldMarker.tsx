@@ -17,9 +17,10 @@ type Props = {
   onOpenDetail: (entry: FieldLogEntry) => void;
   compact?: boolean; // trueの場合、名前・日付・詳細ボタンのみの簡易ポップアップ（狭いミニマップ向け）
   highlighted?: boolean; // trueの場合、検索に一致したピンとして赤色で強調表示する
+  popupTopPadding?: number; // 地図に重ねた検索・絞り込みバーの実測高さ。ポップアップがその下に隠れないようパンさせる
 };
 
-export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, compact = false, highlighted = false }: Props) {
+export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpenDetail, compact = false, highlighted = false, popupTopPadding = 0 }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function FieldMarker({ entry, matched, dimMode, shouldOpen, onOpe
       <Tooltip direction="top" offset={[0, -34]} opacity={0.9} className={styles.hoverTooltip}>
         {entry.foodName || '無題'}
       </Tooltip>
-      <Popup maxWidth={220}>
+      <Popup maxWidth={220} autoPanPaddingTopLeft={[10, popupTopPadding + 12]}>
         {compact ? (
           <div className={styles.popup}>
             <p className={styles.popupName}>{entry.foodName || '無題'}</p>

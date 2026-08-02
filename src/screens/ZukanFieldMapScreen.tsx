@@ -40,6 +40,19 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
+  // FieldMapControlsは地図に重ねて表示するオーバーレイ（絞り込み条件次第で行数が変わり高さも変動する）。
+  // Leafletはこのオーバーレイの存在を知らないため、ポップアップが上部で開くとオーバーレイの下に隠れてしまう。
+  // 実測した高さをポップアップのautoPanPaddingへ渡し、隠れないよう地図側にパンさせる
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const [controlsHeight, setControlsHeight] = useState(0);
+  useEffect(() => {
+    const el = controlsRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setControlsHeight(entry.contentRect.height));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadState]);
+
   const duplicateIds = useMemo(() => computeDuplicateCandidateIds(entries), [entries]);
 
   const toggleSelected = (id: string) => {
@@ -143,6 +156,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
         {loadState === 'ready' && (
           <>
             <FieldMapControls
+              rootRef={controlsRef}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               kigoOptions={kigoOptions}
@@ -193,6 +207,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                     shouldOpen={focusEntry?.id === entry.id}
                     onOpenDetail={openDetail}
                     highlighted={!!searchQuery.trim() && matchedIds.has(entry.id)}
+                    popupTopPadding={controlsHeight}
                   />
                 ))}
               </MarkerClusterGroup>

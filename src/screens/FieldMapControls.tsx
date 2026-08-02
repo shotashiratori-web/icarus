@@ -1,8 +1,11 @@
+import type { RefObject } from 'react';
 import type { TimeFilterKey } from '../utils/fieldTimeFilter';
 import type { FieldSortMode } from '../store/zukanFieldStore';
 import styles from './FieldMapControls.module.css';
 
 type Props = {
+  rootRef?: RefObject<HTMLDivElement | null>;
+
   searchQuery: string;
   onSearchChange: (v: string) => void;
 
@@ -49,6 +52,7 @@ const TIME_PRESETS: { key: TimeFilterKey; label: string; star?: boolean }[] = [
 ];
 
 export default function FieldMapControls({
+  rootRef,
   searchQuery, onSearchChange,
   kigoOptions, kigoFilter, onKigoChange,
   timeFilter, onTimeFilterChange, yearOptions,
@@ -59,7 +63,7 @@ export default function FieldMapControls({
   duplicateCount, showDupOnly, onToggleShowDupOnly, manageMode, onToggleManageMode,
 }: Props) {
   return (
-    <div className={styles.root}>
+    <div className={styles.root} ref={rootRef}>
       <div className={styles.searchBar}>
         <input
           className={styles.searchInput}
