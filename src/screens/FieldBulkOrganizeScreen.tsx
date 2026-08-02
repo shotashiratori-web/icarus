@@ -5,6 +5,7 @@ import { updateFieldLogEntry, deleteFieldLogEntries, type FieldUpdateEntryChange
 import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
+import { getSmallPreviewUrl } from '../utils/cloudinaryPreview';
 import {
   loadFieldLogDraft,
   saveFieldLogDraft,
@@ -385,7 +386,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                   <img
                     key={photoRetryKey}
                     className={styles.photo}
-                    src={currentEntry.photoUrl}
+                    src={getSmallPreviewUrl(currentEntry.photoUrl)}
                     alt=""
                     style={photoLoadState === 'loaded' ? undefined : { display: 'none' }}
                     onLoad={() => setPhotoLoadState('loaded')}
