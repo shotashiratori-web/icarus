@@ -14,18 +14,12 @@ import {
   type FieldLogDraft,
   type FieldLogDraftChanges,
 } from '../utils/fieldLogDraft';
+import { validateFoodName } from '../utils/foodNameValidation';
 import styles from './ZukanFieldDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; entry: FieldLogEntry; from: Screen };
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
-
-function validateFoodName(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed === '') return '食材名は必須です';
-  if (trimmed === '無題') return '「無題」は食材名として保存できません';
-  return '';
-}
 
 export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();

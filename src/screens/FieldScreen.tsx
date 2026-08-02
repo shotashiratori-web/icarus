@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchRecentFieldObservations, NetworkUnknownError } from '../api/fieldApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
+import { useZukanFieldStore } from '../store/zukanFieldStore';
+import { countFieldIncomplete } from '../utils/fieldIncomplete';
 import type { FieldObservation } from '../types/fieldLog';
 import type { Screen } from '../App';
 import styles from './FieldScreen.module.css';
@@ -14,6 +16,11 @@ export default function FieldScreen({ go }: Props) {
   const [items, setItems] = useState<FieldObservation[]>([]);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // 未整理件数の表示用。詳細画面等と同じストアを再利用し、追加のAPI呼び出しは発生させない
+  const { entries: fieldEntries, ensureLoaded: ensureFieldEntriesLoaded } = useZukanFieldStore();
+  useEffect(() => { void ensureFieldEntriesLoaded(); }, [ensureFieldEntriesLoaded]);
+  const incompleteCounts = useMemo(() => countFieldIncomplete(fieldEntries), [fieldEntries]);
 
   const load = async (token: string) => {
     setState('loading');
@@ -56,6 +63,30 @@ export default function FieldScreen({ go }: Props) {
           <span className={styles.mapIcon}>🗺️</span>
           <span>フィールドマップを開く</span>
         </button>
+
+        <div className={styles.incompleteRow}>
+          <button
+            className={styles.incompleteBtn}
+            onClick={() => go({ name: 'fieldIncompleteList', from: { name: 'field' } })}
+          >
+            <span className={styles.incompleteIcon}>📝</span>
+            <span className={styles.incompleteLabel}>記録の補完</span>
+            <span className={incompleteCounts.recordCompletion === 0 ? styles.incompleteCountDone : styles.incompleteCount}>
+              {incompleteCounts.recordCompletion === 0 ? '整理済み' : `${incompleteCounts.recordCompletion}件`}
+            </span>
+          </button>
+
+          <button
+            className={styles.incompleteBtn}
+            onClick={() => go({ name: 'fieldBulkOrganize', from: { name: 'field' } })}
+          >
+            <span className={styles.incompleteIcon}>📷</span>
+            <span className={styles.incompleteLabel}>一括写真の整理</span>
+            <span className={incompleteCounts.bulkPhoto === 0 ? styles.incompleteCountDone : styles.incompleteCount}>
+              {incompleteCounts.bulkPhoto === 0 ? '整理済み' : `${incompleteCounts.bulkPhoto}件`}
+            </span>
+          </button>
+        </div>
 
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>最近の観察</h2>

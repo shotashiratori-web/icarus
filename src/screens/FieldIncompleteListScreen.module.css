@@ -1,0 +1,33 @@
+.root { display:flex; flex-direction:column; height:100%; background:var(--color-bg); }
+
+.header { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-4) var(--space-5); background:var(--color-surface); border-bottom:1px solid var(--color-border); }
+.back { font-size:var(--font-size-sm); color:var(--color-text-sub); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm); }
+.title { flex:1; font-size:var(--font-size-base); font-weight:600; }
+
+.filterRow { display:flex; gap:var(--space-2); padding:var(--space-3) var(--space-5) 0; flex-wrap:wrap; }
+.filterBtn, .filterBtnActive { font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-3); border-radius:999px; border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text-sub); }
+.filterBtnActive { background:var(--color-primary); color:var(--color-primary-fg); border-color:var(--color-primary); }
+
+.countText { font-size:var(--font-size-xs); color:var(--color-text-sub); padding:var(--space-2) var(--space-5) 0; }
+
+.main { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:var(--space-5); max-width:780px; width:100%; margin:0 auto; }
+
+.loading, .empty { text-align:center; color:var(--color-text-sub); font-size:var(--font-size-sm); padding:var(--space-8) 0; }
+
+.errorBox { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-3); padding:var(--space-4); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); }
+.errorText { font-size:var(--font-size-sm); color:var(--color-failed); }
+.retryBtn { font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); background:var(--color-bg); border:1px solid var(--color-border); }
+
+.list { display:flex; flex-direction:column; gap:var(--space-3); }
+
+.card { display:flex; gap:var(--space-4); padding:var(--space-3); border-radius:var(--radius-md); background:var(--color-surface); border:1px solid var(--color-border); text-align:left; }
+.photoWrap { width:72px; height:72px; border-radius:var(--radius-sm); overflow:hidden; flex-shrink:0; background:var(--color-bg); }
+.photo { width:100%; height:100%; object-fit:cover; display:block; }
+.photoPlaceholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:var(--font-size-xs); color:var(--color-text-sub); }
+
+.cardBody { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.foodName { font-size:var(--font-size-base); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.metaRow { display:flex; gap:var(--space-3); font-size:var(--font-size-xs); color:var(--color-text-sub); }
+.memoPreview { font-size:var(--font-size-xs); color:var(--color-text-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.badgeRow { display:flex; gap:var(--space-2); margin-top:2px; }
+.badge { font-size:var(--font-size-xs); font-weight:600; color:var(--color-accent); border:1px solid var(--color-accent); border-radius:999px; padding:1px var(--space-2); }

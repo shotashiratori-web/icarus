@@ -9,6 +9,14 @@
 .mapBtn:active { opacity:0.9; transform:scale(0.995); }
 .mapIcon { font-size:24px; flex-shrink:0; }
 
+.incompleteRow { display:flex; gap:var(--space-3); flex-wrap:wrap; }
+.incompleteBtn { flex:1; min-width:150px; display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-1); background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-md); padding:var(--space-4); text-align:left; }
+.incompleteBtn:active { opacity:0.85; }
+.incompleteIcon { font-size:20px; }
+.incompleteLabel { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text); }
+.incompleteCount { font-size:var(--font-size-lg); font-weight:700; color:var(--color-accent); }
+.incompleteCountDone { font-size:var(--font-size-sm); font-weight:600; color:var(--color-synced); }
+
 .section { display:flex; flex-direction:column; gap:var(--space-3); }
 .sectionTitle { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); text-transform:uppercase; letter-spacing:0.5px; }
 
