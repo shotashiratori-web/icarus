@@ -49,6 +49,14 @@
 .foodNameSuggestionItem { display:block; width:100%; text-align:left; padding:var(--space-2) var(--space-3); font-size:var(--font-size-base); color:var(--color-text); background:none; }
 .foodNameSuggestionItem:active { background:var(--color-bg); }
 
+.nearbyBox { display:flex; flex-direction:column; gap:var(--space-2); background:var(--color-draft); border-radius:var(--radius-md); padding:var(--space-3); }
+.nearbyTitle { font-size:var(--font-size-xs); color:var(--color-text); }
+.nearbyThumbs { display:flex; gap:var(--space-2); overflow-x:auto; }
+.nearbyThumb, .nearbyThumbPlaceholder { flex:0 0 auto; width:56px; height:56px; border-radius:var(--radius-sm); object-fit:cover; background:#cfcac0; }
+.nearbyThumbPlaceholder { display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--color-text-sub); text-align:center; }
+.nearbyApplyBtn { font-size:var(--font-size-sm); font-weight:700; padding:var(--space-3) var(--space-4); border-radius:var(--radius-sm); background:var(--color-primary); color:var(--color-primary-fg); }
+.nearbyApplyBtn:disabled { opacity:0.5; }
+
 .fieldLabel { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); margin-top:var(--space-2); }
 .locationInput { font-family:inherit; font-size:var(--font-size-base); padding:var(--space-2) var(--space-3); border:1.5px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); }
 .locationInput:disabled { opacity:0.6; }

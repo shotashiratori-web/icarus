@@ -7,6 +7,7 @@ import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
 import { getSmallPreviewUrl } from '../utils/cloudinaryPreview';
 import { sortByGpsProximity } from '../utils/gpsProximitySort';
+import { findNearbyEntries } from '../utils/nearbyDuplicates';
 import {
   loadFieldLogDraft,
   saveFieldLogDraft,
@@ -78,6 +79,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const [isClassifying, setIsClassifying] = useState(false);
   const [classifyError, setClassifyError] = useState('');
 
+  // 近い日時・場所の写真（バースト撮影等による近似重複）へ、現在入力中の食材名をまとめて適用する機能
+  const [isBatchApplying, setIsBatchApplying] = useState(false);
+  const [batchApplyError, setBatchApplyError] = useState('');
+
   // 通信が不安定な現場での利用を想定し、写真の読み込み中・失敗を明示する
   // （枠の背景色が画面背景と近く、何もフィードバックがないと「壊れている」ように見えるため）
   const [photoLoadState, setPhotoLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
@@ -134,6 +139,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setDeleteError('');
     setClassifyResult(null);
     setClassifyError('');
+    setBatchApplyError('');
     setShowFoodNameSuggestions(false);
     setPhotoLoadState('loading');
     setPhotoRetryKey(0);
@@ -225,6 +231,14 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setDraftFoodName(name);
     setShowFoodNameSuggestions(false);
   };
+
+  // バースト撮影等で近い日時・場所に撮られた写真（同じ被写体の可能性）。表示用にはfoodName有無を問わず含める
+  const nearbyEntries = useMemo(
+    () => (currentEntry ? findNearbyEntries(currentEntry, entries) : []),
+    [currentEntry, entries],
+  );
+  // まとめて適用する対象は、既存の食材名を上書きしないよう未入力のものだけに限る
+  const nearbyEmptyEntries = useMemo(() => nearbyEntries.filter((e) => !e.foodName.trim()), [nearbyEntries]);
 
   const total = snapshotIds?.length ?? 0;
   const position = Math.min(currentIndex + 1, total);
@@ -345,6 +359,40 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       setClassifyError(e instanceof Error ? e.message : 'AI判定に失敗しました。もう一度お試しください。');
     } finally {
       setIsClassifying(false);
+    }
+  };
+
+  // バースト撮影等で近くにある未入力の写真へ、今入力した食材名をまとめて適用する。
+  // 既存の1件保存フローと同じAPI(updateFieldLogEntry)を対象件数分呼び出す（一括専用APIは用意していない）
+  const handleBatchApply = async () => {
+    if (isBatchApplying || !idToken || !currentEntry?.eventId || foodNameError || !draftFoodName.trim()) return;
+    if (nearbyEmptyEntries.length === 0) return;
+    setIsBatchApplying(true);
+    setBatchApplyError('');
+
+    const changes: FieldUpdateEntryChanges = {};
+    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
+    if (draftLocation !== originalLocation) changes.location = draftLocation;
+    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+
+    try {
+      const currentResult = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
+      clearFieldLogDraft(currentEntry.eventId);
+      useZukanFieldStore.getState().updateEntry(currentEntry.eventId, currentResult.entry);
+
+      for (const nearby of nearbyEmptyEntries) {
+        const result = await updateFieldLogEntry(nearby.eventId, { foodName: draftFoodName }, idToken);
+        clearFieldLogDraft(nearby.eventId);
+        useZukanFieldStore.getState().updateEntry(nearby.eventId, result.entry);
+      }
+
+      showNoticeThenClear(`保存しました（近くの${nearbyEmptyEntries.length}件にも適用しました）`, 4000);
+      doNav('next');
+    } catch (e) {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+      setBatchApplyError(e instanceof Error ? e.message : '一括適用に失敗しました。もう一度お試しください。');
+    } finally {
+      setIsBatchApplying(false);
     }
   };
 
@@ -578,6 +626,31 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                   )}
                 </div>
                 {foodNameError && <p className={styles.errorText}>{foodNameError}</p>}
+
+                {nearbyEmptyEntries.length > 0 && (
+                  <div className={styles.nearbyBox}>
+                    <p className={styles.nearbyTitle}>
+                      近くで撮影された未入力の写真が{nearbyEmptyEntries.length}件あります（同じ被写体の可能性）
+                    </p>
+                    <div className={styles.nearbyThumbs}>
+                      {nearbyEmptyEntries.slice(0, 6).map((e) => (
+                        e.photoUrl ? (
+                          <img key={e.id} className={styles.nearbyThumb} src={getSmallPreviewUrl(e.photoUrl)} alt="" />
+                        ) : (
+                          <div key={e.id} className={styles.nearbyThumbPlaceholder}>写真なし</div>
+                        )
+                      ))}
+                    </div>
+                    <button
+                      className={styles.nearbyApplyBtn}
+                      onClick={() => void handleBatchApply()}
+                      disabled={isBatchApplying || !!foodNameError || !draftFoodName.trim()}
+                    >
+                      {isBatchApplying ? '適用中…' : `この食材名を、近くの${nearbyEmptyEntries.length}件にもまとめて保存する`}
+                    </button>
+                    {batchApplyError && <p className={styles.errorText}>{batchApplyError}</p>}
+                  </div>
+                )}
 
                 <label className={styles.fieldLabel}>場所（任意）</label>
                 <input
