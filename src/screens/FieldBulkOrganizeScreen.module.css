@@ -41,8 +41,12 @@
 .formBox { display:flex; flex-direction:column; gap:var(--space-2); background:var(--color-surface); border-radius:var(--radius-md); padding:var(--space-4); border:1px solid var(--color-border); }
 .foodNameLabel { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); }
 .requiredMark { font-size:var(--font-size-xs); font-weight:700; color:var(--color-accent); border:1px solid var(--color-accent); border-radius:999px; padding:1px var(--space-2); }
-.foodNameInput { font-family:inherit; font-size:var(--font-size-xl); font-weight:700; padding:var(--space-3); border:1.5px solid var(--color-text); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); }
+.foodNameInputWrap { position:relative; width:100%; }
+.foodNameInput { width:100%; box-sizing:border-box; font-family:inherit; font-size:var(--font-size-xl); font-weight:700; padding:var(--space-3); border:1.5px solid var(--color-text); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); }
 .foodNameInput:disabled { opacity:0.6; }
+.foodNameSuggestions { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:10; max-height:220px; overflow-y:auto; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-sm); box-shadow:var(--shadow-md); list-style:none; margin:0; padding:var(--space-1) 0; }
+.foodNameSuggestionItem { display:block; width:100%; text-align:left; padding:var(--space-2) var(--space-3); font-size:var(--font-size-base); color:var(--color-text); background:none; }
+.foodNameSuggestionItem:active { background:var(--color-bg); }
 
 .fieldLabel { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); margin-top:var(--space-2); }
 .locationInput { font-family:inherit; font-size:var(--font-size-base); padding:var(--space-2) var(--space-3); border:1.5px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); }

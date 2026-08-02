@@ -39,14 +39,18 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const canEdit = staffMe?.role === 'admin';
   const { entries, loadState, errorMessage, ensureLoaded, reload } = useZukanFieldStore();
 
+  // 既存の食材名候補（入力中の絞り込み表示用）。予想・自動入力はせず、あくまで既存データから選べるだけ
+  const knownFoodNames = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.foodName.trim()).filter(Boolean))).sort(),
+    [entries],
+  );
+  const [showFoodNameSuggestions, setShowFoodNameSuggestions] = useState(false);
+
   // セッション開始時に対象EventIDを固定する。以降このセッション中は保存が進んでも分母・順序を変えない
   const [sortMode, setSortMode] = useState<SortMode>('date');
   const [snapshotIds, setSnapshotIds] = useState<string[] | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
-  // 直前に入力した食材名・場所を、次の写真の初期値候補として引き継ぐ（GPS順で近い記録をまとめて
-  // 処理する際に、同じ食材・同じ場所であることが多いため。メモは観察内容そのものなので引き継がない）
-  const lastEnteredRef = useRef<{ foodName: string; location: string } | null>(null);
 
   const [originalFoodName, setOriginalFoodName] = useState('');
   const [draftFoodName, setDraftFoodName] = useState('');
@@ -100,7 +104,6 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setSnapshotIds(null);
     setCurrentIndex(0);
     setSkippedIds(new Set());
-    lastEnteredRef.current = null;
   };
 
   const currentEventId = snapshotIds && currentIndex < snapshotIds.length ? snapshotIds[currentIndex] : null;
@@ -116,16 +119,14 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setOriginalLocation(currentEntry.place);
     setOriginalMemo(currentEntry.memo);
     setDraftMemo(currentEntry.memo);
-    // 元の値が空欄の場合のみ、直前に入力した食材名・場所を候補として入れておく（あくまで初期値。
-    // originalFoodName/originalLocationは実際の元データのままにし、保存時の差分判定に影響させない）
-    const suggestion = lastEnteredRef.current;
-    setDraftFoodName(currentEntry.foodName || suggestion?.foodName || '');
-    setDraftLocation(currentEntry.place || suggestion?.location || '');
+    setDraftFoodName(currentEntry.foodName);
+    setDraftLocation(currentEntry.place);
     setSaveError('');
     setSaveNotice('');
     setPendingNavAction(null);
     setDeleteConfirming(false);
     setDeleteError('');
+    setShowFoodNameSuggestions(false);
     setPhotoLoadState('loading');
     setPhotoRetryKey(0);
     setPhotoLoadSlow(false);
@@ -143,9 +144,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   useEffect(() => {
     if (!draftPrompt && currentEntry && foodNameInputRef.current) {
-      // 前の写真の食材名・場所を候補として引き継いだ場合、そのまま上書きしやすいよう全選択しておく
       foodNameInputRef.current.focus();
-      foodNameInputRef.current.select();
     }
   }, [currentEventId, draftPrompt, currentEntry]);
 
@@ -198,6 +197,17 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   const foodNameError = validateFoodName(draftFoodName);
   const hasDiff = draftFoodName !== originalFoodName || draftLocation !== originalLocation || draftMemo !== originalMemo;
+
+  const foodNameSuggestions = useMemo(() => {
+    const q = draftFoodName.trim();
+    if (!q) return [];
+    return knownFoodNames.filter((n) => n !== q && n.includes(q)).slice(0, 8);
+  }, [draftFoodName, knownFoodNames]);
+
+  const selectFoodNameSuggestion = (name: string) => {
+    setDraftFoodName(name);
+    setShowFoodNameSuggestions(false);
+  };
 
   const total = snapshotIds?.length ?? 0;
   const position = Math.min(currentIndex + 1, total);
@@ -268,7 +278,6 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       const result = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
       clearFieldLogDraft(currentEntry.eventId);
       useZukanFieldStore.getState().updateEntry(currentEntry.eventId, result.entry);
-      lastEnteredRef.current = { foodName: draftFoodName, location: draftLocation };
       if (!result.noChange) {
         showNoticeThenClear(
           result.warning ? '保存されました。外部データへの反映が一部完了していません。' : '保存しました',
@@ -470,14 +479,35 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
             {canEdit ? (
               <div className={styles.formBox}>
                 <label className={styles.foodNameLabel}>食材名 <span className={styles.requiredMark}>必須</span></label>
-                <input
-                  ref={foodNameInputRef}
-                  className={styles.foodNameInput}
-                  value={draftFoodName}
-                  onChange={(e) => setDraftFoodName(e.target.value)}
-                  placeholder="食材名を入力"
-                  disabled={isSaving}
-                />
+                <div className={styles.foodNameInputWrap}>
+                  <input
+                    ref={foodNameInputRef}
+                    className={styles.foodNameInput}
+                    value={draftFoodName}
+                    onChange={(e) => { setDraftFoodName(e.target.value); setShowFoodNameSuggestions(true); }}
+                    onFocus={() => setShowFoodNameSuggestions(true)}
+                    onBlur={() => setShowFoodNameSuggestions(false)}
+                    placeholder="食材名を入力"
+                    disabled={isSaving}
+                    autoComplete="off"
+                  />
+                  {showFoodNameSuggestions && foodNameSuggestions.length > 0 && (
+                    <ul className={styles.foodNameSuggestions}>
+                      {foodNameSuggestions.map((name) => (
+                        <li key={name}>
+                          <button
+                            type="button"
+                            className={styles.foodNameSuggestionItem}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => selectFoodNameSuggestion(name)}
+                          >
+                            {name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 {foodNameError && <p className={styles.errorText}>{foodNameError}</p>}
 
                 <label className={styles.fieldLabel}>場所（任意）</label>
