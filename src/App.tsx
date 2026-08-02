@@ -69,7 +69,8 @@ export type Screen =
   | { name: 'wineDetail'; entry: WineEntity }
   // Spot Entity（管理画面のみ。Spot図鑑〈閲覧UI〉は次Phase。入口はHomeScreenのadmin向けnavRow）
   | { name: 'spotList' }
-  | { name: 'spotForm'; mode: 'create' }
+  // initial: フィールドログ整理画面等から、GPS・写真をあらかじめ入れた状態でスポット登録を始めるための任意項目
+  | { name: 'spotForm'; mode: 'create'; initial?: { lat?: number; lng?: number; photoUrl?: string } }
   | { name: 'spotForm'; mode: 'edit'; spot: SpotEntity }
   | { name: 'spotDetail'; entry: SpotEntity }
   // 画像メタデータ調査用デバッグ画面。認証不要・データ送信なし（?debug=metaで直接開ける）
@@ -145,7 +146,7 @@ function AppRoutes() {
   if (screen.name === 'spotDetail') return <SpotDetailScreen go={go} entry={screen.entry} />;
   if (screen.name === 'spotForm') return screen.mode === 'edit'
     ? <SpotFormScreen go={go} mode="edit" spot={screen.spot} />
-    : <SpotFormScreen go={go} mode="create" />;
+    : <SpotFormScreen go={go} mode="create" initial={screen.initial} />;
   if (screen.name === 'photoBulkUpload') return <PhotoBulkUploadScreen go={go} />;
   if (screen.name === 'photoHashRepair') return <PhotoHashRepairScreen go={go} />;
   if (screen.name === 'fieldIncompleteList') return <FieldIncompleteListScreen go={go} from={screen.from} />;

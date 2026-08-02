@@ -458,6 +458,18 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
               <span className={styles.gpsText}>
                 {hasGps ? `📍 GPSあり（緯度 ${currentEntry.lat.toFixed(5)}, 経度 ${currentEntry.lng.toFixed(5)}）` : '📍 GPSなし'}
               </span>
+              {hasGps && (
+                <button
+                  className={styles.spotLinkBtn}
+                  onClick={() => go({
+                    name: 'spotForm',
+                    mode: 'create',
+                    initial: { lat: currentEntry.lat, lng: currentEntry.lng, photoUrl: currentEntry.photoUrl },
+                  })}
+                >
+                  📍 この場所をスポットとして登録する
+                </button>
+              )}
               {skippedIds.has(currentEntry.eventId) && (
                 <span className={styles.skippedTag}>今回すでに「後で整理」を選んだ写真です</span>
               )}

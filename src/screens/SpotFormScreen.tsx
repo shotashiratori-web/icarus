@@ -8,20 +8,21 @@ import type { Screen } from '../App';
 import styles from './SpotFormScreen.module.css';
 
 type Props = { go: (s: Screen) => void } & (
-  | { mode: 'create' }
+  | { mode: 'create'; initial?: { lat?: number; lng?: number; photoUrl?: string } }
   | { mode: 'edit'; spot: SpotEntity }
 );
 
 export default function SpotFormScreen(props: Props) {
   const { go, mode } = props;
   const existing = mode === 'edit' ? props.spot : null;
+  const initial = mode === 'create' ? props.initial : undefined;
   const { idToken } = useAuth();
 
-  const [photoUrl, setPhotoUrl] = useState(existing?.photos[0] ?? '');
+  const [photoUrl, setPhotoUrl] = useState(existing?.photos[0] ?? initial?.photoUrl ?? '');
   const [title, setTitle] = useState(existing?.title ?? '');
   const [category, setCategory] = useState(existing?.category ?? '');
-  const [lat, setLat] = useState(existing?.lat != null ? String(existing.lat) : '');
-  const [lng, setLng] = useState(existing?.lng != null ? String(existing.lng) : '');
+  const [lat, setLat] = useState(existing?.lat != null ? String(existing.lat) : initial?.lat != null ? String(initial.lat) : '');
+  const [lng, setLng] = useState(existing?.lng != null ? String(existing.lng) : initial?.lng != null ? String(initial.lng) : '');
   const [description, setDescription] = useState(existing?.description ?? '');
 
   const [saving, setSaving] = useState(false);

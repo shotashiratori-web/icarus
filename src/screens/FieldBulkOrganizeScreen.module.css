@@ -31,6 +31,7 @@
 .infoRow { display:flex; flex-direction:column; gap:var(--space-1); font-size:var(--font-size-sm); color:var(--color-text-sub); }
 .dateText { font-weight:600; color:var(--color-text); }
 .skippedTag { font-size:var(--font-size-xs); color:var(--color-text-sub); font-style:italic; }
+.spotLinkBtn { align-self:flex-start; font-size:var(--font-size-xs); font-weight:600; color:var(--color-text); text-decoration:underline; padding:var(--space-1) 0; }
 
 .draftBanner { background:var(--color-draft); border-radius:var(--radius-md); padding:var(--space-4); display:flex; flex-direction:column; gap:var(--space-3); }
 .draftBannerTitle { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text); }
