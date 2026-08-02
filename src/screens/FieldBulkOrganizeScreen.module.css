@@ -13,10 +13,12 @@
 .centerMessage { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space-3); color:var(--color-text-sub); font-size:var(--font-size-sm); padding:var(--space-8); text-align:center; }
 
 /* --color-borderは画面背景とほぼ同色で、読み込み中・失敗時に何も見えないように映るため、
-   このラッパーだけコントラストのはっきりした背景色にする（電波不安定な現場での利用を想定） */
-.photoWrap { position:relative; width:100%; aspect-ratio:4/3; background:#cfcac0; border-radius:var(--radius-md); overflow:hidden; }
-.photo { width:100%; height:100%; object-fit:cover; display:block; }
-.photoPlaceholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:var(--font-size-sm); color:var(--color-text-sub); }
+   このラッパーだけコントラストのはっきりした背景色にする（電波不安定な現場での利用を想定）。
+   aspect-ratioプロパティに対応していない環境でも高さが潰れないよう、padding-top比率で高さを確保する
+   （4:3 = 75%）。子要素はすべてposition:absoluteでこの箱いっぱいに広げる */
+.photoWrap { position:relative; width:100%; padding-top:75%; background:#cfcac0; border-radius:var(--radius-md); overflow:hidden; }
+.photo { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+.photoPlaceholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:var(--font-size-sm); color:var(--color-text-sub); }
 .photoStatus { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space-2); font-size:var(--font-size-sm); color:var(--color-text); text-align:center; padding:var(--space-4); }
 .photoStatusSub { font-size:var(--font-size-xs); color:var(--color-text-sub); }
 .photoRetryBtn { margin-top:var(--space-2); font-size:var(--font-size-sm); font-weight:600; padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); background:var(--color-surface); border:1px solid var(--color-border); }
