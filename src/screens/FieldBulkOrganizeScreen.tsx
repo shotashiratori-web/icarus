@@ -88,6 +88,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const photoSlowTimerRef = useRef<number | null>(null);
 
   const foodNameInputRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const draftSaveTimerRef = useRef<number | null>(null);
   // 「保存できません」警告はこの画面を開いている間（複数枚をまたいで）1回だけ出す
@@ -149,9 +150,18 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentEventId]);
 
+  // 保存・スキップ・前へ等で写真が切り替わるたびに、スクロール位置を先頭へ戻す
+  // （フォーム入力欄が見える位置までスクロールした状態のまま次の写真へ進むと、
+  //   新しい写真が画面外になり見えないままになるため）
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [currentIndex]);
+
   useEffect(() => {
     if (!draftPrompt && currentEntry && foodNameInputRef.current) {
-      foodNameInputRef.current.focus();
+      // preventScroll: フォーカスによってモバイルが入力欄までスクロールし、
+      // 上の写真が見えなくなる（scrollTo(top:0)と競合する）のを防ぐ
+      foodNameInputRef.current.focus({ preventScroll: true });
     }
   }, [currentEventId, draftPrompt, currentEntry]);
 
@@ -407,7 +417,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         </button>
       </div>
 
-      <main className={styles.main}>
+      <main ref={mainRef} className={styles.main}>
         {isDone && (
           <div className={styles.doneBox}>
             <p className={styles.doneTitle}>今回の対象は以上です</p>
