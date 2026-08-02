@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { fetchFieldLogEntries, NetworkUnknownError } from '../api/zukanApi';
+import { loadFieldLogCache, saveFieldLogCache } from '../utils/fieldLogCache';
 import type { FieldLogEntry } from '../types/zukan';
 import type { TimeFilterKey } from '../utils/fieldTimeFilter';
 import type { SheetSnap } from '../types/sheet';
@@ -63,6 +64,7 @@ type ZukanFieldStore = {
   // データはフィールドマップ画面内で共有する。既に読み込み済みなら再fetchしない
   ensureLoaded: () => Promise<void>;
   reload: () => Promise<void>;
+  silentRefresh: () => Promise<void>;
   updateEntry: (eventId: string, patch: Partial<Pick<FieldLogEntry, 'foodName' | 'place' | 'memo'>>) => void;
   removeEntry: (eventId: string) => void;
   setSortMode: (mode: FieldSortMode) => void;
@@ -92,6 +94,15 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   ensureLoaded: async () => {
     const { loadState } = get();
     if (loadState === 'ready' || loadState === 'loading') return;
+
+    // GASの応答が遅い・止まる場合でも操作可能にするため、キャッシュがあれば即座に表示し、
+    // 裏で最新を取り直す（画面をブロックしない）。キャッシュがなければ従来どおり待つ
+    const cached = loadFieldLogCache();
+    if (cached) {
+      set({ entries: sortFieldEntries(cached, get().sortMode), loadState: 'ready' });
+      void get().silentRefresh();
+      return;
+    }
     await get().reload();
   },
 
@@ -100,9 +111,22 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
     try {
       const items = await fetchFieldLogEntries();
       set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
+      saveFieldLogCache(items);
     } catch (e) {
       const message = e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました';
       set({ loadState: 'error', errorMessage: message });
+    }
+  },
+
+  // キャッシュ表示中に裏で最新を取り直す。画面はブロックせず、失敗してもキャッシュ表示のまま維持する
+  // （GASが遅い・止まっている間もユーザーの操作を妨げないための仕組み）
+  silentRefresh: async () => {
+    try {
+      const items = await fetchFieldLogEntries();
+      set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
+      saveFieldLogCache(items);
+    } catch {
+      // 失敗してもキャッシュの表示を維持する。エラー表示にはしない
     }
   },
 
