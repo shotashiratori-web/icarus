@@ -27,6 +27,7 @@ import PhotoHashRepairScreen from './screens/PhotoHashRepairScreen';
 import FieldIncompleteListScreen from './screens/FieldIncompleteListScreen';
 import FieldBulkOrganizeScreen from './screens/FieldBulkOrganizeScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
@@ -85,14 +86,18 @@ function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
     return { name: 'metaDebug' };
   }
-  return { name: 'home' };
+  return loadStoredScreen() ?? { name: 'home' };
 }
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const { authState, staffMe } = useAuth();
 
-  const go = (s: Screen) => setScreen(s);
+  // リロードで現在の画面へ戻れるよう、遷移のたびにsessionStorageへ保存する
+  const go = (s: Screen) => {
+    setScreen(s);
+    saveCurrentScreen(s);
+  };
 
   // メタデータ調査画面は認証不要・データ送信なしのため、承認ゲートより先に描画する
   if (screen.name === 'metaDebug') return <MetaDebugScreen go={go} />;
