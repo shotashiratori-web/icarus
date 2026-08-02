@@ -8,6 +8,10 @@
 .progressText { font-size:var(--font-size-lg); font-weight:700; font-variant-numeric:tabular-nums; }
 .remainingText { font-size:var(--font-size-xs); color:var(--color-text-sub); }
 
+.sortRow { display:flex; gap:var(--space-2); padding:var(--space-3) var(--space-5); background:var(--color-surface); border-bottom:1px solid var(--color-border); flex-wrap:wrap; }
+.sortBtn, .sortBtnActive { font-size:var(--font-size-xs); font-weight:600; padding:var(--space-2) var(--space-3); border-radius:999px; border:1px solid var(--color-border); background:var(--color-bg); color:var(--color-text-sub); }
+.sortBtnActive { background:var(--color-primary); color:var(--color-primary-fg); border-color:var(--color-primary); }
+
 .main { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; gap:var(--space-4); max-width:560px; width:100%; margin:0 auto; padding:var(--space-5) var(--space-5) var(--space-8); }
 
 .centerMessage { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space-3); color:var(--color-text-sub); font-size:var(--font-size-sm); padding:var(--space-8); text-align:center; }

@@ -6,6 +6,7 @@ import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
 import { getSmallPreviewUrl } from '../utils/cloudinaryPreview';
+import { sortByGpsProximity } from '../utils/gpsProximitySort';
 import {
   loadFieldLogDraft,
   saveFieldLogDraft,
@@ -20,6 +21,7 @@ import styles from './FieldBulkOrganizeScreen.module.css';
 
 type Props = { go: (s: Screen) => void; from: Screen };
 type NavAction = 'prev' | 'next' | 'skip';
+type SortMode = 'date' | 'gps';
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
 
@@ -38,9 +40,13 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const { entries, loadState, errorMessage, ensureLoaded, reload } = useZukanFieldStore();
 
   // セッション開始時に対象EventIDを固定する。以降このセッション中は保存が進んでも分母・順序を変えない
+  const [sortMode, setSortMode] = useState<SortMode>('date');
   const [snapshotIds, setSnapshotIds] = useState<string[] | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  // 直前に入力した食材名・場所を、次の写真の初期値候補として引き継ぐ（GPS順で近い記録をまとめて
+  // 処理する際に、同じ食材・同じ場所であることが多いため。メモは観察内容そのものなので引き継がない）
+  const lastEnteredRef = useRef<{ foodName: string; location: string } | null>(null);
 
   const [originalFoodName, setOriginalFoodName] = useState('');
   const [draftFoodName, setDraftFoodName] = useState('');
@@ -82,13 +88,20 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   useEffect(() => {
     if (snapshotIds !== null || loadState !== 'ready') return;
-    const ids = entries
-      .filter(isBulkPhotoIncomplete)
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((e) => e.eventId)
-      .filter((id) => !!id);
-    setSnapshotIds(ids);
-  }, [loadState, entries, snapshotIds]);
+    const targets = entries.filter(isBulkPhotoIncomplete);
+    const ordered = sortMode === 'gps' ? sortByGpsProximity(targets) : [...targets].sort((a, b) => a.date.localeCompare(b.date));
+    setSnapshotIds(ordered.map((e) => e.eventId).filter((id) => !!id));
+  }, [loadState, entries, snapshotIds, sortMode]);
+
+  // 並び順を切り替えたら、その並び順で新しいセッションとしてやり直す
+  const changeSortMode = (mode: SortMode) => {
+    if (mode === sortMode) return;
+    setSortMode(mode);
+    setSnapshotIds(null);
+    setCurrentIndex(0);
+    setSkippedIds(new Set());
+    lastEnteredRef.current = null;
+  };
 
   const currentEventId = snapshotIds && currentIndex < snapshotIds.length ? snapshotIds[currentIndex] : null;
   const currentEntry = useMemo(
@@ -100,11 +113,14 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   useEffect(() => {
     if (!currentEntry) return;
     setOriginalFoodName(currentEntry.foodName);
-    setDraftFoodName(currentEntry.foodName);
     setOriginalLocation(currentEntry.place);
-    setDraftLocation(currentEntry.place);
     setOriginalMemo(currentEntry.memo);
     setDraftMemo(currentEntry.memo);
+    // 元の値が空欄の場合のみ、直前に入力した食材名・場所を候補として入れておく（あくまで初期値。
+    // originalFoodName/originalLocationは実際の元データのままにし、保存時の差分判定に影響させない）
+    const suggestion = lastEnteredRef.current;
+    setDraftFoodName(currentEntry.foodName || suggestion?.foodName || '');
+    setDraftLocation(currentEntry.place || suggestion?.location || '');
     setSaveError('');
     setSaveNotice('');
     setPendingNavAction(null);
@@ -127,7 +143,9 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   useEffect(() => {
     if (!draftPrompt && currentEntry && foodNameInputRef.current) {
+      // 前の写真の食材名・場所を候補として引き継いだ場合、そのまま上書きしやすいよう全選択しておく
       foodNameInputRef.current.focus();
+      foodNameInputRef.current.select();
     }
   }, [currentEventId, draftPrompt, currentEntry]);
 
@@ -250,6 +268,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       const result = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
       clearFieldLogDraft(currentEntry.eventId);
       useZukanFieldStore.getState().updateEntry(currentEntry.eventId, result.entry);
+      lastEnteredRef.current = { foodName: draftFoodName, location: draftLocation };
       if (!result.noChange) {
         showNoticeThenClear(
           result.warning ? '保存されました。外部データへの反映が一部完了していません。' : '保存しました',
@@ -338,6 +357,21 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       <div className={styles.progressRow}>
         <span className={styles.progressText}>{isDone ? total : position} / {total}</span>
         <span className={styles.remainingText}>残り{remaining}件</span>
+      </div>
+
+      <div className={styles.sortRow}>
+        <button
+          className={sortMode === 'date' ? styles.sortBtnActive : styles.sortBtn}
+          onClick={() => changeSortMode('date')}
+        >
+          撮影日順
+        </button>
+        <button
+          className={sortMode === 'gps' ? styles.sortBtnActive : styles.sortBtn}
+          onClick={() => changeSortMode('gps')}
+        >
+          GPS順（近い場所をまとめる）
+        </button>
       </div>
 
       <main className={styles.main}>
