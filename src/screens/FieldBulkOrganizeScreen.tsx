@@ -436,7 +436,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                       </button>
                     </div>
                     <button className={styles.deleteLinkBtn} onClick={() => setDeleteConfirming(true)}>
-                      🗑 食材ではない写真として削除する
+                      🗑 フィールドログ対象外として削除する（料理・メモ書きなど）
                     </button>
                   </>
                 )}
