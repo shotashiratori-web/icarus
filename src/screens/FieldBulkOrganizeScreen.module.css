@@ -51,6 +51,8 @@
 
 .readOnlyNote { font-size:var(--font-size-sm); color:var(--color-text-sub); text-align:center; padding:var(--space-4); }
 
+.deleteLinkBtn { margin-top:var(--space-2); font-size:var(--font-size-xs); color:var(--color-text-sub); text-align:center; padding:var(--space-2); text-decoration:underline; }
+
 .doneBox { display:flex; flex-direction:column; align-items:center; gap:var(--space-3); padding:var(--space-8) var(--space-5); text-align:center; }
 .doneTitle { font-size:var(--font-size-lg); font-weight:700; }
 .doneSub { font-size:var(--font-size-sm); color:var(--color-text-sub); }

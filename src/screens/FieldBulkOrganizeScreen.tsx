@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
-import { updateFieldLogEntry } from '../api/zukanApi';
+import { updateFieldLogEntry, deleteFieldLogEntries } from '../api/zukanApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
@@ -41,6 +41,11 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const [saveNotice, setSaveNotice] = useState('');
   const [draftSaveFailedNotice, setDraftSaveFailedNotice] = useState(false);
 
+  // 食材として同定不能な写真（メモ書きの誤混入等）をその場で削除するための状態
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
   const foodNameInputRef = useRef<HTMLInputElement>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const draftSaveTimerRef = useRef<number | null>(null);
@@ -73,6 +78,8 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setSaveError('');
     setSaveNotice('');
     setPendingNavAction(null);
+    setDeleteConfirming(false);
+    setDeleteError('');
 
     const draft = loadFieldLogDraft(currentEntry.eventId);
     if (draft && typeof draft.changes.foodName === 'string' && draft.changes.foodName !== currentEntry.foodName) {
@@ -199,6 +206,25 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     }
   };
 
+  // 食材として同定できない写真（メモ書きの誤混入等）をSheetsから削除する。管理者限定・元に戻せない
+  const handleDelete = async () => {
+    if (isDeleting || !idToken || !currentEntry?.eventId) return;
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      await deleteFieldLogEntries([currentEntry.eventId], idToken);
+      clearFieldLogDraft(currentEntry.eventId);
+      useZukanFieldStore.getState().removeEntry(currentEntry.eventId);
+      setDeleteConfirming(false);
+      doNav('next');
+    } catch (e) {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+      setDeleteError(e instanceof Error ? e.message : '削除に失敗しました。もう一度お試しください。');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const hasGps = !!currentEntry && Number.isFinite(currentEntry.lat) && Number.isFinite(currentEntry.lng)
     && !(currentEntry.lat === 0 && currentEntry.lng === 0);
 
@@ -263,7 +289,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         )}
 
         {!isDone && !currentEntry && (
-          <div className={styles.centerMessage}>この記録は見つかりませんでした。</div>
+          <div className={styles.centerMessage}>
+            <p>この記録は見つかりませんでした（削除済みの可能性があります）。</p>
+            <button className={styles.doneBackBtn} onClick={() => doNav('next')}>次へ</button>
+          </div>
         )}
 
         {!isDone && currentEntry && (
@@ -328,20 +357,40 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                       <button className={styles.discardBtn} onClick={() => doNav(pendingNavAction)}>このまま進む</button>
                     </div>
                   </div>
-                ) : (
-                  <div className={styles.actionRow}>
-                    <button className={styles.prevBtn} onClick={() => attemptNav('prev')} disabled={currentIndex === 0}>
-                      ← 前へ
-                    </button>
-                    <button className={styles.skipBtn} onClick={() => attemptNav('skip')}>後で整理</button>
-                    <button
-                      className={styles.saveBtn}
-                      onClick={() => void handleSaveAndNext()}
-                      disabled={isSaving || !!foodNameError}
-                    >
-                      {isSaving ? '保存中…' : '保存して次へ'}
-                    </button>
+                ) : deleteConfirming ? (
+                  <div className={styles.confirmRow}>
+                    <p className={styles.confirmText}>
+                      この写真を削除しますか？（Sheetsの行を削除します。元に戻せません）
+                    </p>
+                    {deleteError && <p className={styles.errorText}>{deleteError}</p>}
+                    <div className={styles.confirmBtns}>
+                      <button className={styles.continueBtn} onClick={() => setDeleteConfirming(false)} disabled={isDeleting}>
+                        キャンセル
+                      </button>
+                      <button className={styles.discardBtn} onClick={() => void handleDelete()} disabled={isDeleting}>
+                        {isDeleting ? '削除中…' : '削除する'}
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    <div className={styles.actionRow}>
+                      <button className={styles.prevBtn} onClick={() => attemptNav('prev')} disabled={currentIndex === 0}>
+                        ← 前へ
+                      </button>
+                      <button className={styles.skipBtn} onClick={() => attemptNav('skip')}>後で整理</button>
+                      <button
+                        className={styles.saveBtn}
+                        onClick={() => void handleSaveAndNext()}
+                        disabled={isSaving || !!foodNameError}
+                      >
+                        {isSaving ? '保存中…' : '保存して次へ'}
+                      </button>
+                    </div>
+                    <button className={styles.deleteLinkBtn} onClick={() => setDeleteConfirming(true)}>
+                      🗑 食材ではない写真として削除する
+                    </button>
+                  </>
                 )}
               </div>
             ) : (

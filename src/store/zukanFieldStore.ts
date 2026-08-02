@@ -64,6 +64,7 @@ type ZukanFieldStore = {
   ensureLoaded: () => Promise<void>;
   reload: () => Promise<void>;
   updateEntry: (eventId: string, patch: Partial<Pick<FieldLogEntry, 'foodName' | 'place' | 'memo'>>) => void;
+  removeEntry: (eventId: string) => void;
   setSortMode: (mode: FieldSortMode) => void;
   setSearchQuery: (q: string) => void;
   setKigoFilter: (k: string) => void;
@@ -113,6 +114,12 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
     set((state) => ({
       entries: state.entries.map((e) => (e.eventId === eventId ? { ...e, ...patch } : e)),
     }));
+  },
+
+  // Sheets行削除後、一覧・地図・整理系画面から即座に消えるよう、再fetchせずストアからも取り除く
+  removeEntry: (eventId) => {
+    if (!eventId) return;
+    set((state) => ({ entries: state.entries.filter((e) => e.eventId !== eventId) }));
   },
 
   setSearchQuery: (q) => set({ searchQuery: q }),
