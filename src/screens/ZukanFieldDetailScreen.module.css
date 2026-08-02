@@ -135,13 +135,65 @@
 }
 
 .editingTag {
-  margin-left: var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-primary-fg);
   background: var(--color-accent);
   border-radius: 999px;
   padding: 1px var(--space-2);
+  white-space: nowrap;
+}
+
+.foodNameEditWrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 var(--space-6);
+  margin-top: var(--space-2);
+}
+
+.foodNameInput {
+  flex: 1;
+  min-width: 120px;
+  font-family: inherit;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  padding: var(--space-1) var(--space-2);
+  border: 1.5px solid var(--color-text);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.foodNameInput:disabled {
+  opacity: 0.6;
+}
+
+.requiredMark {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  padding: 1px var(--space-2);
+  white-space: nowrap;
+}
+
+.locationInput {
+  flex: 1;
+  min-width: 100px;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-2);
+  border: 1.5px solid var(--color-text);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.locationInput:disabled {
+  opacity: 0.6;
 }
 
 .memoTextarea {

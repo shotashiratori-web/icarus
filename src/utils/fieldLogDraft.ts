@@ -1,9 +1,10 @@
-// フィールドログ編集の未保存下書き保護（Unit D-1）。
+// フィールドログ編集の未保存下書き保護（Unit D-1・Unit E-1でfoodName/locationへ拡張）。
 // 通信不安定な現場での入力消失を防ぐための安全機能であり、オフライン送信・同期機能ではない。
-// 保存対象は現時点ではmemoのみ。location編集追加時にchangesへ項目を増やして拡張する。
 
 export interface FieldLogDraftChanges {
   memo?: string;
+  foodName?: string;
+  location?: string;
 }
 
 export interface FieldLogDraft {
@@ -35,10 +36,15 @@ export function loadFieldLogDraft(entryId: string): FieldLogDraft | null {
     if (typeof parsed.entryId !== 'string' || parsed.entryId !== entryId) return null;
     if (!isPlainObject(parsed.changes)) return null;
     if (parsed.changes.memo !== undefined && typeof parsed.changes.memo !== 'string') return null;
+    if (parsed.changes.foodName !== undefined && typeof parsed.changes.foodName !== 'string') return null;
+    if (parsed.changes.location !== undefined && typeof parsed.changes.location !== 'string') return null;
     if (typeof parsed.savedAt !== 'string') return null;
 
+    // 古いmemoのみの下書き（Unit D-1）もそのまま読み込める（foodName/locationが無くても壊れたデータ扱いにしない）
     const changes: FieldLogDraftChanges = {};
     if (typeof parsed.changes.memo === 'string') changes.memo = parsed.changes.memo;
+    if (typeof parsed.changes.foodName === 'string') changes.foodName = parsed.changes.foodName;
+    if (typeof parsed.changes.location === 'string') changes.location = parsed.changes.location;
 
     return { entryId: parsed.entryId, changes, savedAt: parsed.savedAt };
   } catch {

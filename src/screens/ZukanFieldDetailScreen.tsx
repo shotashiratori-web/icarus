@@ -3,7 +3,7 @@ import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
-import { updateFieldLogEntryMemo } from '../api/zukanApi';
+import { updateFieldLogEntry, type FieldUpdateEntryChanges } from '../api/zukanApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import {
   loadFieldLogDraft,
@@ -12,6 +12,7 @@ import {
   isOldDraft,
   formatDraftSavedAt,
   type FieldLogDraft,
+  type FieldLogDraftChanges,
 } from '../utils/fieldLogDraft';
 import styles from './ZukanFieldDetailScreen.module.css';
 
@@ -19,12 +20,24 @@ type Props = { go: (s: Screen) => void; entry: FieldLogEntry; from: Screen };
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
 
+function validateFoodName(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === '') return '食材名は必須です';
+  if (trimmed === '無題') return '「無題」は食材名として保存できません';
+  return '';
+}
+
 export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();
   const canEdit = staffMe?.role === 'admin' && !!entry.eventId;
 
+  const [originalFoodName, setOriginalFoodName] = useState(entry.foodName);
+  const [draftFoodName, setDraftFoodName] = useState(entry.foodName);
+  const [originalLocation, setOriginalLocation] = useState(entry.place);
+  const [draftLocation, setDraftLocation] = useState(entry.place);
   const [originalMemo, setOriginalMemo] = useState(entry.memo);
   const [draftMemo, setDraftMemo] = useState(entry.memo);
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -33,40 +46,58 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const [draftPrompt, setDraftPrompt] = useState<FieldLogDraft | null>(null);
   const [draftSaveFailedNotice, setDraftSaveFailedNotice] = useState(false);
 
+  const foodNameInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const draftSaveTimerRef = useRef<number | null>(null);
   const draftSaveFailedShownRef = useRef(false);
 
+  const foodNameError = isEditing ? validateFoodName(draftFoodName) : '';
+
   // 画面表示時、同じentryIdの下書きが残っていないか確認する（自動上書きはしない）
   useEffect(() => {
     if (!entry.eventId) return;
     const draft = loadFieldLogDraft(entry.eventId);
-    if (draft && typeof draft.changes.memo === 'string' && draft.changes.memo !== entry.memo) {
-      setDraftPrompt(draft);
-    }
+    if (!draft) return;
+    const c = draft.changes;
+    const differs =
+      (typeof c.foodName === 'string' && c.foodName !== entry.foodName) ||
+      (typeof c.location === 'string' && c.location !== entry.place) ||
+      (typeof c.memo === 'string' && c.memo !== entry.memo);
+    if (differs) setDraftPrompt(draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry.eventId]);
 
+  // 編集開始時のフォーカス：食材名が未入力（「無題」表示）なら食材名を、そうでなければメモ欄末尾を選ぶ
   useEffect(() => {
     if (!isEditing) return;
+    if (!originalFoodName && foodNameInputRef.current) {
+      foodNameInputRef.current.focus();
+      return;
+    }
     const el = textareaRef.current;
     if (!el) return;
     el.focus();
     const len = el.value.length;
     el.setSelectionRange(len, len);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing]);
 
-  // 入力後debounceして下書きを保存する。元の値と同じに戻ったら保存せず削除する
+  // 入力後debounceして下書きを保存する。変更対象項目のうち、元の値と同じものは送らない
   useEffect(() => {
     if (!isEditing || !entry.eventId) return;
     if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = window.setTimeout(() => {
-      if (draftMemo === originalMemo) {
+      const changes: FieldLogDraftChanges = {};
+      if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
+      if (draftLocation !== originalLocation) changes.location = draftLocation;
+      if (draftMemo !== originalMemo) changes.memo = draftMemo;
+
+      if (Object.keys(changes).length === 0) {
         clearFieldLogDraft(entry.eventId);
         return;
       }
-      const ok = saveFieldLogDraft(entry.eventId, { memo: draftMemo });
+      const ok = saveFieldLogDraft(entry.eventId, changes);
       if (!ok && !draftSaveFailedShownRef.current) {
         draftSaveFailedShownRef.current = true;
         setDraftSaveFailedNotice(true);
@@ -75,7 +106,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
     return () => {
       if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     };
-  }, [draftMemo, isEditing, originalMemo, entry.eventId]);
+  }, [draftFoodName, draftLocation, draftMemo, isEditing, originalFoodName, originalLocation, originalMemo, entry.eventId]);
 
   useEffect(() => {
     return () => {
@@ -90,6 +121,8 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   };
 
   const startEditing = () => {
+    setDraftFoodName(originalFoodName);
+    setDraftLocation(originalLocation);
     setDraftMemo(originalMemo);
     setSaveError('');
     setSaveNotice('');
@@ -101,8 +134,10 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
 
   const restoreDraft = () => {
     if (!draftPrompt) return;
-    const memo = typeof draftPrompt.changes.memo === 'string' ? draftPrompt.changes.memo : originalMemo;
-    setDraftMemo(memo);
+    const c = draftPrompt.changes;
+    setDraftFoodName(typeof c.foodName === 'string' ? c.foodName : originalFoodName);
+    setDraftLocation(typeof c.location === 'string' ? c.location : originalLocation);
+    setDraftMemo(typeof c.memo === 'string' ? c.memo : originalMemo);
     setSaveError('');
     setSaveNotice('');
     setShowUnsavedConfirm(false);
@@ -117,7 +152,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
     setDraftPrompt(null);
   };
 
-  const hasDiff = draftMemo !== originalMemo;
+  const hasDiff = draftFoodName !== originalFoodName || draftLocation !== originalLocation || draftMemo !== originalMemo;
 
   const handleBack = () => {
     if (!isEditing) {
@@ -133,6 +168,8 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
 
   const discardAndStay = () => {
     if (entry.eventId) clearFieldLogDraft(entry.eventId);
+    setDraftFoodName(originalFoodName);
+    setDraftLocation(originalLocation);
     setDraftMemo(originalMemo);
     setSaveError('');
     setShowUnsavedConfirm(false);
@@ -144,31 +181,50 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   };
 
   const handleSave = async () => {
-    if (isSaving || !idToken || !entry.eventId) return;
+    if (isSaving || !idToken || !entry.eventId || foodNameError) return;
+
+    const changes: FieldUpdateEntryChanges = {};
+    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
+    if (draftLocation !== originalLocation) changes.location = draftLocation;
+    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+
+    if (Object.keys(changes).length === 0) {
+      setIsEditing(false);
+      return;
+    }
+
     setIsSaving(true);
     setSaveError('');
 
     // debounce待ちのズレを防ぐため、送信直前の内容を即座に下書きへ反映しておく（成功すれば直後に削除する）
-    if (draftMemo !== originalMemo) {
-      const ok = saveFieldLogDraft(entry.eventId, { memo: draftMemo });
-      if (!ok && !draftSaveFailedShownRef.current) {
-        draftSaveFailedShownRef.current = true;
-        setDraftSaveFailedNotice(true);
-      }
+    const draftOk = saveFieldLogDraft(entry.eventId, changes);
+    if (!draftOk && !draftSaveFailedShownRef.current) {
+      draftSaveFailedShownRef.current = true;
+      setDraftSaveFailedNotice(true);
     }
 
     try {
-      const result = await updateFieldLogEntryMemo(entry.eventId, draftMemo, idToken);
-      setOriginalMemo(result.memo);
-      setDraftMemo(result.memo);
+      const result = await updateFieldLogEntry(entry.eventId, changes, idToken);
+      if (typeof result.entry.memo === 'string') {
+        setOriginalMemo(result.entry.memo);
+        setDraftMemo(result.entry.memo);
+      }
+      if (typeof result.entry.foodName === 'string') {
+        setOriginalFoodName(result.entry.foodName);
+        setDraftFoodName(result.entry.foodName);
+      }
+      if (typeof result.entry.place === 'string') {
+        setOriginalLocation(result.entry.place);
+        setDraftLocation(result.entry.place);
+      }
       setIsEditing(false);
       setShowUnsavedConfirm(false);
       clearFieldLogDraft(entry.eventId);
-      useZukanFieldStore.getState().updateEntryMemo(entry.eventId, result.memo);
+      useZukanFieldStore.getState().updateEntry(entry.eventId, result.entry);
 
       if (!result.noChange) {
         if (result.warning) {
-          showNoticeThenClear('メモは保存されました。\n外部データへの反映が一部完了していません。', 5000);
+          showNoticeThenClear('保存されました。外部データへの反映が一部完了していません。', 5000);
         } else {
           showNoticeThenClear('保存しました', 4000);
         }
@@ -198,10 +254,36 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
             : <div className={styles.photoPlaceholder}>写真なし</div>}
         </div>
 
-        <h1 className={styles.foodName}>{entry.foodName || '無題'}</h1>
+        {isEditing ? (
+          <div className={styles.foodNameEditWrap}>
+            <span className={styles.editingTag}>編集中</span>
+            <input
+              ref={foodNameInputRef}
+              className={styles.foodNameInput}
+              value={draftFoodName}
+              onChange={(e) => setDraftFoodName(e.target.value)}
+              placeholder="食材名を入力"
+              disabled={isSaving}
+            />
+            <span className={styles.requiredMark}>必須</span>
+            {foodNameError && <p className={styles.errorText}>{foodNameError}</p>}
+          </div>
+        ) : (
+          <h1 className={styles.foodName}>{originalFoodName || '無題'}</h1>
+        )}
 
         <div className={styles.metaRow}>
-          <span className={styles.metaItem}>📍 {entry.place || '場所不明'}</span>
+          {isEditing ? (
+            <input
+              className={styles.locationInput}
+              value={draftLocation}
+              onChange={(e) => setDraftLocation(e.target.value)}
+              placeholder="場所を入力（任意）"
+              disabled={isSaving}
+            />
+          ) : (
+            <span className={styles.metaItem}>📍 {originalLocation || '場所不明'}</span>
+          )}
           <span className={styles.metaItem}>{entry.date}</span>
           {entry.kigo && <span className={styles.tag}>{entry.kigo}</span>}
         </div>
@@ -221,10 +303,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
 
         {(canEdit || originalMemo) && (
           <div className={styles.memoBox}>
-            <p className={styles.memoLabel}>
-              観察内容
-              {isEditing && <span className={styles.editingTag}>編集中</span>}
-            </p>
+            <p className={styles.memoLabel}>観察内容</p>
 
             {isEditing ? (
               <textarea
@@ -282,8 +361,9 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
                   通信が不安定な場所では画面を閉じないでください。
                 </p>
               )}
+              {foodNameError && <p className={styles.errorText}>{foodNameError}</p>}
               {saveError && <p className={styles.errorText}>{saveError}</p>}
-              <button className={styles.saveBtn} disabled={isSaving} onClick={() => void handleSave()}>
+              <button className={styles.saveBtn} disabled={isSaving || !!foodNameError} onClick={() => void handleSave()}>
                 {isSaving ? '保存中…' : '保存'}
               </button>
             </>

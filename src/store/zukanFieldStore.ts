@@ -63,7 +63,7 @@ type ZukanFieldStore = {
   // データはフィールドマップ画面内で共有する。既に読み込み済みなら再fetchしない
   ensureLoaded: () => Promise<void>;
   reload: () => Promise<void>;
-  updateEntryMemo: (eventId: string, memo: string) => void;
+  updateEntry: (eventId: string, patch: Partial<Pick<FieldLogEntry, 'foodName' | 'place' | 'memo'>>) => void;
   setSortMode: (mode: FieldSortMode) => void;
   setSearchQuery: (q: string) => void;
   setKigoFilter: (k: string) => void;
@@ -107,11 +107,11 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
 
   setSortMode: (mode) => set((state) => ({ sortMode: mode, entries: sortFieldEntries(state.entries, mode) })),
 
-  // 詳細画面での編集保存後、一覧・地図に古いメモが残らないようストア内の該当entryだけを更新する（再fetchはしない）
-  updateEntryMemo: (eventId, memo) => {
+  // 詳細画面での編集保存後、一覧・地図に古い値が残らないようストア内の該当entryだけを更新する（再fetchはしない）
+  updateEntry: (eventId, patch) => {
     if (!eventId) return;
     set((state) => ({
-      entries: state.entries.map((e) => (e.eventId === eventId ? { ...e, memo } : e)),
+      entries: state.entries.map((e) => (e.eventId === eventId ? { ...e, ...patch } : e)),
     }));
   },
 
