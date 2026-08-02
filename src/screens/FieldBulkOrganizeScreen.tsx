@@ -489,6 +489,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                     name: 'spotForm',
                     mode: 'create',
                     initial: { lat: currentEntry.lat, lng: currentEntry.lng, photoUrl: currentEntry.photoUrl },
+                    from: { name: 'fieldBulkOrganize', from },
                   })}
                 >
                   📍 この場所をスポットとして登録する
@@ -498,6 +499,28 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                 <span className={styles.skippedTag}>今回すでに「後で整理」を選んだ写真です</span>
               )}
             </div>
+
+            {canEdit && (
+              <div className={styles.classifyRow}>
+                <button
+                  className={styles.classifyBtn}
+                  onClick={() => void handleClassify()}
+                  disabled={isClassifying}
+                >
+                  {isClassifying ? 'AIで確認中…' : '🔍 AIで食材写真か確認する'}
+                </button>
+                {classifyError && <p className={styles.errorText}>{classifyError}</p>}
+                {classifyResult && (
+                  classifyResult.isFieldSubject ? (
+                    <p className={styles.classifyOk}>✅ 食材の写真のようです{classifyResult.reason && `（${classifyResult.reason}）`}</p>
+                  ) : (
+                    <p className={styles.classifyWarn}>
+                      ⚠️ 食材写真ではないかもしれません{classifyResult.reason && `（${classifyResult.reason}）`}。削除を検討してください
+                    </p>
+                  )
+                )}
+              </div>
+            )}
 
             {draftPrompt && (
               <div className={styles.draftBanner}>
@@ -616,26 +639,6 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                     <button className={styles.deleteLinkBtn} onClick={() => setDeleteConfirming(true)}>
                       🗑 フィールドログ対象外として削除する（料理・メモ書きなど）
                     </button>
-
-                    <div className={styles.classifyRow}>
-                      <button
-                        className={styles.classifyBtn}
-                        onClick={() => void handleClassify()}
-                        disabled={isClassifying}
-                      >
-                        {isClassifying ? 'AIで確認中…' : '🔍 AIで食材写真か確認する'}
-                      </button>
-                      {classifyError && <p className={styles.errorText}>{classifyError}</p>}
-                      {classifyResult && (
-                        classifyResult.isFieldSubject ? (
-                          <p className={styles.classifyOk}>✅ 食材の写真のようです{classifyResult.reason && `（${classifyResult.reason}）`}</p>
-                        ) : (
-                          <p className={styles.classifyWarn}>
-                            ⚠️ 食材写真ではないかもしれません{classifyResult.reason && `（${classifyResult.reason}）`}。削除を検討してください
-                          </p>
-                        )
-                      )}
-                    </div>
                   </>
                 )}
               </div>

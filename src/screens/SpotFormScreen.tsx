@@ -8,7 +8,7 @@ import type { Screen } from '../App';
 import styles from './SpotFormScreen.module.css';
 
 type Props = { go: (s: Screen) => void } & (
-  | { mode: 'create'; initial?: { lat?: number; lng?: number; photoUrl?: string } }
+  | { mode: 'create'; initial?: { lat?: number; lng?: number; photoUrl?: string }; from?: Screen }
   | { mode: 'edit'; spot: SpotEntity }
 );
 
@@ -16,6 +16,8 @@ export default function SpotFormScreen(props: Props) {
   const { go, mode } = props;
   const existing = mode === 'edit' ? props.spot : null;
   const initial = mode === 'create' ? props.initial : undefined;
+  // 一括写真整理等、スポット一覧以外から来た場合はそこへ戻す（元の画面がなければ従来どおりスポット一覧へ）
+  const from = mode === 'create' ? props.from : undefined;
   const { idToken } = useAuth();
 
   const [photoUrl, setPhotoUrl] = useState(existing?.photos[0] ?? initial?.photoUrl ?? '');
@@ -30,7 +32,7 @@ export default function SpotFormScreen(props: Props) {
   const [errorMessage, setErrorMessage] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const backToList = () => go({ name: 'spotList' });
+  const backToList = () => go(from ?? { name: 'spotList' });
 
   const handleSave = async () => {
     if (!idToken) return;
@@ -88,7 +90,7 @@ export default function SpotFormScreen(props: Props) {
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        <button className={styles.back} onClick={backToList}>← スポット一覧</button>
+        <button className={styles.back} onClick={backToList}>{from ? '← 戻る' : '← スポット一覧'}</button>
         <span className={styles.title}>{mode === 'edit' ? 'スポットを編集' : 'スポットを追加'}</span>
       </header>
 
