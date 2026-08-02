@@ -57,6 +57,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   // （枠の背景色が画面背景と近く、何もフィードバックがないと「壊れている」ように見えるため）
   const [photoLoadState, setPhotoLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [photoRetryKey, setPhotoRetryKey] = useState(0);
+  // 読み込みが長引く回線でも「ずっと読み込み中のまま」で行き詰まらないよう、
+  // 一定時間後に「元の写真を開く」導線を出す（onLoad/onErrorがそもそも発火しない状況の保険）
+  const [photoLoadSlow, setPhotoLoadSlow] = useState(false);
+  const photoSlowTimerRef = useRef<number | null>(null);
 
   const foodNameInputRef = useRef<HTMLInputElement>(null);
   const noticeTimerRef = useRef<number | null>(null);
@@ -98,6 +102,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setDeleteError('');
     setPhotoLoadState('loading');
     setPhotoRetryKey(0);
+    setPhotoLoadSlow(false);
 
     const draft = loadFieldLogDraft(currentEntry.eventId);
     const c = draft?.changes;
@@ -115,6 +120,16 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       foodNameInputRef.current.focus();
     }
   }, [currentEventId, draftPrompt, currentEntry]);
+
+  // 読み込みが8秒続いたら「時間がかかっています」表示へ切り替える（回線が不安定でも行き詰まらないように）
+  useEffect(() => {
+    if (photoSlowTimerRef.current) window.clearTimeout(photoSlowTimerRef.current);
+    if (photoLoadState !== 'loading') return;
+    photoSlowTimerRef.current = window.setTimeout(() => setPhotoLoadSlow(true), 8000);
+    return () => {
+      if (photoSlowTimerRef.current) window.clearTimeout(photoSlowTimerRef.current);
+    };
+  }, [photoLoadState, currentEventId, photoRetryKey]);
 
   // 入力後800msでその写真専用の下書きを保存する（既存Unit D-1と同じキー・同じ仕組みを本画面でも明示的に実装）
   useEffect(() => {
@@ -344,13 +359,26 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                           <p className={styles.photoStatusSub}>通信状況を確認してください</p>
                           <button
                             className={styles.photoRetryBtn}
-                            onClick={() => { setPhotoLoadState('loading'); setPhotoRetryKey((k) => k + 1); }}
+                            onClick={() => { setPhotoLoadState('loading'); setPhotoLoadSlow(false); setPhotoRetryKey((k) => k + 1); }}
                           >
                             再読み込み
                           </button>
+                          <a className={styles.photoDirectLink} href={currentEntry.photoUrl} target="_blank" rel="noreferrer">
+                            元の写真を開く
+                          </a>
                         </>
                       ) : (
-                        <p>読み込み中…</p>
+                        <>
+                          <p>読み込み中…</p>
+                          {photoLoadSlow && (
+                            <>
+                              <p className={styles.photoStatusSub}>読み込みに時間がかかっています</p>
+                              <a className={styles.photoDirectLink} href={currentEntry.photoUrl} target="_blank" rel="noreferrer">
+                                元の写真を開く
+                              </a>
+                            </>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
