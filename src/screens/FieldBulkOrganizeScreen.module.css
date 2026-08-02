@@ -32,6 +32,12 @@
 .foodNameInput { font-family:inherit; font-size:var(--font-size-xl); font-weight:700; padding:var(--space-3); border:1.5px solid var(--color-text); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); }
 .foodNameInput:disabled { opacity:0.6; }
 
+.fieldLabel { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); margin-top:var(--space-2); }
+.locationInput { font-family:inherit; font-size:var(--font-size-base); padding:var(--space-2) var(--space-3); border:1.5px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); }
+.locationInput:disabled { opacity:0.6; }
+.memoTextarea { font-family:inherit; font-size:var(--font-size-base); line-height:1.6; padding:var(--space-3); border:1.5px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); resize:vertical; width:100%; box-sizing:border-box; }
+.memoTextarea:disabled { opacity:0.6; }
+
 .errorText { font-size:var(--font-size-sm); color:var(--color-failed); }
 .saveNotice { font-size:var(--font-size-xs); font-weight:600; color:var(--color-synced); }
 .draftWarningText { font-size:var(--font-size-xs); color:var(--color-text-sub); white-space:pre-wrap; }

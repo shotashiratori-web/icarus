@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
-import { updateFieldLogEntry, deleteFieldLogEntries } from '../api/zukanApi';
+import { updateFieldLogEntry, deleteFieldLogEntries, type FieldUpdateEntryChanges } from '../api/zukanApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
@@ -12,6 +12,7 @@ import {
   isOldDraft,
   formatDraftSavedAt,
   type FieldLogDraft,
+  type FieldLogDraftChanges,
 } from '../utils/fieldLogDraft';
 import type { Screen } from '../App';
 import styles from './FieldBulkOrganizeScreen.module.css';
@@ -33,6 +34,12 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   const [originalFoodName, setOriginalFoodName] = useState('');
   const [draftFoodName, setDraftFoodName] = useState('');
+  // 場所・メモは任意。過去写真で内容を覚えていない場合まで無理に埋めさせない方針は変えず、
+  // 「覚えているならここで一緒に書きたい」場合にだけ使ってもらう追加項目として扱う
+  const [originalLocation, setOriginalLocation] = useState('');
+  const [draftLocation, setDraftLocation] = useState('');
+  const [originalMemo, setOriginalMemo] = useState('');
+  const [draftMemo, setDraftMemo] = useState('');
   const [draftPrompt, setDraftPrompt] = useState<FieldLogDraft | null>(null);
   const [pendingNavAction, setPendingNavAction] = useState<NavAction | null>(null);
 
@@ -75,6 +82,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     if (!currentEntry) return;
     setOriginalFoodName(currentEntry.foodName);
     setDraftFoodName(currentEntry.foodName);
+    setOriginalLocation(currentEntry.place);
+    setDraftLocation(currentEntry.place);
+    setOriginalMemo(currentEntry.memo);
+    setDraftMemo(currentEntry.memo);
     setSaveError('');
     setSaveNotice('');
     setPendingNavAction(null);
@@ -82,11 +93,13 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setDeleteError('');
 
     const draft = loadFieldLogDraft(currentEntry.eventId);
-    if (draft && typeof draft.changes.foodName === 'string' && draft.changes.foodName !== currentEntry.foodName) {
-      setDraftPrompt(draft);
-    } else {
-      setDraftPrompt(null);
-    }
+    const c = draft?.changes;
+    const differs = !!c && (
+      (typeof c.foodName === 'string' && c.foodName !== currentEntry.foodName) ||
+      (typeof c.location === 'string' && c.location !== currentEntry.place) ||
+      (typeof c.memo === 'string' && c.memo !== currentEntry.memo)
+    );
+    setDraftPrompt(differs ? draft! : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentEventId]);
 
@@ -101,11 +114,16 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     if (!currentEntry) return;
     if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = window.setTimeout(() => {
-      if (draftFoodName === originalFoodName) {
+      const changes: FieldLogDraftChanges = {};
+      if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
+      if (draftLocation !== originalLocation) changes.location = draftLocation;
+      if (draftMemo !== originalMemo) changes.memo = draftMemo;
+
+      if (Object.keys(changes).length === 0) {
         clearFieldLogDraft(currentEntry.eventId);
         return;
       }
-      const ok = saveFieldLogDraft(currentEntry.eventId, { foodName: draftFoodName });
+      const ok = saveFieldLogDraft(currentEntry.eventId, changes);
       if (!ok && !draftSaveFailedShownRef.current) {
         draftSaveFailedShownRef.current = true;
         setDraftSaveFailedNotice(true);
@@ -114,7 +132,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     return () => {
       if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     };
-  }, [draftFoodName, originalFoodName, currentEntry]);
+  }, [draftFoodName, draftLocation, draftMemo, originalFoodName, originalLocation, originalMemo, currentEntry]);
 
   useEffect(() => {
     return () => {
@@ -129,7 +147,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   };
 
   const foodNameError = validateFoodName(draftFoodName);
-  const hasDiff = draftFoodName !== originalFoodName;
+  const hasDiff = draftFoodName !== originalFoodName || draftLocation !== originalLocation || draftMemo !== originalMemo;
 
   const total = snapshotIds?.length ?? 0;
   const position = Math.min(currentIndex + 1, total);
@@ -140,6 +158,8 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     if (!draftPrompt) return;
     const c = draftPrompt.changes;
     setDraftFoodName(typeof c.foodName === 'string' ? c.foodName : originalFoodName);
+    setDraftLocation(typeof c.location === 'string' ? c.location : originalLocation);
+    setDraftMemo(typeof c.memo === 'string' ? c.memo : originalMemo);
     setDraftPrompt(null);
   };
 
@@ -166,7 +186,11 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       doNav(action);
       return;
     }
-    const ok = saveFieldLogDraft(currentEntry.eventId, { foodName: draftFoodName });
+    const changes: FieldLogDraftChanges = {};
+    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
+    if (draftLocation !== originalLocation) changes.location = draftLocation;
+    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+    const ok = saveFieldLogDraft(currentEntry.eventId, changes);
     if (!ok && !draftSaveFailedShownRef.current) {
       draftSaveFailedShownRef.current = true;
       setDraftSaveFailedNotice(true);
@@ -179,14 +203,19 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setIsSaving(true);
     setSaveError('');
 
-    const draftOk = saveFieldLogDraft(currentEntry.eventId, { foodName: draftFoodName });
+    const changes: FieldUpdateEntryChanges = {};
+    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
+    if (draftLocation !== originalLocation) changes.location = draftLocation;
+    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+
+    const draftOk = saveFieldLogDraft(currentEntry.eventId, changes);
     if (!draftOk && !draftSaveFailedShownRef.current) {
       draftSaveFailedShownRef.current = true;
       setDraftSaveFailedNotice(true);
     }
 
     try {
-      const result = await updateFieldLogEntry(currentEntry.eventId, { foodName: draftFoodName }, idToken);
+      const result = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
       clearFieldLogDraft(currentEntry.eventId);
       useZukanFieldStore.getState().updateEntry(currentEntry.eventId, result.entry);
       if (!result.noChange) {
@@ -339,6 +368,25 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                 />
                 {foodNameError && <p className={styles.errorText}>{foodNameError}</p>}
 
+                <label className={styles.fieldLabel}>場所（任意）</label>
+                <input
+                  className={styles.locationInput}
+                  value={draftLocation}
+                  onChange={(e) => setDraftLocation(e.target.value)}
+                  placeholder="覚えていれば入力"
+                  disabled={isSaving}
+                />
+
+                <label className={styles.fieldLabel}>メモ（任意）</label>
+                <textarea
+                  className={styles.memoTextarea}
+                  rows={4}
+                  value={draftMemo}
+                  onChange={(e) => setDraftMemo(e.target.value)}
+                  placeholder="気づいたこと・状況など、覚えていれば入力"
+                  disabled={isSaving}
+                />
+
                 {draftSaveFailedNotice && (
                   <p className={styles.draftWarningText}>
                     この端末では下書きを保存できません。通信が不安定な場所では画面を閉じないでください。
@@ -350,7 +398,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                 {pendingNavAction ? (
                   <div className={styles.confirmRow}>
                     <p className={styles.confirmText}>
-                      保存されていない食材名があります（下書きとして保護されています）
+                      保存されていない入力があります（下書きとして保護されています）
                     </p>
                     <div className={styles.confirmBtns}>
                       <button className={styles.continueBtn} onClick={() => setPendingNavAction(null)}>入力を続ける</button>
