@@ -53,6 +53,11 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
+  // 通信が不安定な現場での利用を想定し、写真の読み込み中・失敗を明示する
+  // （枠の背景色が画面背景と近く、何もフィードバックがないと「壊れている」ように見えるため）
+  const [photoLoadState, setPhotoLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [photoRetryKey, setPhotoRetryKey] = useState(0);
+
   const foodNameInputRef = useRef<HTMLInputElement>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const draftSaveTimerRef = useRef<number | null>(null);
@@ -91,6 +96,8 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setPendingNavAction(null);
     setDeleteConfirming(false);
     setDeleteError('');
+    setPhotoLoadState('loading');
+    setPhotoRetryKey(0);
 
     const draft = loadFieldLogDraft(currentEntry.eventId);
     const c = draft?.changes;
@@ -327,9 +334,39 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         {!isDone && currentEntry && (
           <>
             <div className={styles.photoWrap}>
-              {currentEntry.photoUrl
-                ? <img className={styles.photo} src={currentEntry.photoUrl} alt="" />
-                : <div className={styles.photoPlaceholder}>写真なし</div>}
+              {currentEntry.photoUrl ? (
+                <>
+                  {photoLoadState !== 'loaded' && (
+                    <div className={styles.photoStatus}>
+                      {photoLoadState === 'error' ? (
+                        <>
+                          <p>写真を読み込めませんでした</p>
+                          <p className={styles.photoStatusSub}>通信状況を確認してください</p>
+                          <button
+                            className={styles.photoRetryBtn}
+                            onClick={() => { setPhotoLoadState('loading'); setPhotoRetryKey((k) => k + 1); }}
+                          >
+                            再読み込み
+                          </button>
+                        </>
+                      ) : (
+                        <p>読み込み中…</p>
+                      )}
+                    </div>
+                  )}
+                  <img
+                    key={photoRetryKey}
+                    className={styles.photo}
+                    src={currentEntry.photoUrl}
+                    alt=""
+                    style={photoLoadState === 'loaded' ? undefined : { display: 'none' }}
+                    onLoad={() => setPhotoLoadState('loaded')}
+                    onError={() => setPhotoLoadState('error')}
+                  />
+                </>
+              ) : (
+                <div className={styles.photoPlaceholder}>写真なし</div>
+              )}
             </div>
 
             <div className={styles.infoRow}>
