@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -136,6 +137,29 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   const initialCenter: [number, number] = focusEntry ? [focusEntry.lat, focusEntry.lng] : [43.1957, 140.7835];
   const initialZoom = focusEntry ? 15 : 12;
 
+  // 「対象外も薄く表示」中に絞り込みをかけると、クラスターの数字は薄いピンも合算されてしまい、
+  // ヒットが何件あるクラスターなのか分からなくなる。絞り込み中はヒット数を表示し、
+  // ヒットが1件もないクラスターは色を落として目立たなくする
+  const clusterIconCreate = useCallback((cluster: { getChildCount: () => number; getAllChildMarkers: () => L.Marker[] }) => {
+    const total = cluster.getChildCount();
+    if (!isFiltering || !dimMode) {
+      const sizeClass = total < 10 ? 'small' : total < 100 ? 'medium' : 'large';
+      return L.divIcon({
+        html: `<div><span>${total}</span></div>`,
+        className: `marker-cluster marker-cluster-${sizeClass}`,
+        iconSize: L.point(40, 40),
+      });
+    }
+    const matchedCount = cluster.getAllChildMarkers()
+      .filter((m) => (m.options as L.MarkerOptions & { isMatched?: boolean }).isMatched).length;
+    const cls = matchedCount > 0 ? styles.clusterMatched : styles.clusterUnmatched;
+    return L.divIcon({
+      html: `<div><span>${matchedCount > 0 ? matchedCount : total}</span></div>`,
+      className: `marker-cluster ${cls}`,
+      iconSize: L.point(40, 40),
+    });
+  }, [isFiltering, dimMode]);
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -197,7 +221,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
 
               <FitFieldBounds matched={matchedEntries} skipFirst={!!focusEntry} />
 
-              <MarkerClusterGroup chunkedLoading maxClusterRadius={50} spiderfyOnMaxZoom>
+              <MarkerClusterGroup chunkedLoading maxClusterRadius={50} spiderfyOnMaxZoom iconCreateFunction={clusterIconCreate}>
                 {entries.map((entry) => (
                   <FieldMarker
                     key={entry.id}

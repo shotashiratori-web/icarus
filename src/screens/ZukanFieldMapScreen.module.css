@@ -75,6 +75,48 @@
   mix-blend-mode: multiply;
 }
 
+/* 「対象外も薄く表示」中に絞り込みをかけた時のクラスター見た目。
+   ヒットを含むクラスターは検索一致ピンと同じ赤系、含まないクラスターは灰色に落として目立たなくする */
+.clusterMatched {
+  background-clip: padding-box;
+  border-radius: 20px;
+  background-color: rgba(192, 57, 43, 0.35);
+}
+.clusterMatched div {
+  width: 30px;
+  height: 30px;
+  margin-left: 5px;
+  margin-top: 5px;
+  text-align: center;
+  border-radius: 15px;
+  font: 700 12px "Helvetica Neue", Arial, Helvetica, sans-serif;
+  background-color: #c0392b;
+  color: #fff;
+}
+.clusterMatched span {
+  line-height: 30px;
+}
+
+.clusterUnmatched {
+  background-clip: padding-box;
+  border-radius: 20px;
+  background-color: rgba(158, 158, 158, 0.25);
+}
+.clusterUnmatched div {
+  width: 30px;
+  height: 30px;
+  margin-left: 5px;
+  margin-top: 5px;
+  text-align: center;
+  border-radius: 15px;
+  font: 12px "Helvetica Neue", Arial, Helvetica, sans-serif;
+  background-color: rgba(158, 158, 158, 0.5);
+  color: #fff;
+}
+.clusterUnmatched span {
+  line-height: 30px;
+}
+
 .sheetCount {
   font-size: var(--font-size-xs);
   color: var(--color-text-sub);

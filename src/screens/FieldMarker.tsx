@@ -37,6 +37,12 @@ export default function FieldMarker({
     if (shouldOpen) markerRef.current?.openPopup();
   }, [shouldOpen]);
 
+  // クラスターアイコン側（ZukanFieldMapScreenのiconCreateFunction）で、
+  // 束ねられた中に絞り込み条件に一致するピンが何件あるかを判定するために使う
+  useEffect(() => {
+    if (markerRef.current) (markerRef.current.options as L.MarkerOptions & { isMatched?: boolean }).isMatched = matched;
+  }, [matched]);
+
   if (!dimMode && !matched) return null;
 
   // 検索バー等のオーバーレイ・下部シートを差し引いた「実際に使える高さ」。
