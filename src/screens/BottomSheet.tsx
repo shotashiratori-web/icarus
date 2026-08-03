@@ -2,7 +2,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNod
 import type { SheetSnap } from '../types/sheet';
 import styles from './BottomSheet.module.css';
 
-const SNAP_FRACTION: Record<SheetSnap, number> = {
+export const SNAP_FRACTION: Record<SheetSnap, number> = {
   collapsed: 0.16,
   half: 0.5,
   full: 0.86,

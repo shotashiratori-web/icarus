@@ -12,7 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import FieldMapControls from './FieldMapControls';
 import FieldMarker from './FieldMarker';
 import FitFieldBounds from './FitFieldBounds';
-import BottomSheet from './BottomSheet';
+import BottomSheet, { SNAP_FRACTION } from './BottomSheet';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import styles from './ZukanFieldMapScreen.module.css';
@@ -208,6 +208,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                     onOpenDetail={openDetail}
                     highlighted={!!searchQuery.trim() && matchedIds.has(entry.id)}
                     popupTopPadding={controlsHeight}
+                    popupBottomFraction={SNAP_FRACTION[sheetSnap]}
                   />
                 ))}
               </MarkerClusterGroup>
