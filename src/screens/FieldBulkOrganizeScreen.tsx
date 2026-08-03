@@ -8,6 +8,7 @@ import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncom
 import { getSmallPreviewUrl } from '../utils/cloudinaryPreview';
 import { sortByGpsProximity } from '../utils/gpsProximitySort';
 import { findNearbyEntries } from '../utils/nearbyDuplicates';
+import { loadDeferredIds, addDeferredId, removeDeferredId } from '../utils/fieldBulkOrganizeDeferred';
 import {
   loadFieldLogDraft,
   saveFieldLogDraft,
@@ -105,7 +106,12 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     if (snapshotIds !== null || loadState !== 'ready') return;
     const targets = entries.filter(isBulkPhotoIncomplete);
     const ordered = sortMode === 'gps' ? sortByGpsProximity(targets) : [...targets].sort((a, b) => a.date.localeCompare(b.date));
-    setSnapshotIds(ordered.map((e) => e.eventId).filter((id) => !!id));
+    // 「後で整理」やスポット登録を選んだ写真は、毎回セッションの先頭に出て邪魔にならないよう、
+    // 一覧から外さず並び順の最後に回す（前回セッション以前の判断を尊重する）
+    const deferred = loadDeferredIds();
+    const notDeferred = ordered.filter((e) => !deferred.has(e.eventId));
+    const deferredOnes = ordered.filter((e) => deferred.has(e.eventId));
+    setSnapshotIds([...notDeferred, ...deferredOnes].map((e) => e.eventId).filter((id) => !!id));
   }, [loadState, entries, snapshotIds, sortMode]);
 
   // 並び順を切り替えたら、その並び順で新しいセッションとしてやり直す
@@ -262,6 +268,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const doNav = (action: NavAction) => {
     if (action === 'skip' && currentEntry) {
       setSkippedIds((prev) => new Set(prev).add(currentEntry.eventId));
+      addDeferredId(currentEntry.eventId);
     }
     setCurrentIndex((i) => {
       if (action === 'prev') return Math.max(0, i - 1);
@@ -316,6 +323,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     try {
       const result = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
       clearFieldLogDraft(currentEntry.eventId);
+      removeDeferredId(currentEntry.eventId);
       useZukanFieldStore.getState().updateEntry(currentEntry.eventId, result.entry);
       if (!result.noChange) {
         showNoticeThenClear(
@@ -342,6 +350,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     try {
       await deleteFieldLogEntries([currentEntry.eventId], idToken);
       clearFieldLogDraft(currentEntry.eventId);
+      removeDeferredId(currentEntry.eventId);
       useZukanFieldStore.getState().removeEntry(currentEntry.eventId);
       setDeleteConfirming(false);
       doNav('next');
@@ -389,12 +398,14 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       if (Object.keys(changes).length > 0) {
         const currentResult = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
         clearFieldLogDraft(currentEntry.eventId);
+        removeDeferredId(currentEntry.eventId);
         useZukanFieldStore.getState().updateEntry(currentEntry.eventId, currentResult.entry);
       }
 
       for (const nearby of nearbyEmptyEntries) {
         const result = await updateFieldLogEntry(nearby.eventId, { foodName: draftFoodName }, idToken);
         clearFieldLogDraft(nearby.eventId);
+        removeDeferredId(nearby.eventId);
         useZukanFieldStore.getState().updateEntry(nearby.eventId, result.entry);
       }
 
@@ -555,12 +566,17 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
               {hasGps && (
                 <button
                   className={styles.spotLinkBtn}
-                  onClick={() => go({
-                    name: 'spotForm',
-                    mode: 'create',
-                    initial: { lat: currentEntry.lat, lng: currentEntry.lng, photoUrl: currentEntry.photoUrl },
-                    from: { name: 'fieldBulkOrganize', from },
-                  })}
+                  onClick={() => {
+                    // スポットとして登録する写真は食材ログとしては扱わないので、
+                    // 食材名が空欄のままでも毎回この一覧の先頭に出てこないようにする
+                    addDeferredId(currentEntry.eventId);
+                    go({
+                      name: 'spotForm',
+                      mode: 'create',
+                      initial: { lat: currentEntry.lat, lng: currentEntry.lng, photoUrl: currentEntry.photoUrl },
+                      from: { name: 'fieldBulkOrganize', from },
+                    });
+                  }}
                 >
                   📍 この場所をスポットとして登録する
                 </button>
