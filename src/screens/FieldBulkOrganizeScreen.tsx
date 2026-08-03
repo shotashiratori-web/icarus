@@ -291,6 +291,14 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   const handleSaveAndNext = async () => {
     if (isSaving || !idToken || !currentEntry?.eventId || foodNameError) return;
+
+    // 何も変更していない場合、空のchangesをAPIに送るとサーバー側のバリデーションエラーが
+    // そのまま画面に表示されてしまう（実例あり）。変更がないなら送信せずそのまま次へ進む
+    if (!hasDiff) {
+      doNav('next');
+      return;
+    }
+
     setIsSaving(true);
     setSaveError('');
 
@@ -376,9 +384,13 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     if (draftMemo !== originalMemo) changes.memo = draftMemo;
 
     try {
-      const currentResult = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
-      clearFieldLogDraft(currentEntry.eventId);
-      useZukanFieldStore.getState().updateEntry(currentEntry.eventId, currentResult.entry);
+      // 現在の写真自体には変更がない場合（既存の食材名を近くの写真に配るだけの場合）は、
+      // 空のchangesを送るとサーバー側のバリデーションエラーになるため、その場合は呼び出さない
+      if (Object.keys(changes).length > 0) {
+        const currentResult = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
+        clearFieldLogDraft(currentEntry.eventId);
+        useZukanFieldStore.getState().updateEntry(currentEntry.eventId, currentResult.entry);
+      }
 
       for (const nearby of nearbyEmptyEntries) {
         const result = await updateFieldLogEntry(nearby.eventId, { foodName: draftFoodName }, idToken);
