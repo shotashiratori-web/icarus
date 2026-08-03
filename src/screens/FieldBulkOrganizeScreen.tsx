@@ -433,7 +433,8 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   // 食材名ではなく場所をまとめて適用したい場合（同じ木・同じ場所で撮った複数枚など）。
   // 近くの写真の食材名には触れず、場所だけを配る
   const handleBatchApplyLocation = async () => {
-    if (isBatchApplyingLocation || !idToken || !currentEntry?.eventId || foodNameError || !draftLocation.trim()) return;
+    // 食材名が未入力でもこのボタンは使えてよい（場所だけ先にまとめたいケースが実際にある）
+    if (isBatchApplyingLocation || !idToken || !currentEntry?.eventId || !draftLocation.trim()) return;
     if (nearbyEmptyLocationEntries.length === 0) return;
     setIsBatchApplyingLocation(true);
     setBatchApplyLocationError('');
@@ -754,7 +755,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                     <button
                       className={styles.nearbyApplyBtn}
                       onClick={() => void handleBatchApplyLocation()}
-                      disabled={isBatchApplyingLocation || !!foodNameError || !draftLocation.trim()}
+                      disabled={isBatchApplyingLocation || !draftLocation.trim()}
                     >
                       {isBatchApplyingLocation ? '適用中…' : `この場所を、近くの${nearbyEmptyLocationEntries.length}件にもまとめて保存する`}
                     </button>
