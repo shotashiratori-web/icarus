@@ -4,6 +4,7 @@ import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { countFieldIncomplete } from '../utils/fieldIncomplete';
+import { loadExcludedIds } from '../utils/fieldBulkOrganizeDeferred';
 import type { FieldObservation } from '../types/fieldLog';
 import type { Screen } from '../App';
 import styles from './FieldScreen.module.css';
@@ -20,7 +21,11 @@ export default function FieldScreen({ go }: Props) {
   // 未整理件数の表示用。詳細画面等と同じストアを再利用し、追加のAPI呼び出しは発生させない
   const { entries: fieldEntries, ensureLoaded: ensureFieldEntriesLoaded } = useZukanFieldStore();
   useEffect(() => { void ensureFieldEntriesLoaded(); }, [ensureFieldEntriesLoaded]);
-  const incompleteCounts = useMemo(() => countFieldIncomplete(fieldEntries), [fieldEntries]);
+  const incompleteCounts = useMemo(() => {
+    // スポットとして登録済みの写真は食材ログとしては扱わないので、未整理件数には含めない
+    const excluded = loadExcludedIds();
+    return countFieldIncomplete(fieldEntries.filter((e) => !excluded.has(e.eventId)));
+  }, [fieldEntries]);
 
   const load = async (token: string) => {
     setState('loading');

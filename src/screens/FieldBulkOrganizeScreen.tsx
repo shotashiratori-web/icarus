@@ -8,7 +8,7 @@ import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncom
 import { getSmallPreviewUrl } from '../utils/cloudinaryPreview';
 import { sortByGpsProximity } from '../utils/gpsProximitySort';
 import { findNearbyEntries } from '../utils/nearbyDuplicates';
-import { loadDeferredIds, addDeferredId, removeDeferredId } from '../utils/fieldBulkOrganizeDeferred';
+import { loadDeferredIds, addDeferredId, removeDeferredId, loadExcludedIds, addExcludedId } from '../utils/fieldBulkOrganizeDeferred';
 import {
   loadFieldLogDraft,
   saveFieldLogDraft,
@@ -104,9 +104,11 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   useEffect(() => {
     if (snapshotIds !== null || loadState !== 'ready') return;
-    const targets = entries.filter(isBulkPhotoIncomplete);
+    const excluded = loadExcludedIds();
+    // スポットとして登録した写真は食材ログとして扱わないので、一覧から完全に除外する
+    const targets = entries.filter((e) => isBulkPhotoIncomplete(e) && !excluded.has(e.eventId));
     const ordered = sortMode === 'gps' ? sortByGpsProximity(targets) : [...targets].sort((a, b) => a.date.localeCompare(b.date));
-    // 「後で整理」やスポット登録を選んだ写真は、毎回セッションの先頭に出て邪魔にならないよう、
+    // 「後で整理」を選んだ写真は、毎回セッションの先頭に出て邪魔にならないよう、
     // 一覧から外さず並び順の最後に回す（前回セッション以前の判断を尊重する）
     const deferred = loadDeferredIds();
     const notDeferred = ordered.filter((e) => !deferred.has(e.eventId));
@@ -248,7 +250,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
   const total = snapshotIds?.length ?? 0;
   const position = Math.min(currentIndex + 1, total);
-  const remaining = useMemo(() => countFieldIncomplete(entries).bulkPhoto, [entries]);
+  const remaining = useMemo(() => {
+    const excluded = loadExcludedIds();
+    return countFieldIncomplete(entries.filter((e) => !excluded.has(e.eventId))).bulkPhoto;
+  }, [entries]);
   const isDone = snapshotIds !== null && currentIndex >= snapshotIds.length;
 
   const restoreDraft = () => {
@@ -568,8 +573,8 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                   className={styles.spotLinkBtn}
                   onClick={() => {
                     // スポットとして登録する写真は食材ログとしては扱わないので、
-                    // 食材名が空欄のままでも毎回この一覧の先頭に出てこないようにする
-                    addDeferredId(currentEntry.eventId);
+                    // 食材名が空欄のままでも二度とこの一覧に出てこないようにする
+                    addExcludedId(currentEntry.eventId);
                     go({
                       name: 'spotForm',
                       mode: 'create',
