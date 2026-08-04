@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import type { TimeFilterKey } from '../utils/fieldTimeFilter';
 import type { FieldSortMode } from '../store/zukanFieldStore';
 import styles from './FieldMapControls.module.css';
@@ -62,6 +62,11 @@ export default function FieldMapControls({
   statusText,
   duplicateCount, showDupOnly, onToggleShowDupOnly, manageMode, onToggleManageMode,
 }: Props) {
+  // スマホでは検索バー以下の絞り込み群だけで画面の大半を占めてしまい、地図がほとんど見えなくなる
+  // （実機報告あり）。既定では畳んでおき、必要な時だけ「絞り込み・並び替え」ボタンで開く
+  const [expanded, setExpanded] = useState(false);
+  const hasActiveFilter = timeFilter !== 'all' || !!kigoFilter;
+
   return (
     <div className={styles.root} ref={rootRef}>
       <div className={styles.searchBar}>
@@ -74,6 +79,15 @@ export default function FieldMapControls({
         />
       </div>
 
+      <div className={styles.toggleRow}>
+        <button className={styles.toggleBtn} onClick={() => setExpanded((v) => !v)}>
+          絞り込み・並び替え{hasActiveFilter ? ' ●' : ''} {expanded ? '▲' : '▼'}
+        </button>
+        <span className={styles.toggleStatus}>{statusText}</span>
+      </div>
+
+      {expanded && (
+        <>
       <div className={styles.filterBar}>
         {TIME_PRESETS.map(({ key, label, star }) => (
           <button
@@ -170,8 +184,8 @@ export default function FieldMapControls({
           </button>
         </div>
       )}
-
-      <div className={styles.status}>{statusText}</div>
+        </>
+      )}
     </div>
   );
 }
