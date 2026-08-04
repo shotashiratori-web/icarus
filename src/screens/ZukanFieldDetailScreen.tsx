@@ -17,6 +17,10 @@ import {
 import { validateFoodName } from '../utils/foodNameValidation';
 import styles from './ZukanFieldDetailScreen.module.css';
 
+function buildDirectionsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+
 type Props = { go: (s: Screen) => void; entry: FieldLogEntry; from: Screen };
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
@@ -47,6 +51,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const draftSaveFailedShownRef = useRef(false);
 
   const foodNameError = isEditing ? validateFoodName(draftFoodName) : '';
+  const hasGps = Number.isFinite(entry.lat) && Number.isFinite(entry.lng) && !(entry.lat === 0 && entry.lng === 0);
 
   // 画面表示時、同じentryIdの下書きが残っていないか確認する（自動上書きはしない）
   useEffect(() => {
@@ -328,6 +333,11 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
             >
               📍 地図で見る
             </button>
+            {hasGps && (
+              <a className={styles.linkBtn} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer">
+                🧭 経路案内
+              </a>
+            )}
             {entry.notionUrl && (
               <a className={styles.linkBtn} href={entry.notionUrl} target="_blank" rel="noreferrer">
                 📝 Notionで開く
