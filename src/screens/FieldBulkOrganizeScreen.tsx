@@ -9,6 +9,7 @@ import { getSmallPreviewUrl } from '../utils/cloudinaryPreview';
 import { sortByGpsProximity } from '../utils/gpsProximitySort';
 import { findNearbyEntries } from '../utils/nearbyDuplicates';
 import { loadDeferredIds, addDeferredId, removeDeferredId, loadExcludedIds, addExcludedId } from '../utils/fieldBulkOrganizeDeferred';
+import HomeButton from '../components/HomeButton';
 import {
   loadFieldLogDraft,
   saveFieldLogDraft,
@@ -477,6 +478,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         <header className={styles.header}>
           <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
           <span className={styles.title}>📷 一括写真の整理</span>
+          <HomeButton go={go} />
         </header>
         <div className={styles.centerMessage}>読み込み中…</div>
       </div>
@@ -489,6 +491,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         <header className={styles.header}>
           <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
           <span className={styles.title}>📷 一括写真の整理</span>
+          <HomeButton go={go} />
         </header>
         <div className={styles.centerMessage}>
           <p className={styles.errorText}>{errorMessage}</p>
@@ -504,6 +507,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         <header className={styles.header}>
           <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
           <span className={styles.title}>📷 一括写真の整理</span>
+          <HomeButton go={go} />
         </header>
         <div className={styles.centerMessage}>整理が必要な写真はありません。</div>
       </div>
@@ -515,6 +519,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
         <span className={styles.title}>📷 一括写真の整理</span>
+        <HomeButton go={go} />
       </header>
 
       <div className={styles.progressRow}>

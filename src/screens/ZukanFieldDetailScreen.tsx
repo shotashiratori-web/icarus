@@ -15,6 +15,7 @@ import {
   type FieldLogDraftChanges,
 } from '../utils/fieldLogDraft';
 import { validateFoodName } from '../utils/foodNameValidation';
+import HomeButton from '../components/HomeButton';
 import styles from './ZukanFieldDetailScreen.module.css';
 
 function buildDirectionsUrl(lat: number, lng: number): string {
@@ -244,6 +245,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
         {canEdit && !isEditing && !draftPrompt && (
           <button className={styles.editBtn} onClick={startEditing}>編集</button>
         )}
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>

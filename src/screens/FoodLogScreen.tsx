@@ -23,6 +23,7 @@ import { submitWithFallback } from '../submission/orchestrator';
 import * as queueDB from '../submission/queueDB';
 import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './FoodLogScreen.module.css';
 
 type Phase = 'photoSelect' | 'photoEdit' | 'confirm' | 'sending' | 'complete';
@@ -494,6 +495,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
           <button className={styles.signOutBtn} onClick={signOut} title={userEmail}>
             {userEmail.split('@')[0]}
           </button>
+          <HomeButton go={go} />
         </header>
 
         {/* サムネイルストリップ */}
@@ -681,6 +683,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => setPhase('photoEdit')}>← 修正する</button>
           <span className={styles.headerTitle}>送信内容の確認</span>
+          <HomeButton go={go} />
         </header>
         <main className={styles.confirmMain}>
           {submitMode === 'batch' && (

@@ -3,6 +3,7 @@ import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { isRecordIncomplete, missingFieldsOf, type MissingField } from '../utils/fieldIncomplete';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './FieldIncompleteListScreen.module.css';
 
 type Props = { go: (s: Screen) => void; from: Screen };
@@ -39,6 +40,7 @@ export default function FieldIncompleteListScreen({ go, from }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
         <span className={styles.title}>📝 記録の補完</span>
+        <HomeButton go={go} />
       </header>
 
       <div className={styles.filterRow}>

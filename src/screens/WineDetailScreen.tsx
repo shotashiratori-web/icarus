@@ -1,5 +1,6 @@
 import type { WineEntity } from '../types/wineEntity';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './WineDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; entry: WineEntity };
@@ -10,6 +11,7 @@ export default function WineDetailScreen({ go, entry }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go({ name: 'wineList' })}>← 一覧へ戻る</button>
         <span className={styles.title}>ワイン</span>
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>

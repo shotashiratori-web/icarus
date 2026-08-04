@@ -16,6 +16,7 @@ import FitFieldBounds from './FitFieldBounds';
 import BottomSheet, { SNAP_FRACTION } from './BottomSheet';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './ZukanFieldMapScreen.module.css';
 
 type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen };
@@ -165,6 +166,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
         <span className={styles.title}>🗺️ フィールドマップ</span>
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>

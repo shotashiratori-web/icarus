@@ -4,6 +4,7 @@ import { submitWork, WorkProcessingError, NetworkUnknownError } from '../api/wor
 import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './WorkFormScreen.module.css';
 
 type Phase = 'form' | 'confirm' | 'sending' | 'complete';
@@ -129,6 +130,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => go(backTarget)}>← 戻る</button>
           <span className={styles.headerTitle}>{mode === 'create' ? '新しい作業' : '記録を追加'}</span>
+          <HomeButton go={go} />
         </header>
         <main className={styles.authMain}>
           <div className={styles.authCard}>
@@ -153,6 +155,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
           <button className={styles.backBtn} onClick={() => go(backTarget)}>← 戻る</button>
           <span className={styles.headerTitle}>{mode === 'create' ? '新しい作業' : `記録を追加${workTitle ? `: ${workTitle}` : ''}`}</span>
           <span className={styles.headerSub}>{userEmail.split('@')[0]}</span>
+          <HomeButton go={go} />
         </header>
 
         <main className={styles.formMain}>
@@ -255,6 +258,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => setPhase('form')}>← 修正する</button>
           <span className={styles.headerTitle}>送信内容の確認</span>
+          <HomeButton go={go} />
         </header>
         <main className={styles.confirmMain}>
           <dl className={styles.confirmList}>
@@ -294,6 +298,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
         <div className={styles.root}>
           <header className={styles.header}>
             <span className={styles.headerTitle}>送信完了</span>
+            <HomeButton go={go} />
           </header>
           <main className={styles.completeMain}>
             <div className={styles.successIcon}>✓</div>
@@ -317,7 +322,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
     if (outcome.kind === 'processing') {
       return (
         <div className={styles.root}>
-          <header className={styles.header}><span className={styles.headerTitle}>処理中です</span></header>
+          <header className={styles.header}><span className={styles.headerTitle}>処理中です</span><HomeButton go={go} /></header>
           <main className={styles.completeMain}>
             <div className={styles.warnIcon}>…</div>
             <p className={styles.successText}>{outcome.message}</p>
@@ -330,7 +335,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
 
     return (
       <div className={styles.root}>
-        <header className={styles.header}><span className={styles.headerTitle}>送信失敗</span></header>
+        <header className={styles.header}><span className={styles.headerTitle}>送信失敗</span><HomeButton go={go} /></header>
         <main className={styles.completeMain}>
           <div className={styles.warnIcon}>!</div>
           <p className={styles.successText}>{outcome.message}</p>

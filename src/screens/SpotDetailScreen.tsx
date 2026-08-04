@@ -1,5 +1,6 @@
 import type { SpotEntity } from '../types/spotEntity';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './SpotDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; entry: SpotEntity };
@@ -10,6 +11,7 @@ export default function SpotDetailScreen({ go, entry }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go({ name: 'spotList' })}>← 一覧へ戻る</button>
         <span className={styles.title}>スポット</span>
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>

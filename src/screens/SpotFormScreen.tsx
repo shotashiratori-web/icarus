@@ -5,6 +5,7 @@ import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import type { SpotEntity, SpotFormInput } from '../types/spotEntity';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './SpotFormScreen.module.css';
 
 type Props = { go: (s: Screen) => void } & (
@@ -92,6 +93,7 @@ export default function SpotFormScreen(props: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={backToList}>{from ? '← 戻る' : '← スポット一覧'}</button>
         <span className={styles.title}>{mode === 'edit' ? 'スポットを編集' : 'スポットを追加'}</span>
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>

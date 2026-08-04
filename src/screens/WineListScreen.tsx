@@ -5,6 +5,7 @@ import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import type { WineEntity } from '../types/wineEntity';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './WineListScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
@@ -63,6 +64,7 @@ export default function WineListScreen({ go }: Props) {
         <button className={styles.back} onClick={() => go({ name: 'zukan' })}>← 図鑑</button>
         <span className={styles.title}>🍷 ワイン</span>
         <button className={styles.addBtn} onClick={() => go({ name: 'wineForm', mode: 'create' })}>+ 追加</button>
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>

@@ -4,6 +4,7 @@ import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import type { WorkDetail } from '../types/workLog';
 import type { Screen } from '../App';
+import HomeButton from '../components/HomeButton';
 import styles from './WorkDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; workId: string };
@@ -69,6 +70,7 @@ export default function WorkDetailScreen({ go, workId }: Props) {
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go({ name: 'processing' })}>← 一覧</button>
         <span className={styles.title}>{detail?.title || '作業詳細'}</span>
+        <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>
