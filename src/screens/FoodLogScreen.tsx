@@ -232,11 +232,18 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
   // 送信できなかった写真は「エラー」ではなく「保留」としてSubmission Frameworkのqueueへ格納する。
   // 失敗してもここで例外は投げない（submitWithFallbackは常に成功/保留のいずれかで解決する）。
   const startSend = async () => {
+    const useD1 = isFieldLogD1Enabled(userEmail);
+
+    // D1経路はdate必須（Worker側のバリデーションと一致させる）。GAS経路は既存どおり日付未入力でも送信できる。
+    // 今日の日付を自動で補うことはしない（ユーザーが気づかないまま誤った日付が保存されるのを防ぐ）
+    if (useD1 && photos.some((p) => !p.date.trim())) {
+      alert('日付を入力してください');
+      return;
+    }
+
     setPhase('sending');
     const results: PhotoSendResult[] = photos.map((_, i) => ({ photoIndex: i, status: 'idle' }));
     setSendResults([...results]);
-
-    const useD1 = isFieldLogD1Enabled(userEmail);
 
     for (let i = 0; i < photos.length; i++) {
       results[i] = { ...results[i], status: 'sending' };
@@ -251,7 +258,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
         const d1Payload: FieldLogD1SubmissionPayload = {
           eventId: photos[i].eventId,
           requestId: photos[i].requestId,
-          date: photos[i].date || todayString(),
+          date: photos[i].date,
           food: photos[i].food,
           place: cf.place,
           memo: photos[i].memo,
