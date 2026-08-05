@@ -33,3 +33,13 @@ export const PHOTO_HASH_REGISTER_URL = `${WORKER_URL}/photo-hashes/register`;
 export const FIELD_DELETE_ENTRIES_URL = `${WORKER_URL}/field/delete-entries`;
 export const FIELD_UPDATE_ENTRY_URL = `${WORKER_URL}/field/update-entry`;
 export const FIELD_CLASSIFY_PHOTO_URL = `${WORKER_URL}/field/classify-photo`;
+
+// Unit D: Worker+D1新経路（新規フィールドログ送信のみが対象。編集・削除・一般スタッフは既存GAS経路のまま）
+export const FIELD_CLOUDINARY_SIGNATURE_URL = `${WORKER_URL}/field/cloudinary-signature`;
+export const FIELD_SUBMIT_D1_URL = `${WORKER_URL}/field/submit-d1`;
+
+// 新経路（D1保存）を使う管理者アカウントの許可リスト。ここを空にするだけで全員が既存GAS経路へ戻る（切り戻し）。
+// クライアント側の判定だけに頼らず、/field/submit-d1・/field/cloudinary-signature側の管理者限定チェックも維持している
+export const FIELD_LOG_D1_ENABLED_STAFF: string[] = [
+  'shota.shiratori@liftup-power.co',
+];

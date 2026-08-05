@@ -67,6 +67,7 @@ type ZukanFieldStore = {
   silentRefresh: () => Promise<void>;
   updateEntry: (eventId: string, patch: Partial<Pick<FieldLogEntry, 'foodName' | 'place' | 'memo'>>) => void;
   removeEntry: (eventId: string) => void;
+  addEntry: (entry: FieldLogEntry) => void;
   setSortMode: (mode: FieldSortMode) => void;
   setSearchQuery: (q: string) => void;
   setKigoFilter: (k: string) => void;
@@ -144,6 +145,15 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   removeEntry: (eventId) => {
     if (!eventId) return;
     set((state) => ({ entries: state.entries.filter((e) => e.eventId !== eventId) }));
+  },
+
+  // Unit D（Worker+D1新経路）専用。D1保存直後、画面遷移を待たずに一覧・地図へ即時反映する。
+  // ただし一覧・地図は再読み込み時にSheets由来のGeoJSONを読み直すため、Cron同期(Unit E)が終わる前に
+  // ページを再読み込みすると、ここで足したentryは一時的に見えなくなる（D1には残っており消えたわけではない）。
+  addEntry: (entry) => {
+    set((state) => ({
+      entries: sortFieldEntries([entry, ...state.entries.filter((e) => e.eventId !== entry.eventId)], state.sortMode),
+    }));
   },
 
   setSearchQuery: (q) => set({ searchQuery: q }),

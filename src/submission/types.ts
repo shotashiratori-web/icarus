@@ -1,8 +1,9 @@
-export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'spot' | 'wine' | 'daily' | 'workLog';
+export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'daily' | 'workLog';
 
 export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   foodLog: '食材ログ',
   fieldLog: 'フィールドログ',
+  fieldLogD1: '食材ログ（新経路）',
   spot: 'スポット',
   wine: 'ワイン',
   daily: 'Daily',

@@ -22,9 +22,19 @@ import { useAuth } from '../context/AuthContext';
 import { submitWithFallback } from '../submission/orchestrator';
 import * as queueDB from '../submission/queueDB';
 import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
+import type { FieldLogD1SubmissionPayload } from '../submission/adapters/fieldLogD1Adapter';
+import { FIELD_LOG_D1_ENABLED_STAFF } from '../config';
+import { useZukanFieldStore } from '../store/zukanFieldStore';
+import { buildFieldLogId } from '../types/zukan';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import styles from './FoodLogScreen.module.css';
+
+// Unit D: Worker+D1新経路の許可対象アカウントかどうか。ここをtrueにする条件を無くせば全員が既存GAS経路へ戻る
+function isFieldLogD1Enabled(userEmail: string): boolean {
+  const normalized = userEmail.trim().toLowerCase();
+  return FIELD_LOG_D1_ENABLED_STAFF.some((e) => e.toLowerCase() === normalized);
+}
 
 type Phase = 'photoSelect' | 'photoEdit' | 'confirm' | 'sending' | 'complete';
 
@@ -83,6 +93,8 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
       if (draft && draft.photos.length > 0) {
         setPhotos(draft.photos.map(p => ({
           ...p,
+          // このデプロイ以前に保存された下書きにはeventIdが無い場合があるため、無ければここで補う
+          eventId: p.eventId || crypto.randomUUID(),
           previewUrl: p.base64 ? `data:image/jpeg;base64,${p.base64}` : '',
         })));
         setCommon(draft.commonFields);
@@ -224,21 +236,79 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
     const results: PhotoSendResult[] = photos.map((_, i) => ({ photoIndex: i, status: 'idle' }));
     setSendResults([...results]);
 
+    const useD1 = isFieldLogD1Enabled(userEmail);
+
     for (let i = 0; i < photos.length; i++) {
       results[i] = { ...results[i], status: 'sending' };
       setSendResults([...results]);
 
-      const { previewUrl: _pv, ...photoForPayload } = photos[i];
-      const payload: FoodLogSubmissionPayload = { photo: photoForPayload, common: commonFieldsFor(photos[i]) };
-      const outcome = await submitWithFallback({
-        entity: 'foodLog',
-        itemId: photos[i].requestId,
-        payload,
-        title: photos[i].food || '(食材名未入力)',
-        photoThumbnail: photos[i].previewUrl,
-        displayDate: photos[i].date,
-        idToken,
-      });
+      const cf = commonFieldsFor(photos[i]);
+      let outcome: Awaited<ReturnType<typeof submitWithFallback>>;
+
+      if (useD1) {
+        // Unit D（Worker+D1新経路）。requestId/eventIdは送信開始時に生成済みのものをそのまま使い、
+        // 再試行でも作り直さない（D1冪等性の根拠のため）
+        const d1Payload: FieldLogD1SubmissionPayload = {
+          eventId: photos[i].eventId,
+          requestId: photos[i].requestId,
+          date: photos[i].date || todayString(),
+          food: photos[i].food,
+          place: cf.place,
+          memo: photos[i].memo,
+          largeCategory: cf.largeCategory,
+          latitude: photos[i].gps?.lat,
+          longitude: photos[i].gps?.lng,
+          takenAt: photos[i].takenAt,
+          hasPhoto: !!photos[i].base64,
+          photoBase64: photos[i].base64 || undefined,
+          photoFileName: photos[i].fileName,
+        };
+        outcome = await submitWithFallback({
+          entity: 'fieldLogD1',
+          itemId: photos[i].requestId,
+          payload: d1Payload,
+          title: photos[i].food || '(食材名未入力)',
+          photoThumbnail: photos[i].previewUrl,
+          displayDate: photos[i].date,
+          idToken,
+        });
+
+        // D1保存成功時、GPSがあれば図鑑ストアへ即時反映する（画面遷移直後から一覧・地図に見える状態にする）。
+        // GPSが無い場合はFieldLogEntryのlat/lngを構成できないため、この即時反映はスキップする
+        // （D1への保存自体は成功しており、Sheets同期後の再読み込みで通常どおり見えるようになる）
+        if (outcome.ok && photos[i].gps) {
+          const gps = photos[i].gps!;
+          const recordedAt = new Date().toISOString();
+          useZukanFieldStore.getState().addEntry({
+            id: buildFieldLogId(d1Payload.date, gps.lat, gps.lng, recordedAt),
+            foodName: d1Payload.food,
+            place: d1Payload.place,
+            date: d1Payload.date,
+            memo: d1Payload.memo,
+            photoUrl: d1Payload.photoUrl ?? '',
+            notionUrl: '',
+            elevation: null,
+            kigo: '',
+            lat: gps.lat,
+            lng: gps.lng,
+            recordedAt,
+            eventId: d1Payload.eventId,
+            takenAt: d1Payload.takenAt ?? '',
+          });
+        }
+      } else {
+        const { previewUrl: _pv, ...photoForPayload } = photos[i];
+        const payload: FoodLogSubmissionPayload = { photo: photoForPayload, common: cf };
+        outcome = await submitWithFallback({
+          entity: 'foodLog',
+          itemId: photos[i].requestId,
+          payload,
+          title: photos[i].food || '(食材名未入力)',
+          photoThumbnail: photos[i].previewUrl,
+          displayDate: photos[i].date,
+          idToken,
+        });
+      }
 
       if (outcome.ok) {
         results[i] = { ...results[i], status: 'success' };

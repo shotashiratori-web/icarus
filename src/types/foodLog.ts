@@ -1,6 +1,8 @@
 export interface PhotoEntry {
   localId: string;
   requestId: string;
+  // Unit D（Worker+D1新経路）のD1冪等キー。requestIdと同様、送信開始時に生成し再試行でも使い回す
+  eventId: string;
   previewUrl: string;
   base64: string;
   date: string;
@@ -116,6 +118,7 @@ export function emptyPhotoEntry(): PhotoEntry {
   return {
     localId: crypto.randomUUID(),
     requestId: crypto.randomUUID(),
+    eventId: crypto.randomUUID(),
     previewUrl: '',
     base64: '',
     date: '',
