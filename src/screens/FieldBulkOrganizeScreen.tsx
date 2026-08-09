@@ -635,24 +635,6 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
               ) : (
                 <span className={styles.gpsText}>📍 GPSなし</span>
               )}
-              {hasGps && (
-                <button
-                  className={styles.spotLinkBtn}
-                  onClick={() => {
-                    // スポットとして登録する写真は食材ログとしては扱わないので、
-                    // 食材名が空欄のままでも二度とこの一覧に出てこないようにする
-                    addExcludedId(currentEntry.eventId);
-                    go({
-                      name: 'spotForm',
-                      mode: 'create',
-                      initial: { lat: currentEntry.lat, lng: currentEntry.lng, photoUrl: currentEntry.photoUrl },
-                      from: { name: 'fieldBulkOrganize', from },
-                    });
-                  }}
-                >
-                  📍 この場所をスポットとして登録する
-                </button>
-              )}
               {skippedIds.has(currentEntry.eventId) && (
                 <span className={styles.skippedTag}>今回すでに「後で整理」を選んだ写真です</span>
               )}
@@ -844,6 +826,24 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                         {isSaving ? '保存中…' : '保存して次へ'}
                       </button>
                     </div>
+                    {hasGps && (
+                      <button
+                        className={styles.spotLinkBtn}
+                        onClick={() => {
+                          // スポットとして登録する写真は食材ログとしては扱わないので、
+                          // 食材名が空欄のままでも二度とこの一覧に出てこないようにする
+                          addExcludedId(currentEntry.eventId);
+                          go({
+                            name: 'spotForm',
+                            mode: 'create',
+                            initial: { lat: currentEntry.lat, lng: currentEntry.lng, photoUrl: currentEntry.photoUrl },
+                            from: { name: 'fieldBulkOrganize', from },
+                          });
+                        }}
+                      >
+                        📍 この場所をスポットとして登録する
+                      </button>
+                    )}
                     <button className={styles.deleteLinkBtn} onClick={() => setDeleteConfirming(true)}>
                       🗑 フィールドログ対象外として削除する（料理・メモ書きなど）
                     </button>
