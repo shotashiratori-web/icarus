@@ -404,6 +404,14 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     }
   };
 
+  // 手動ボタンを押す運用が実際には使われていなかったため、写真が切り替わるたびに自動で判定する
+  useEffect(() => {
+    if (canEdit && currentEntry?.photoUrl && idToken) {
+      void handleClassify();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentEventId]);
+
   // バースト撮影等で近くにある未入力の写真へ、今入力した食材名をまとめて適用する。
   // 既存の1件保存フローと同じAPI(updateFieldLogEntry)を対象件数分呼び出す（一括専用APIは用意していない）
   const handleBatchApply = async () => {
@@ -640,16 +648,17 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
               )}
             </div>
 
-            {canEdit && (
+            {canEdit && (isClassifying || classifyError || classifyResult) && (
               <div className={styles.classifyRow}>
-                <button
-                  className={styles.classifyBtn}
-                  onClick={() => void handleClassify()}
-                  disabled={isClassifying}
-                >
-                  {isClassifying ? 'AIで確認中…' : '🔍 AIで食材写真か確認する'}
-                </button>
-                {classifyError && <p className={styles.errorText}>{classifyError}</p>}
+                {isClassifying && <p className={styles.classifyPending}>🔍 AIで食材写真か確認中…</p>}
+                {classifyError && (
+                  <>
+                    <p className={styles.errorText}>{classifyError}</p>
+                    <button className={styles.classifyBtn} onClick={() => void handleClassify()}>
+                      再試行
+                    </button>
+                  </>
+                )}
                 {classifyResult && (
                   classifyResult.isFieldSubject ? (
                     <p className={styles.classifyOk}>✅ 食材の写真のようです{classifyResult.reason && `（${classifyResult.reason}）`}</p>
