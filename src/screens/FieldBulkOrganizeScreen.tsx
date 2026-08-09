@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { updateFieldLogEntry, deleteFieldLogEntries, classifyFieldPhoto, type FieldUpdateEntryChanges } from '../api/zukanApi';
@@ -21,6 +21,9 @@ import {
 } from '../utils/fieldLogDraft';
 import type { Screen } from '../App';
 import styles from './FieldBulkOrganizeScreen.module.css';
+
+// Leafletをこの画面の主バンドルへ含めないよう遅延読み込みする（ZukanFieldMapScreenと同じ方針）
+const FieldGpsMiniMap = lazy(() => import('../components/FieldGpsMiniMap'));
 
 type Props = { go: (s: Screen) => void; from: Screen };
 type NavAction = 'prev' | 'next' | 'skip';
@@ -614,9 +617,13 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                 📅 {currentEntry.date}
                 {formatTakenTime(currentEntry.takenAt) && ` ${formatTakenTime(currentEntry.takenAt)}`}
               </span>
-              <span className={styles.gpsText}>
-                {hasGps ? `📍 GPSあり（緯度 ${currentEntry.lat.toFixed(5)}, 経度 ${currentEntry.lng.toFixed(5)}）` : '📍 GPSなし'}
-              </span>
+              {hasGps ? (
+                <Suspense fallback={<span className={styles.gpsText}>📍 GPSあり</span>}>
+                  <FieldGpsMiniMap lat={currentEntry.lat} lng={currentEntry.lng} />
+                </Suspense>
+              ) : (
+                <span className={styles.gpsText}>📍 GPSなし</span>
+              )}
               {hasGps && (
                 <button
                   className={styles.spotLinkBtn}

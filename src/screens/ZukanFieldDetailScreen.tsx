@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,9 @@ import {
 import { validateFoodName } from '../utils/foodNameValidation';
 import HomeButton from '../components/HomeButton';
 import styles from './ZukanFieldDetailScreen.module.css';
+
+// Leafletをこの画面の主バンドルへ含めないよう遅延読み込みする（ZukanFieldMapScreenと同じ方針）
+const FieldGpsMiniMap = lazy(() => import('../components/FieldGpsMiniMap'));
 
 function buildDirectionsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
@@ -288,6 +291,12 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
           <span className={styles.metaItem}>{entry.date}</span>
           {entry.kigo && <span className={styles.tag}>{entry.kigo}</span>}
         </div>
+
+        {hasGps && (
+          <Suspense fallback={null}>
+            <FieldGpsMiniMap lat={entry.lat} lng={entry.lng} />
+          </Suspense>
+        )}
 
         {!isEditing && draftPrompt && (
           <div className={styles.draftBanner}>
