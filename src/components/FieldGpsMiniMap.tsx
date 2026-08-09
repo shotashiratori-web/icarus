@@ -10,7 +10,9 @@ type Props = { lat: number; lng: number };
 // フィールドログ一括整理画面向けの軽量な静止地図。撮影場所を思い出すための最小限の
 // 視覚情報だけを表示する。操作（ドラッグ・ズーム等）は無効化し、静止画のように扱う。
 // 地図だけでは「余市のどの辺か」が一目で分からないため、短い地名（市町村+地区程度）を
-// 逆ジオコーディングで取得し1行だけ添える。取得失敗時は地図だけを表示する
+// 逆ジオコーディングで取得し1行だけ添える。取得失敗時は地図だけを表示する。
+// もっと詳しく見たい場合はタップでGoogleマップを新しいタブで開く（透明な<a>を地図全体に
+// 重ねる方式。Leaflet自体はpointer-events:noneにして、クリックが確実にこのリンクへ届くようにする）
 export default function FieldGpsMiniMap({ lat, lng }: Props) {
   const [placeLabel, setPlaceLabel] = useState<string | null>(null);
 
@@ -47,6 +49,13 @@ export default function FieldGpsMiniMap({ lat, lng }: Props) {
           />
           <Marker position={[lat, lng]} icon={fieldMarkerIcon} />
         </MapContainer>
+        <a
+          className={styles.tapOverlay}
+          href={`https://www.google.com/maps?q=${lat},${lng}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Googleマップで開く"
+        />
       </div>
     </div>
   );
