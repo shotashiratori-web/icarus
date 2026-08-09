@@ -99,6 +99,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   // 一定時間後に「元の写真を開く」導線を出す（onLoad/onErrorがそもそも発火しない状況の保険）
   const [photoLoadSlow, setPhotoLoadSlow] = useState(false);
   const photoSlowTimerRef = useRef<number | null>(null);
+  const photoImgRef = useRef<HTMLImageElement>(null);
 
   const foodNameInputRef = useRef<HTMLInputElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -196,6 +197,15 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
       if (photoSlowTimerRef.current) window.clearTimeout(photoSlowTimerRef.current);
     };
   }, [photoLoadState, currentEventId, photoRetryKey]);
+
+  // ブラウザキャッシュ済みの画像は、Reactがonloadリスナーを取り付ける前に読み込みが
+  // 完了してしまい、onLoadが発火しないまま「読み込み中」で止まることがある（特に1枚目）。
+  // マウント直後の時点ですでに読み込み済みなら、onLoadを待たず即座に反映する
+  useEffect(() => {
+    if (photoImgRef.current?.complete && photoImgRef.current.naturalWidth > 0) {
+      setPhotoLoadState('loaded');
+    }
+  }, [currentEventId, photoRetryKey]);
 
   // 入力後800msでその写真専用の下書きを保存する（既存Unit D-1と同じキー・同じ仕組みを本画面でも明示的に実装）
   useEffect(() => {
@@ -599,6 +609,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                   )}
                   <img
                     key={photoRetryKey}
+                    ref={photoImgRef}
                     className={styles.photo}
                     src={getSmallPreviewUrl(currentEntry.photoUrl)}
                     alt=""
