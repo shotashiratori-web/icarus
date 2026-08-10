@@ -31,7 +31,11 @@ export default function FieldGpsMiniMap({ lat, lng }: Props) {
     <div>
       {placeLabel && <p className={styles.placeLabel}>📍 {placeLabel} 周辺</p>}
       <div className={styles.wrap}>
+        {/* react-leafletのMapContainerはcenterを初回描画時にしか使わず、後からpropsが
+            変わっても地図は動かない。写真を切り替えるたびに座標が変わるここでは、
+            keyを変えて強制的に作り直すことで新しい位置を反映する */}
         <MapContainer
+          key={`${lat},${lng}`}
           center={[lat, lng]}
           zoom={13}
           className={styles.map}
