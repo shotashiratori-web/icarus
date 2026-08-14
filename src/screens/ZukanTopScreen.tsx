@@ -14,7 +14,7 @@ export default function ZukanTopScreen({ go }: Props) {
   const items: MenuItem[] = [
     { icon: '🌱', label: 'フィールド', ready: true, onOpen: () => go({ name: 'zukanFieldMap', from: { name: 'zukan' } }) },
     { icon: '🍷', label: 'ワイン', ready: true, onOpen: () => go({ name: 'wineList' }) },
-    { icon: '🍅', label: '食材', ready: false },
+    { icon: '🍅', label: '食材', ready: true, onOpen: () => go({ name: 'foodEncyclopediaList' }) },
     { icon: '🧂', label: '加工', ready: false },
     { icon: '🍽', label: '料理', ready: false },
   ];

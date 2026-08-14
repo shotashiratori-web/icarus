@@ -26,6 +26,9 @@ export const DAILY_ADMIN_COMMENT_URL = `${WORKER_URL}/admin/daily/comment`;
 export const DAILY_ADMIN_CONFIRM_URL = `${WORKER_URL}/admin/daily/confirm`;
 export const DAILY_ADMIN_REQUEST_MORE_URL = `${WORKER_URL}/admin/daily/request-more`;
 export const WINES_URL = `${WORKER_URL}/wines`;
+// Phase3: 食材図鑑（field_log_entriesをfoodでGROUP BYした読み取り専用API）
+export const FIELD_FOODS_URL = `${WORKER_URL}/field/foods`;
+export const FIELD_FOOD_DETAIL_URL = `${WORKER_URL}/field/foods/detail`;
 export const SPOTS_URL = `${WORKER_URL}/spots`;
 export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
 export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;
