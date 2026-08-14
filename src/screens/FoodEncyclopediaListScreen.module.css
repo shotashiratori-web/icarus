@@ -55,6 +55,7 @@
 
 .kigoBar {
   display: flex;
+  flex-shrink: 0;
   overflow-x: auto;
   gap: 6px;
   -webkit-overflow-scrolling: touch;
