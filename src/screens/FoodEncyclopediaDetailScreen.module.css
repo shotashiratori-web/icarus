@@ -1,0 +1,369 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.back {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  flex-shrink: 0;
+}
+
+.title {
+  flex: 1;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-10);
+  box-sizing: border-box;
+}
+
+/* すべての直下セクションはflex-shrink:0で固定する。
+   .mainはoverflow-y:autoかつflex-direction:columnのため、コンテンツが
+   ビューポートを超える場合にflexboxが子要素を潰そうとすることがある
+  （W2で確認したチップバー高さ0崩れと同じ原理）。潰れてよいセクションは無いため
+   すべて明示的に固定する */
+.hero, .summaryCard, .section {
+  flex-shrink: 0;
+}
+
+/* ---------- 共通: loading / signIn / error ---------- */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeletonHero {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 37%, var(--color-surface) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.skeletonLine {
+  height: 16px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 37%, var(--color-surface) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.signInBox, .errorBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.hintText, .errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.retryBtn {
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.heroPhotoWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.heroPhoto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.heroPhotoPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.foodName {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  text-align: center;
+  margin: var(--space-2) 0 0;
+}
+
+.classification {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  margin: 0;
+}
+
+/* ---------- Summary ---------- */
+
+.summaryCard {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summaryLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.summaryValue {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Section共通 ---------- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  margin: 0;
+}
+
+/* ---------- 観察日の分布 ---------- */
+
+.yearGroups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.yearGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.yearLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-sub);
+}
+
+.dateChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.dateChip {
+  font-size: var(--font-size-xs);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px var(--space-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 観察記録 ---------- */
+
+.observationList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.observationCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.obsPhotoWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.obsPhoto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.obsBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.obsMetaRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.obsDate {
+  font-weight: 700;
+}
+
+.obsPlace {
+  color: var(--color-text-sub);
+  font-size: var(--font-size-xs);
+}
+
+.obsMemo {
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.obsPartsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.obsPartChip {
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  color: var(--color-text-sub);
+}
+
+.obsMapWrap {
+  flex-shrink: 0;
+}
+
+/* ---------- 場所 ---------- */
+
+.placeList {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  padding: 0 var(--space-4);
+}
+
+.placeRow {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-3) 0;
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.placeRow:last-child {
+  border-bottom: none;
+}
+
+.placeName {
+  color: var(--color-text);
+}
+
+.placeCount {
+  color: var(--color-text-sub);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 観察部位 ---------- */
+
+.partsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.partChip {
+  font-size: var(--font-size-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: var(--space-2) var(--space-4);
+}

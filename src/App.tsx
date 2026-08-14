@@ -27,6 +27,7 @@ import PhotoHashRepairScreen from './screens/PhotoHashRepairScreen';
 import FieldIncompleteListScreen from './screens/FieldIncompleteListScreen';
 import FieldBulkOrganizeScreen from './screens/FieldBulkOrganizeScreen';
 import FoodEncyclopediaListScreen from './screens/FoodEncyclopediaListScreen';
+import FoodEncyclopediaDetailScreen from './screens/FoodEncyclopediaDetailScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import './submission/adapters';
@@ -85,7 +86,9 @@ export type Screen =
   // グループA（食材名未入力＝一括写真整理待ち）の連続整理
   | { name: 'fieldBulkOrganize'; from: Screen }
   // Phase3: 食材図鑑（field_log_entriesをfoodでGROUP BYした読み取り専用一覧。Unit W1）
-  | { name: 'foodEncyclopediaList' };
+  | { name: 'foodEncyclopediaList' }
+  // Phase3: 食材図鑑詳細（Unit W3）。foodNameは日本語・括弧・記号を含みうるためURL pathへは埋め込まない
+  | { name: 'foodEncyclopediaDetail'; foodName: string };
 
 function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
@@ -156,6 +159,7 @@ function AppRoutes() {
   if (screen.name === 'fieldIncompleteList') return <FieldIncompleteListScreen go={go} from={screen.from} />;
   if (screen.name === 'fieldBulkOrganize') return <FieldBulkOrganizeScreen go={go} from={screen.from} />;
   if (screen.name === 'foodEncyclopediaList') return <FoodEncyclopediaListScreen go={go} />;
+  if (screen.name === 'foodEncyclopediaDetail') return <FoodEncyclopediaDetailScreen go={go} foodName={screen.foodName} />;
 
   return null;
 }

@@ -118,10 +118,13 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
 
             {filtered.length === 0 && <p className={styles.empty}>該当する食材がありません</p>}
 
-            {/* 詳細画面（Unit W3）実装後、タップでfoodEncyclopediaDetailへ遷移させる */}
             <div className={styles.grid}>
               {filtered.map((food) => (
-                <div key={food.foodName} className={styles.card}>
+                <button
+                  key={food.foodName}
+                  className={styles.card}
+                  onClick={() => go({ name: 'foodEncyclopediaDetail', foodName: food.foodName })}
+                >
                   <div className={styles.photoWrap}>
                     {food.representativePhotoUrl
                       ? <img className={styles.photo} src={food.representativePhotoUrl} alt={food.foodName} loading="lazy" />
@@ -135,7 +138,7 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
                       <span>最終観察 {food.lastObservedDate}</span>
                     </span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </>
