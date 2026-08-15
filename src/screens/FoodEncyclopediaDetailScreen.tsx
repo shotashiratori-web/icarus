@@ -263,6 +263,14 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
                     <div key={g.process.id} className={styles.processCard}>
                       <p className={styles.processName}>{g.process.name}</p>
                       {g.process.description && <p className={styles.processDescription}>{g.process.description}</p>}
+                      {g.uses.length > 0 && (
+                        <div className={styles.processProducts}>
+                          <span className={styles.processProductsLabel}>入力:</span>
+                          {g.uses.map((u) => (
+                            <span key={u.id} className={styles.productChip}>{u.name}</span>
+                          ))}
+                        </div>
+                      )}
                       {g.produces.length > 0 && (
                         <div className={styles.processProducts}>
                           <span className={styles.processProductsLabel}>加工品:</span>

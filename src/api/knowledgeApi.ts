@@ -38,6 +38,11 @@ export async function fetchFoodByCanonicalName(name: string, idToken: string): P
   return json.items.find((f) => f.canonicalName === name) ?? null;
 }
 
+async function fetchAllFoods(idToken: string): Promise<FoodEntity[]> {
+  const json = await request<{ status: 'success'; items: FoodEntity[] }>(FOODS_URL, idToken);
+  return json.items;
+}
+
 async function fetchAllProcesses(idToken: string): Promise<ProcessEntity[]> {
   const json = await request<{ status: 'success'; items: ProcessEntity[] }>(PROCESSES_URL, idToken);
   return json.items;
@@ -64,20 +69,29 @@ async function fetchRelationsBySource(sourceType: string, sourceId: string, idTo
 
 export interface RelatedProcessGroup {
   process: ProcessEntity;
+  uses: { id: string; name: string }[];
   produces: ProcessedProductEntity[];
 }
 
 // Food起点でuses/producesのRelationを辿り、関連するProcess/ProcessedProductの連鎖を集める。
 // 現状の規模（数件のRelation）を前提にした単純なBFS。ホップ数に上限を設け、無限ループを防ぐ
 export async function fetchRelatedProcesses(foodId: string, idToken: string): Promise<RelatedProcessGroup[]> {
-  const [allProcesses, allProducts] = await Promise.all([
+  const [allFoods, allProcesses, allProducts] = await Promise.all([
+    fetchAllFoods(idToken),
     fetchAllProcesses(idToken),
     fetchAllProcessedProducts(idToken),
   ]);
+  const foodById = new Map(allFoods.map((f) => [f.id, f]));
   const processById = new Map(allProcesses.map((p) => [p.id, p]));
   const productById = new Map(allProducts.map((p) => [p.id, p]));
 
+  const nameOf = (type: 'food' | 'processed_product', id: string): string | null => {
+    if (type === 'food') return foodById.get(id)?.canonicalName ?? null;
+    return productById.get(id)?.name ?? null;
+  };
+
   const visitedProcessIds = new Set<string>();
+  const usesMap = new Map<string, { id: string; name: string }[]>(); // processId -> input一覧
   const producesMap = new Map<string, Set<string>>(); // processId -> productIds
 
   let frontier: { type: 'food' | 'processed_product'; id: string }[] = [{ type: 'food', id: foodId }];
@@ -89,6 +103,15 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
       const relations = await fetchRelationsByTarget(node.type, node.id, idToken);
       for (const r of relations) {
         if (r.relationType !== 'uses' || r.sourceType !== 'process') continue;
+
+        // このnode自体がr.sourceId（Process）のInputなので、visited済みでも入力一覧には積む
+        const inputName = nameOf(node.type, node.id);
+        if (inputName) {
+          const list = usesMap.get(r.sourceId) ?? [];
+          list.push({ id: node.id, name: inputName });
+          usesMap.set(r.sourceId, list);
+        }
+
         if (visitedProcessIds.has(r.sourceId)) continue;
         visitedProcessIds.add(r.sourceId);
 
@@ -114,7 +137,7 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
     const produces = Array.from(productIds)
       .map((id) => productById.get(id))
       .filter((p): p is ProcessedProductEntity => !!p);
-    groups.push({ process, produces });
+    groups.push({ process, uses: usesMap.get(processId) ?? [], produces });
   }
   return groups;
 }
