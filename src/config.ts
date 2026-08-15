@@ -35,6 +35,8 @@ export const FOODS_URL = `${WORKER_URL}/foods`;
 export const PROCESSES_URL = `${WORKER_URL}/processes`;
 export const PROCESSED_PRODUCTS_URL = `${WORKER_URL}/processed-products`;
 export const KNOWLEDGE_RELATIONS_URL = `${WORKER_URL}/knowledge-relations`;
+// Composite API（migration不要、既存Food/Process/ProcessedProduct/KnowledgeRelationとは別ルート）。Admin限定
+export const KNOWLEDGE_PROCESSES_URL = `${WORKER_URL}/knowledge/processes`;
 export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
 export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;
 export const PHOTO_HASH_REGISTER_URL = `${WORKER_URL}/photo-hashes/register`;

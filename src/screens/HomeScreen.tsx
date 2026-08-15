@@ -109,6 +109,10 @@ export default function HomeScreen({ go }: Props) {
 
         {staffMe?.role === 'admin' && (
           <div className={styles.navRow}>
+            <button className={styles.navBtn} onClick={() => go({ name: 'processEditor' })}>
+              <span className={styles.navIcon}>🧬</span>
+              <span>加工知識を登録</span>
+            </button>
             <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
               <span className={styles.navIcon}>🛡️</span>
               <span>スタッフ管理</span>

@@ -1,7 +1,10 @@
-import { FOODS_URL, PROCESSES_URL, PROCESSED_PRODUCTS_URL, KNOWLEDGE_RELATIONS_URL } from '../config';
+import { FOODS_URL, PROCESSES_URL, PROCESSED_PRODUCTS_URL, KNOWLEDGE_RELATIONS_URL, KNOWLEDGE_PROCESSES_URL } from '../config';
 import { TokenExpiredError } from './icarusApi';
 import { NetworkUnknownError } from './workApi';
-import type { FoodEntity, ProcessEntity, ProcessedProductEntity, KnowledgeRelation } from '../types/knowledge';
+import type {
+  FoodEntity, ProcessEntity, ProcessedProductEntity, KnowledgeRelation,
+  CompositeProcessRequest, CompositeProcessResponse,
+} from '../types/knowledge';
 
 interface ErrorBody {
   status: 'error';
@@ -9,10 +12,13 @@ interface ErrorBody {
   code?: string;
 }
 
-async function request<T>(url: string, idToken: string): Promise<T> {
+async function request<T>(url: string, idToken: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
+    res = await fetch(url, {
+      ...init,
+      headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${idToken}` },
+    });
   } catch {
     throw new NetworkUnknownError();
   }
@@ -38,7 +44,9 @@ export async function fetchFoodByCanonicalName(name: string, idToken: string): P
   return json.items.find((f) => f.canonicalName === name) ?? null;
 }
 
-async function fetchAllFoods(idToken: string): Promise<FoodEntity[]> {
+// Food selectorが正式Food Entity（GET /foods）のみを候補にするために使う。
+// Field Log由来174食材（/field/foods）とは別物であり、混ぜない
+export async function fetchAllFoods(idToken: string): Promise<FoodEntity[]> {
   const json = await request<{ status: 'success'; items: FoodEntity[] }>(FOODS_URL, idToken);
   return json.items;
 }
@@ -48,7 +56,7 @@ async function fetchAllProcesses(idToken: string): Promise<ProcessEntity[]> {
   return json.items;
 }
 
-async function fetchAllProcessedProducts(idToken: string): Promise<ProcessedProductEntity[]> {
+export async function fetchAllProcessedProducts(idToken: string): Promise<ProcessedProductEntity[]> {
   const json = await request<{ status: 'success'; items: ProcessedProductEntity[] }>(PROCESSED_PRODUCTS_URL, idToken);
   return json.items;
 }
@@ -140,4 +148,17 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
     groups.push({ process, uses: usesMap.get(processId) ?? [], produces });
   }
   return groups;
+}
+
+// Composite API（POST /knowledge/processes）。Process + Input(uses) + Output(produces)を1回で保存する。
+// 既存のfetchAllFoods等の個別GET APIは変更しない。Admin限定（403はrequest()内でErrorとして投げられる）
+export async function createProcessKnowledge(
+  input: CompositeProcessRequest,
+  idToken: string,
+): Promise<CompositeProcessResponse> {
+  return request<CompositeProcessResponse>(KNOWLEDGE_PROCESSES_URL, idToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
 }
