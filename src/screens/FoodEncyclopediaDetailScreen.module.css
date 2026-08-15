@@ -367,3 +367,54 @@
   border-radius: 999px;
   padding: var(--space-2) var(--space-4);
 }
+
+/* ---------- 関連加工 ---------- */
+
+.processList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.processCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.processName {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  margin: 0;
+}
+
+.processDescription {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.processProducts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.processProductsLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.productChip {
+  font-size: var(--font-size-xs);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px var(--space-3);
+}

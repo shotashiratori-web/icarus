@@ -30,6 +30,11 @@ export const WINES_URL = `${WORKER_URL}/wines`;
 export const FIELD_FOODS_URL = `${WORKER_URL}/field/foods`;
 export const FIELD_FOOD_DETAIL_URL = `${WORKER_URL}/field/foods/detail`;
 export const SPOTS_URL = `${WORKER_URL}/spots`;
+// Food/Process/ProcessedProduct Knowledge Entity MVP（migration 0011）。GETはActive Staff、POST/PATCHはAdmin限定
+export const FOODS_URL = `${WORKER_URL}/foods`;
+export const PROCESSES_URL = `${WORKER_URL}/processes`;
+export const PROCESSED_PRODUCTS_URL = `${WORKER_URL}/processed-products`;
+export const KNOWLEDGE_RELATIONS_URL = `${WORKER_URL}/knowledge-relations`;
 export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
 export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;
 export const PHOTO_HASH_REGISTER_URL = `${WORKER_URL}/photo-hashes/register`;

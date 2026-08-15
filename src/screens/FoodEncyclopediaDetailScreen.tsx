@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { fetchFieldFoodDetail, FieldFoodNotFoundError } from '../api/fieldFoodApi';
+import { fetchFoodByCanonicalName, fetchRelatedProcesses, type RelatedProcessGroup } from '../api/knowledgeApi';
 import { NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
@@ -49,6 +50,9 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   const [detail, setDetail] = useState<FieldFoodDetailSuccess | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  // Food Entity（migration 0011）が存在する食材だけ「関連加工」を表示する。
+  // 存在しない食材（現状ナマコ以外の173件）はnullのままで、既存表示に一切影響しない
+  const [relatedProcesses, setRelatedProcesses] = useState<RelatedProcessGroup[] | null>(null);
 
   const load = async (token: string) => {
     setState('loading');
@@ -64,8 +68,23 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
     }
   };
 
+  // 関連加工の取得は主表示とは独立させ、失敗しても食材図鑑本体の表示に影響を与えない（サイレントに諦める）
+  const loadRelatedProcesses = async (token: string) => {
+    try {
+      const food = await fetchFoodByCanonicalName(foodName, token);
+      if (!food) { setRelatedProcesses(null); return; }
+      const groups = await fetchRelatedProcesses(food.id, token);
+      setRelatedProcesses(groups);
+    } catch {
+      setRelatedProcesses(null);
+    }
+  };
+
   useEffect(() => {
-    if (authState === 'ready' && idToken) void load(idToken);
+    if (authState === 'ready' && idToken) {
+      void load(idToken);
+      void loadRelatedProcesses(idToken);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, idToken, foodName]);
 
@@ -230,6 +249,29 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
                     <span key={p.part} className={styles.partChip}>
                       {p.part} {p.observationCount}
                     </span>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 関連加工（Food Entityが存在する食材のみ表示。migration 0011のKnowledge Entity MVP） */}
+            {relatedProcesses && relatedProcesses.length > 0 && (
+              <section className={styles.section}>
+                <h2 className={styles.sectionTitle}>関連加工</h2>
+                <div className={styles.processList}>
+                  {relatedProcesses.map((g) => (
+                    <div key={g.process.id} className={styles.processCard}>
+                      <p className={styles.processName}>{g.process.name}</p>
+                      {g.process.description && <p className={styles.processDescription}>{g.process.description}</p>}
+                      {g.produces.length > 0 && (
+                        <div className={styles.processProducts}>
+                          <span className={styles.processProductsLabel}>加工品:</span>
+                          {g.produces.map((p) => (
+                            <span key={p.id} className={styles.productChip}>{p.name}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </section>
