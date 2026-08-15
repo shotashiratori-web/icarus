@@ -35,13 +35,32 @@ async function request<T>(url: string, idToken: string, init?: RequestInit): Pro
   return json as T;
 }
 
-// canonicalNameの完全一致でFood Entityを探す。存在しない食材（Food Entity未導入）はnullを返す
-// （食材図鑑の他の食材の表示には一切影響しない設計）
-export async function fetchFoodByCanonicalName(name: string, idToken: string): Promise<FoodEntity | null> {
+// alias exact matchが複数Foodに衝突した場合に投げる。誤ったFoodへ接続するより、
+// 何も表示しない方が安全なため、呼び出し側はこれをcatchしてnull相当（非表示）として扱う
+export class FoodAliasConflictError extends Error {
+  constructor(name: string) {
+    super(`"${name}"に一致するaliasを持つFoodが複数存在します`);
+    this.name = 'FoodAliasConflictError';
+  }
+}
+
+// canonicalName、または人が確認済みのaliasesの完全一致でFood Entityを1件解決する。
+// GET /foods?q=はcanonical_name/aliasesへのLIKE検索（曖昧検索）のため、
+// ここでは返ってきた候補に対し必ずexact matchを再検証する（検索結果をそのままIdentityとして採用しない）。
+// canonical一致をalias一致より優先する。fuzzy match・かな正規化・AI推論は行わない（trimのみ）。
+// 存在しない食材（Food Entity未導入）はnullを返す（食材図鑑の他の食材の表示には一切影響しない設計）
+export async function resolveFoodByName(name: string, idToken: string): Promise<FoodEntity | null> {
+  const trimmed = name.trim();
   const json = await request<{ status: 'success'; items: FoodEntity[] }>(
-    `${FOODS_URL}?q=${encodeURIComponent(name)}`, idToken,
+    `${FOODS_URL}?q=${encodeURIComponent(trimmed)}`, idToken,
   );
-  return json.items.find((f) => f.canonicalName === name) ?? null;
+
+  const canonicalMatch = json.items.find((f) => f.canonicalName === trimmed);
+  if (canonicalMatch) return canonicalMatch;
+
+  const aliasMatches = json.items.filter((f) => f.aliases.includes(trimmed));
+  if (aliasMatches.length > 1) throw new FoodAliasConflictError(trimmed);
+  return aliasMatches[0] ?? null;
 }
 
 // Food selectorが正式Food Entity（GET /foods）のみを候補にするために使う。

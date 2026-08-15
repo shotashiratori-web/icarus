@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { fetchFieldFoodDetail, FieldFoodNotFoundError } from '../api/fieldFoodApi';
-import { fetchFoodByCanonicalName, fetchRelatedProcesses, type RelatedProcessGroup } from '../api/knowledgeApi';
+import { resolveFoodByName, fetchRelatedProcesses, type RelatedProcessGroup } from '../api/knowledgeApi';
 import { NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
@@ -68,10 +68,12 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
     }
   };
 
-  // 関連加工の取得は主表示とは独立させ、失敗しても食材図鑑本体の表示に影響を与えない（サイレントに諦める）
+  // 関連加工の取得は主表示とは独立させ、失敗しても食材図鑑本体の表示に影響を与えない（サイレントに諦める）。
+  // alias衝突（FoodAliasConflictError）も含め、Food解決に失敗した場合は誤ったKnowledgeへ接続するより
+  // 関連加工を非表示のままにする（食材図鑑本体は壊さない）
   const loadRelatedProcesses = async (token: string) => {
     try {
-      const food = await fetchFoodByCanonicalName(foodName, token);
+      const food = await resolveFoodByName(foodName, token);
       if (!food) { setRelatedProcesses(null); return; }
       const groups = await fetchRelatedProcesses(food.id, token);
       setRelatedProcesses(groups);
