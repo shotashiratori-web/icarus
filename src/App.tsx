@@ -28,6 +28,7 @@ import FieldIncompleteListScreen from './screens/FieldIncompleteListScreen';
 import FieldBulkOrganizeScreen from './screens/FieldBulkOrganizeScreen';
 import FoodEncyclopediaListScreen from './screens/FoodEncyclopediaListScreen';
 import FoodEncyclopediaDetailScreen from './screens/FoodEncyclopediaDetailScreen';
+import ProcessEditorScreen from './screens/ProcessEditorScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import './submission/adapters';
@@ -88,7 +89,9 @@ export type Screen =
   // Phase3: 食材図鑑（field_log_entriesをfoodでGROUP BYした読み取り専用一覧。Unit W1）
   | { name: 'foodEncyclopediaList' }
   // Phase3: 食材図鑑詳細（Unit W3）。foodNameは日本語・括弧・記号を含みうるためURL pathへは埋め込まない
-  | { name: 'foodEncyclopediaDetail'; foodName: string };
+  | { name: 'foodEncyclopediaDetail'; foodName: string }
+  // Stage 3: Composite API（POST /knowledge/processes）用のAdmin専用Editor。入口はHomeScreenのadmin向けnavRow
+  | { name: 'processEditor' };
 
 function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
@@ -160,6 +163,7 @@ function AppRoutes() {
   if (screen.name === 'fieldBulkOrganize') return <FieldBulkOrganizeScreen go={go} from={screen.from} />;
   if (screen.name === 'foodEncyclopediaList') return <FoodEncyclopediaListScreen go={go} />;
   if (screen.name === 'foodEncyclopediaDetail') return <FoodEncyclopediaDetailScreen go={go} foodName={screen.foodName} />;
+  if (screen.name === 'processEditor') return <ProcessEditorScreen go={go} />;
 
   return null;
 }

@@ -16,7 +16,7 @@ const VALID_SCREEN_NAMES = new Set([
   'workDetail', 'workForm', 'staffApproval', 'daily', 'dailyAdmin', 'zukan',
   'zukanFieldMap', 'zukanFieldDetail', 'wineList', 'wineForm', 'wineDetail',
   'spotList', 'spotForm', 'spotDetail', 'photoBulkUpload', 'photoHashRepair',
-  'fieldIncompleteList', 'fieldBulkOrganize',
+  'fieldIncompleteList', 'fieldBulkOrganize', 'processEditor',
 ]);
 
 export function saveCurrentScreen(screen: Screen): void {
