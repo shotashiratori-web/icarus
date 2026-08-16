@@ -368,7 +368,7 @@
   padding: var(--space-2) var(--space-4);
 }
 
-/* ---------- 関連加工 ---------- */
+/* ---------- 加工 ---------- */
 
 .processList {
   display: flex;
@@ -384,19 +384,27 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-4);
+  min-width: 0;
+}
+
+/* descendant Process card。インデント＋接続表現のみで親子関係を示す（色だけに依存しない） */
+.processCardNested {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-left: var(--space-4);
+  min-width: 0;
 }
 
 .processName {
   font-size: var(--font-size-base);
   font-weight: 700;
   margin: 0;
-}
-
-.processDescription {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-sub);
-  line-height: 1.6;
-  margin: 0;
+  overflow-wrap: break-word;
 }
 
 .processProducts {
@@ -417,4 +425,35 @@
   border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 2px var(--space-3);
+  overflow-wrap: break-word;
+}
+
+.stepsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stepsList {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: break-word;
+}
+
+.descendantWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+.descendantConnector {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+  margin: 0;
 }
