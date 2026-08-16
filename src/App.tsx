@@ -29,12 +29,15 @@ import FieldBulkOrganizeScreen from './screens/FieldBulkOrganizeScreen';
 import FoodEncyclopediaListScreen from './screens/FoodEncyclopediaListScreen';
 import FoodEncyclopediaDetailScreen from './screens/FoodEncyclopediaDetailScreen';
 import ProcessEditorScreen from './screens/ProcessEditorScreen';
+import FoodEditorListScreen from './screens/FoodEditorListScreen';
+import FoodEditorFormScreen from './screens/FoodEditorFormScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
 import type { SpotEntity } from './types/spotEntity';
+import type { FoodEntity } from './types/knowledge';
 
 // leafletはフィールドマップを開くまで読み込まない（バンドルサイズ抑制のため動的import）
 const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
@@ -91,7 +94,11 @@ export type Screen =
   // Phase3: 食材図鑑詳細（Unit W3）。foodNameは日本語・括弧・記号を含みうるためURL pathへは埋め込まない
   | { name: 'foodEncyclopediaDetail'; foodName: string }
   // Stage 3: Composite API（POST /knowledge/processes）用のAdmin専用Editor。入口はHomeScreenのadmin向けnavRow
-  | { name: 'processEditor' };
+  | { name: 'processEditor' }
+  // Food Editor MVP: Food Identity（canonical_name/aliases/usableParts/description）をAdminが登録・編集する
+  | { name: 'foodEditorList' }
+  | { name: 'foodEditorForm'; mode: 'create' }
+  | { name: 'foodEditorForm'; mode: 'edit'; food: FoodEntity };
 
 function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
@@ -164,6 +171,10 @@ function AppRoutes() {
   if (screen.name === 'foodEncyclopediaList') return <FoodEncyclopediaListScreen go={go} />;
   if (screen.name === 'foodEncyclopediaDetail') return <FoodEncyclopediaDetailScreen go={go} foodName={screen.foodName} />;
   if (screen.name === 'processEditor') return <ProcessEditorScreen go={go} />;
+  if (screen.name === 'foodEditorList') return <FoodEditorListScreen go={go} />;
+  if (screen.name === 'foodEditorForm') return screen.mode === 'edit'
+    ? <FoodEditorFormScreen go={go} mode="edit" food={screen.food} />
+    : <FoodEditorFormScreen go={go} mode="create" />;
 
   return null;
 }

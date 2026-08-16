@@ -17,6 +17,8 @@ const VALID_SCREEN_NAMES = new Set([
   'zukanFieldMap', 'zukanFieldDetail', 'wineList', 'wineForm', 'wineDetail',
   'spotList', 'spotForm', 'spotDetail', 'photoBulkUpload', 'photoHashRepair',
   'fieldIncompleteList', 'fieldBulkOrganize', 'processEditor',
+  // wineForm/spotFormと同じ前例（完全なEntity payloadごと復元対象に含める）に合わせる
+  'foodEditorList', 'foodEditorForm',
 ]);
 
 export function saveCurrentScreen(screen: Screen): void {

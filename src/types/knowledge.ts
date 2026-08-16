@@ -36,6 +36,15 @@ export interface ProcessedProductEntity {
   createdBy: string;
 }
 
+// Food Editor（create/edit共通フォーム）がAPIへ送るrequest型。id・createdBy・createdAt・updatedAtは
+// Worker側で採番・設定するため含まない（SpotFormInputと同じ役割）
+export interface FoodFormInput {
+  canonicalName: string;
+  aliases: string[];
+  usableParts: string[];
+  description: string;
+}
+
 export type KnowledgeEntityType = 'food' | 'process' | 'processed_product';
 export type KnowledgeRelationType = 'uses' | 'produces';
 

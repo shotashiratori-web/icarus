@@ -1,0 +1,125 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.back {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.addBtn {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+}
+
+.searchInput {
+  font-size: var(--font-size-base);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.empty {
+  text-align: center;
+  color: var(--color-text-sub);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-8);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  text-align: left;
+}
+
+.cardName {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+}
+
+.cardMeta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.signInBox, .errorBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.hintText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+}
+
+.retryBtn {
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
