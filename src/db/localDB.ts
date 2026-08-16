@@ -3,12 +3,15 @@ import type { WineNote } from '../types/wine';
 import type { PhotoEntry, CommonFields, SubmitMode } from '../types/foodLog';
 
 const DB_NAME = 'icarus';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE = 'notes';
 const DRAFT_STORE = 'food_log_draft';
 export const QUEUE_STORE = 'submission_queue';
 // PC一括写真送信のバッチ永続化。送信開始前にqueued状態で全件保存し、タブを閉じても再開できるようにする
 export const PHOTO_BATCH_STORE = 'photo_batch_items';
+// Work Log専用のdraft保護（UX-009）。food_log_draftとは別ストア。keyは'create'または`append:${workId}`で、
+// 新規作成と各Workへの追記が互いに上書きしないようにする（food_log_draftの単一スロット方式とは異なる）
+const WORK_LOG_DRAFT_STORE = 'work_log_draft';
 
 export interface FoodLogDraft {
   id: 'current';
@@ -16,6 +19,21 @@ export interface FoodLogDraft {
   commonFields: CommonFields;
   submitMode?: SubmitMode;
   currentPhotoIndex: number;
+  savedAt: string;
+}
+
+export interface WorkLogDraft {
+  key: string; // 'create' | `append:${workId}`
+  mode: 'create' | 'append';
+  workId?: string;
+  workTitle?: string;
+  requestId: string;
+  title: string;
+  type: string;
+  content: string;
+  datetime: string;
+  photoBase64?: string;
+  photoCaption: string;
   savedAt: string;
 }
 
@@ -55,6 +73,9 @@ export async function getDB() {
             const store = db.createObjectStore(PHOTO_BATCH_STORE, { keyPath: 'requestId' });
             store.createIndex('by_batchId', 'batchId');
             store.createIndex('by_status', 'status');
+          }
+          if (!db.objectStoreNames.contains(WORK_LOG_DRAFT_STORE)) {
+            db.createObjectStore(WORK_LOG_DRAFT_STORE, { keyPath: 'key' });
           }
         },
         blocked() {
@@ -121,4 +142,23 @@ export async function loadFoodLogDraft(): Promise<FoodLogDraft | undefined> {
 export async function clearFoodLogDraft(): Promise<void> {
   const db = await getDB();
   await db.delete(DRAFT_STORE, 'current');
+}
+
+export function workLogDraftKey(mode: 'create' | 'append', workId?: string): string {
+  return mode === 'append' && workId ? `append:${workId}` : 'create';
+}
+
+export async function saveWorkLogDraft(draft: Omit<WorkLogDraft, 'savedAt'>): Promise<void> {
+  const db = await getDB();
+  await db.put(WORK_LOG_DRAFT_STORE, { ...draft, savedAt: new Date().toISOString() });
+}
+
+export async function loadWorkLogDraft(key: string): Promise<WorkLogDraft | undefined> {
+  const db = await getDB();
+  return db.get(WORK_LOG_DRAFT_STORE, key);
+}
+
+export async function clearWorkLogDraft(key: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(WORK_LOG_DRAFT_STORE, key);
 }
