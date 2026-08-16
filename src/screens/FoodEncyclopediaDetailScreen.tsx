@@ -45,14 +45,69 @@ function formatMonthDay(dateStr: string): string {
   return `${Number(m[1])}/${Number(m[2])}`;
 }
 
+/* ============================================================
+ * Food-first Knowledge表示ロジック（Encyclopedia MVP設計報告 Stage14/41/71-74に基づく）。
+ *
+ * fetchRelatedProcesses()が返すRelatedProcessGroup[]は、Worker側BFSで既にcycle-safe・
+ * ユニーク化されたフラット配列（visitedProcessIds使用）。ここでは新しいAPI呼び出しを増やさず、
+ * このフラット配列だけを使って「今見ているFoodを直接usesするroot Process」と、
+ * 「そのOutputを次にusesするdescendant Process」のツリーをUI側で組み立てる。
+ *
+ * root判定: group.uses（{id,name}[]）に現在のFood idが含まれるかどうかのみで判定する
+ * （usesは食材/加工品どちらのidも同じ形で保持しているため、typeを別途持たなくても判定できる）。
+ * ============================================================ */
+
+export interface ProcessChainNode {
+  group: RelatedProcessGroup;
+  descendants: ProcessChainNode[];
+}
+
+// 同一Food起点で、複数のroot chainが同じdescendant Processへ合流するケース（Stage73）でも
+// ページ内に同じProcessを二重表示しないよう、木を組み立てる過程でvisitedを共有する
+// （= 一度いずれかのbranchのdescendantとして採用されたProcessは、他branchでは再表示しない）
+export function buildProcessChains(groups: RelatedProcessGroup[], foodId: string): ProcessChainNode[] {
+  const visited = new Set<string>();
+
+  function buildNode(group: RelatedProcessGroup): ProcessChainNode {
+    visited.add(group.process.id);
+    const descendants: ProcessChainNode[] = [];
+    for (const product of group.produces) {
+      const nextGroups = groups.filter(
+        (g) => !visited.has(g.process.id) && g.uses.some((u) => u.id === product.id),
+      );
+      for (const next of nextGroups) {
+        descendants.push(buildNode(next));
+      }
+    }
+    return { group, descendants };
+  }
+
+  const roots = groups.filter((g) => g.uses.some((u) => u.id === foodId));
+  return roots.map((r) => buildNode(r));
+}
+
+// 加工件数 = 現在のFoodを起点に表示されるユニークProcess数（root + descendant合算）。
+// 例: ナマコ = 「ナマコを茹でる」+「ナマコ塩を作る」で2件（設計報告Stage39/40の定義通り）
+export function countProcessChain(chains: ProcessChainNode[]): number {
+  const ids = new Set<string>();
+  function walk(node: ProcessChainNode) {
+    ids.add(node.group.process.id);
+    node.descendants.forEach(walk);
+  }
+  chains.forEach(walk);
+  return ids.size;
+}
+
 export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const [detail, setDetail] = useState<FieldFoodDetailSuccess | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
-  // Food Entity（migration 0011）が存在する食材だけ「関連加工」を表示する。
-  // 存在しない食材（現状ナマコ以外の173件）はnullのままで、既存表示に一切影響しない
+  // Food Entityが存在する食材だけ「加工」sectionを表示する。存在しない食材はnullのままで、
+  // 既存の観察系表示には一切影響しない
   const [relatedProcesses, setRelatedProcesses] = useState<RelatedProcessGroup[] | null>(null);
+  // buildProcessChains()でroot Process判定に使う。resolveFoodByName()解決結果のidを保持する
+  const [resolvedFoodId, setResolvedFoodId] = useState<string | null>(null);
 
   const load = async (token: string) => {
     setState('loading');
@@ -74,11 +129,13 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   const loadRelatedProcesses = async (token: string) => {
     try {
       const food = await resolveFoodByName(foodName, token);
-      if (!food) { setRelatedProcesses(null); return; }
+      if (!food) { setRelatedProcesses(null); setResolvedFoodId(null); return; }
       const groups = await fetchRelatedProcesses(food.id, token);
       setRelatedProcesses(groups);
+      setResolvedFoodId(food.id);
     } catch {
       setRelatedProcesses(null);
+      setResolvedFoodId(null);
     }
   };
 
@@ -91,6 +148,11 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   }, [authState, idToken, foodName]);
 
   const backToList = () => go({ name: 'foodEncyclopediaList' });
+
+  const processChains = relatedProcesses && resolvedFoodId
+    ? buildProcessChains(relatedProcesses, resolvedFoodId)
+    : [];
+  const processCount = countProcessChain(processChains);
 
   return (
     <div className={styles.root}>
@@ -165,6 +227,12 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
                 <span className={styles.summaryLabel}>観察部位</span>
                 <span className={styles.summaryValue}>{detail.food.partCount}</span>
               </div>
+              {processCount > 0 && (
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>加工</span>
+                  <span className={styles.summaryValue}>{processCount}件</span>
+                </div>
+              )}
             </section>
 
             {/* 観察日の分布 */}
@@ -256,32 +324,13 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
               </section>
             )}
 
-            {/* 関連加工（Food Entityが存在する食材のみ表示。migration 0011のKnowledge Entity MVP） */}
-            {relatedProcesses && relatedProcesses.length > 0 && (
+            {/* 加工（Food Entityが存在し、そのFoodを起点にKnowledgeが辿れる食材のみ表示） */}
+            {processChains.length > 0 && (
               <section className={styles.section}>
-                <h2 className={styles.sectionTitle}>関連加工</h2>
+                <h2 className={styles.sectionTitle}>加工</h2>
                 <div className={styles.processList}>
-                  {relatedProcesses.map((g) => (
-                    <div key={g.process.id} className={styles.processCard}>
-                      <p className={styles.processName}>{g.process.name}</p>
-                      {g.process.description && <p className={styles.processDescription}>{g.process.description}</p>}
-                      {g.uses.length > 0 && (
-                        <div className={styles.processProducts}>
-                          <span className={styles.processProductsLabel}>入力:</span>
-                          {g.uses.map((u) => (
-                            <span key={u.id} className={styles.productChip}>{u.name}</span>
-                          ))}
-                        </div>
-                      )}
-                      {g.produces.length > 0 && (
-                        <div className={styles.processProducts}>
-                          <span className={styles.processProductsLabel}>加工品:</span>
-                          {g.produces.map((p) => (
-                            <span key={p.id} className={styles.productChip}>{p.name}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                  {processChains.map((node) => (
+                    <ProcessChainCard key={node.group.process.id} node={node} depth={0} />
                   ))}
                 </div>
               </section>
@@ -289,6 +338,54 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+// root Process、およびそのOutputを次のInputとするdescendant Processを再帰的に描画する。
+// Process description・ProcessedProduct descriptionは表示しない（Content Curation未整理のため、
+// Food-first Encyclopedia MVP設計報告の判断により今回表示対象から外す。D1値は変更しない）
+function ProcessChainCard({ node, depth }: { node: ProcessChainNode; depth: number }) {
+  const { group, descendants } = node;
+  return (
+    <div className={depth === 0 ? styles.processCard : styles.processCardNested}>
+      <p className={styles.processName}>{group.process.name}</p>
+
+      {group.uses.length > 0 && (
+        <div className={styles.processProducts}>
+          <span className={styles.processProductsLabel}>入力:</span>
+          {group.uses.map((u) => (
+            <span key={u.id} className={styles.productChip}>{u.name}</span>
+          ))}
+        </div>
+      )}
+
+      {group.process.steps.length > 0 && (
+        <div className={styles.stepsBlock}>
+          <span className={styles.processProductsLabel}>工程</span>
+          <ol className={styles.stepsList}>
+            {group.process.steps.map((s) => (<li key={s.order}>{s.text}</li>))}
+          </ol>
+        </div>
+      )}
+
+      {group.produces.length > 0 && (
+        <div className={styles.processProducts}>
+          <span className={styles.processProductsLabel}>できたもの:</span>
+          {group.produces.map((p) => (
+            <span key={p.id} className={styles.productChip}>{p.name}</span>
+          ))}
+        </div>
+      )}
+
+      {descendants.length > 0 && (
+        <div className={styles.descendantWrap}>
+          <p className={styles.descendantConnector}>↓ さらに加工</p>
+          {descendants.map((d) => (
+            <ProcessChainCard key={d.group.process.id} node={d} depth={depth + 1} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
