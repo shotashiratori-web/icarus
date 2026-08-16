@@ -131,9 +131,33 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
   };
 
   const visitedProcessIds = new Set<string>();
-  const usesMap = new Map<string, { id: string; name: string }[]>(); // processId -> input一覧
+  const usesMap = new Map<string, { id: string; name: string }[]>(); // processId -> 全input一覧（正本）
   const producesMap = new Map<string, Set<string>>(); // processId -> productIds
 
+  // Processが新規visited化された時点で、そのProcess自身が持つ全uses/produces Relationを取得し、
+  // usesMap/producesMapの正本とする。「BFSでどのInputから到達したか」は使わない
+  // （起点Foodに関わらず同じProcessは常に同じuses一覧になる）
+  const loadProcessRelations = async (processId: string): Promise<{ type: 'processed_product'; id: string }[]> => {
+    const relations = await fetchRelationsBySource('process', processId, idToken);
+    const uses: { id: string; name: string }[] = [];
+    const productIds = new Set<string>();
+    const nextNodes: { type: 'processed_product'; id: string }[] = [];
+    for (const r of relations) {
+      if (r.relationType === 'uses' && (r.targetType === 'food' || r.targetType === 'processed_product')) {
+        const name = nameOf(r.targetType, r.targetId);
+        if (name) uses.push({ id: r.targetId, name });
+      } else if (r.relationType === 'produces' && r.targetType === 'processed_product') {
+        productIds.add(r.targetId);
+        nextNodes.push({ type: 'processed_product', id: r.targetId });
+      }
+    }
+    usesMap.set(processId, uses);
+    producesMap.set(processId, productIds);
+    return nextNodes;
+  };
+
+  // Food/Product → それをusesするProcessを見つける発見専用のBFS。
+  // ここで見つかったProcessの内容（uses/produces）はloadProcessRelationsが別途取得する
   let frontier: { type: 'food' | 'processed_product'; id: string }[] = [{ type: 'food', id: foodId }];
   let hop = 0;
   while (frontier.length > 0 && hop < 10) {
@@ -143,27 +167,9 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
       const relations = await fetchRelationsByTarget(node.type, node.id, idToken);
       for (const r of relations) {
         if (r.relationType !== 'uses' || r.sourceType !== 'process') continue;
-
-        // このnode自体がr.sourceId（Process）のInputなので、visited済みでも入力一覧には積む
-        const inputName = nameOf(node.type, node.id);
-        if (inputName) {
-          const list = usesMap.get(r.sourceId) ?? [];
-          list.push({ id: node.id, name: inputName });
-          usesMap.set(r.sourceId, list);
-        }
-
         if (visitedProcessIds.has(r.sourceId)) continue;
         visitedProcessIds.add(r.sourceId);
-
-        const produced = await fetchRelationsBySource('process', r.sourceId, idToken);
-        const productIds = new Set<string>();
-        for (const pr of produced) {
-          if (pr.relationType === 'produces' && pr.targetType === 'processed_product') {
-            productIds.add(pr.targetId);
-            nextFrontier.push({ type: 'processed_product', id: pr.targetId });
-          }
-        }
-        producesMap.set(r.sourceId, productIds);
+        nextFrontier.push(...(await loadProcessRelations(r.sourceId)));
       }
     }
     frontier = nextFrontier;
