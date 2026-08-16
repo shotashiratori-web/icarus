@@ -113,6 +113,10 @@ export default function HomeScreen({ go }: Props) {
               <span className={styles.navIcon}>🧬</span>
               <span>加工知識を登録</span>
             </button>
+            <button className={styles.navBtn} onClick={() => go({ name: 'foodEditorList' })}>
+              <span className={styles.navIcon}>🥕</span>
+              <span>Foodを登録・編集</span>
+            </button>
             <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
               <span className={styles.navIcon}>🛡️</span>
               <span>スタッフ管理</span>

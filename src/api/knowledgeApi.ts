@@ -2,7 +2,7 @@ import { FOODS_URL, PROCESSES_URL, PROCESSED_PRODUCTS_URL, KNOWLEDGE_RELATIONS_U
 import { TokenExpiredError } from './icarusApi';
 import { NetworkUnknownError } from './workApi';
 import type {
-  FoodEntity, ProcessEntity, ProcessedProductEntity, KnowledgeRelation,
+  FoodEntity, ProcessEntity, ProcessedProductEntity, KnowledgeRelation, FoodFormInput,
   CompositeProcessRequest, CompositeProcessResponse,
 } from '../types/knowledge';
 
@@ -10,6 +10,16 @@ interface ErrorBody {
   status: 'error';
   message: string;
   code?: string;
+}
+
+// Worker側のerror code（例: FOOD_DUPLICATE）を呼び出し側で判定できるよう、messageに加えてcodeも保持する
+export class KnowledgeApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'KnowledgeApiError';
+    this.code = code;
+  }
 }
 
 async function request<T>(url: string, idToken: string, init?: RequestInit): Promise<T> {
@@ -31,7 +41,10 @@ async function request<T>(url: string, idToken: string, init?: RequestInit): Pro
   } catch {
     throw new Error(`サーバーエラー (HTTP ${res.status})`);
   }
-  if ((json as ErrorBody).status === 'error') throw new Error((json as ErrorBody).message || '取得に失敗しました');
+  if ((json as ErrorBody).status === 'error') {
+    const err = json as ErrorBody;
+    throw new KnowledgeApiError(err.message || '取得に失敗しました', err.code);
+  }
   return json as T;
 }
 
@@ -180,4 +193,58 @@ export async function createProcessKnowledge(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+// Food Editor用。同じcanonicalNameのFoodが既に存在する場合にWorkerが返す409 FOOD_DUPLICATEを、
+// 生のAPIエラーではなく人が理解できるメッセージへ変換して投げる
+export class FoodDuplicateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FoodDuplicateError';
+  }
+}
+
+export class FoodNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FoodNotFoundError';
+  }
+}
+
+function throwForFoodError(e: unknown): never {
+  if (e instanceof KnowledgeApiError && e.code === 'FOOD_DUPLICATE') {
+    throw new FoodDuplicateError('同じ正式名称のFoodが既に存在します');
+  }
+  if (e instanceof KnowledgeApiError && e.code === 'FOOD_NOT_FOUND') {
+    throw new FoodNotFoundError(e.message);
+  }
+  throw e;
+}
+
+// Food Editor用。componentから直接fetchせず、必ずこの関数経由でFood Entityを新規作成する
+export async function createFood(input: FoodFormInput, idToken: string): Promise<FoodEntity> {
+  try {
+    const json = await request<{ status: 'success'; item: FoodEntity }>(FOODS_URL, idToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return json.item;
+  } catch (e) {
+    throwForFoodError(e);
+  }
+}
+
+// Food Editor用。PATCHは常に4フィールド全てを送る（部分更新の分岐を呼び出し側へ持ち込まない）
+export async function updateFood(id: string, input: FoodFormInput, idToken: string): Promise<FoodEntity> {
+  try {
+    const json = await request<{ status: 'success'; item: FoodEntity }>(`${FOODS_URL}/${encodeURIComponent(id)}`, idToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return json.item;
+  } catch (e) {
+    throwForFoodError(e);
+  }
 }
