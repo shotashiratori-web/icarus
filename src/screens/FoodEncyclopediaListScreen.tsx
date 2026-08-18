@@ -69,7 +69,7 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
       </header>
 
       <main className={styles.main}>
-        {(authState === 'checking' || (authState === 'ready' && state === 'loading')) && (
+        {authState === 'checking' && (
           <div className={styles.skeletonGrid}>
             {[0, 1, 2, 3].map((i) => (<div key={i} className={styles.skeletonCard} />))}
           </div>
@@ -82,15 +82,10 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
           </div>
         )}
 
-        {authState === 'ready' && state === 'error' && (
-          <div className={styles.errorBox}>
-            <p className={styles.errorText}>{errorMessage}</p>
-            <button className={styles.retryBtn} onClick={() => idToken && load(idToken)}>再読み込み</button>
-          </div>
-        )}
-
-        {state === 'ready' && (
+        {authState === 'ready' && (
           <>
+            {/* 検索inputはデータのロード状態に関わらず常にマウントする。
+                state==='ready'内にのみ置くと、ロード中の入力が空振りになる(UX-001) */}
             <div className={styles.filters}>
               <input
                 className={styles.searchInput}
@@ -101,7 +96,20 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
               />
             </div>
 
-            {largeCategoryOptions.length > 0 && (
+            {state === 'loading' && (
+              <div className={styles.skeletonGrid}>
+                {[0, 1, 2, 3].map((i) => (<div key={i} className={styles.skeletonCard} />))}
+              </div>
+            )}
+
+            {state === 'error' && (
+              <div className={styles.errorBox}>
+                <p className={styles.errorText}>{errorMessage}</p>
+                <button className={styles.retryBtn} onClick={() => idToken && load(idToken)}>再読み込み</button>
+              </div>
+            )}
+
+            {state === 'ready' && largeCategoryOptions.length > 0 && (
               <div className={styles.kigoBar}>
                 <button className={`${styles.kBtn} ${!largeCategoryFilter ? styles.kBtnActive : ''}`} onClick={() => setLargeCategoryFilter('')}>
                   すべて
@@ -114,33 +122,37 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
               </div>
             )}
 
-            <p className={styles.count}>{filtered.length}件</p>
+            {state === 'ready' && (
+              <>
+                <p className={styles.count}>{filtered.length}件</p>
 
-            {filtered.length === 0 && <p className={styles.empty}>該当する食材がありません</p>}
+                {filtered.length === 0 && <p className={styles.empty}>該当する食材がありません</p>}
 
-            <div className={styles.grid}>
-              {filtered.map((food) => (
-                <button
-                  key={food.foodName}
-                  className={styles.card}
-                  onClick={() => go({ name: 'foodEncyclopediaDetail', foodName: food.foodName })}
-                >
-                  <div className={styles.photoWrap}>
-                    {food.representativePhotoUrl
-                      ? <img className={styles.photo} src={food.representativePhotoUrl} alt={food.foodName} loading="lazy" />
-                      : <div className={styles.photoPlaceholder}>🍅</div>}
-                  </div>
-                  <div className={styles.cardBody}>
-                    <span className={styles.foodName}>{food.foodName}</span>
-                    <span className={styles.tag}>{classificationLabel(food)}</span>
-                    <span className={styles.metaRow}>
-                      <span>観察{food.observationCount}件</span>
-                      <span>最終観察 {food.lastObservedDate}</span>
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
+                <div className={styles.grid}>
+                  {filtered.map((food) => (
+                    <button
+                      key={food.foodName}
+                      className={styles.card}
+                      onClick={() => go({ name: 'foodEncyclopediaDetail', foodName: food.foodName })}
+                    >
+                      <div className={styles.photoWrap}>
+                        {food.representativePhotoUrl
+                          ? <img className={styles.photo} src={food.representativePhotoUrl} alt={food.foodName} loading="lazy" />
+                          : <div className={styles.photoPlaceholder}>🍅</div>}
+                      </div>
+                      <div className={styles.cardBody}>
+                        <span className={styles.foodName}>{food.foodName}</span>
+                        <span className={styles.tag}>{classificationLabel(food)}</span>
+                        <span className={styles.metaRow}>
+                          <span>観察{food.observationCount}件</span>
+                          <span>最終観察 {food.lastObservedDate}</span>
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </main>
