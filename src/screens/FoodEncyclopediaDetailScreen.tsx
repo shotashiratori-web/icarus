@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import type { FieldFoodDetailSuccess, FieldFoodListItem } from '../types/fieldFood';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
+import Lightbox from '../components/Lightbox';
 import styles from './FoodEncyclopediaDetailScreen.module.css';
 
 // Leafletをこの画面の主バンドルへ含めないよう遅延読み込みする（ZukanFieldDetailScreenと同じ方針）
@@ -108,6 +109,7 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   const [relatedProcesses, setRelatedProcesses] = useState<RelatedProcessGroup[] | null>(null);
   // buildProcessChains()でroot Process判定に使う。resolveFoodByName()解決結果のidを保持する
   const [resolvedFoodId, setResolvedFoodId] = useState<string | null>(null);
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
 
   const load = async (token: string) => {
     setState('loading');
@@ -154,6 +156,33 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
     : [];
   const processCount = countProcessChain(processChains);
 
+  // Summary「場所」の件数は、detail.food.placeCount（一覧集計クエリ由来）ではなく
+  // detail.places（詳細クエリ由来）から同じ画面内で導出する。
+  // 2つの値は別クエリで独立に計算されており、場所未記入のみのFoodではSummaryが「0ヶ所」でも
+  // 内訳セクションに「場所未記入」の1行が表示され、見かけ上矛盾していた（Staff UX Audit追跡）
+  const namedPlaces = detail?.places.filter((p) => p.place !== null) ?? [];
+  const unrecordedPlace = detail?.places.find((p) => p.place === null) ?? null;
+
+  // Lightbox gallery: Hero写真は「写真つきの最新観察」から選ばれており(fieldFoods.ts queryRepresentativePhotos_)、
+  // 通常はObservation写真の1枚と同一URL。先頭にHeroを置いた上で、URL単位で重複排除する
+  // （画像内容の類似判定はしない、完全一致のみ）。結果として、Hero自身がその食材で最も新しい
+  // 「写真つき観察」である一般的なケースでは、観察一覧の時系列降順とほぼ変わらない並びになる
+  const heroUrl = detail?.food.representativePhotoUrl ?? null;
+  const rawGalleryUrls = (heroUrl ? [heroUrl] : [])
+    .concat(detail?.observations.filter((o) => o.photoUrl).map((o) => o.photoUrl) ?? []);
+  const seenGalleryUrls = new Set<string>();
+  const galleryPhotos = rawGalleryUrls
+    .filter((url) => {
+      if (seenGalleryUrls.has(url)) return false;
+      seenGalleryUrls.add(url);
+      return true;
+    })
+    .map((url) => ({ url }));
+  const openGalleryAt = (url: string) => {
+    const i = galleryPhotos.findIndex((p) => p.url === url);
+    if (i >= 0) setGalleryIndex(i);
+  };
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -196,11 +225,20 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
           <>
             {/* Hero */}
             <section className={styles.hero}>
-              <div className={styles.heroPhotoWrap}>
-                {detail.food.representativePhotoUrl
-                  ? <img className={styles.heroPhoto} src={detail.food.representativePhotoUrl} alt={detail.food.foodName} />
-                  : <div className={styles.heroPhotoPlaceholder}>写真なし</div>}
-              </div>
+              {detail.food.representativePhotoUrl ? (
+                <button
+                  type="button"
+                  className={`${styles.heroPhotoWrap} ${styles.clickablePhoto}`}
+                  onClick={() => openGalleryAt(detail.food.representativePhotoUrl as string)}
+                  aria-label="写真を拡大表示"
+                >
+                  <img className={styles.heroPhoto} src={detail.food.representativePhotoUrl} alt={detail.food.foodName} />
+                </button>
+              ) : (
+                <div className={styles.heroPhotoWrap}>
+                  <div className={styles.heroPhotoPlaceholder}>写真なし</div>
+                </div>
+              )}
               <h1 className={styles.foodName}>{detail.food.foodName}</h1>
               <p className={styles.classification}>{classificationLabel(detail.food)}</p>
             </section>
@@ -219,14 +257,18 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
                     : `${detail.food.firstObservedDate} → ${detail.food.lastObservedDate}`}
                 </span>
               </div>
-              <div className={styles.summaryItem}>
-                <span className={styles.summaryLabel}>場所</span>
-                <span className={styles.summaryValue}>{detail.food.placeCount}ヶ所</span>
-              </div>
-              <div className={styles.summaryItem}>
-                <span className={styles.summaryLabel}>観察部位</span>
-                <span className={styles.summaryValue}>{detail.food.partCount}</span>
-              </div>
+              {namedPlaces.length > 0 && (
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>場所</span>
+                  <span className={styles.summaryValue}>{namedPlaces.length}ヶ所</span>
+                </div>
+              )}
+              {detail.food.partCount > 0 && (
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>観察部位</span>
+                  <span className={styles.summaryValue}>{detail.food.partCount}</span>
+                </div>
+              )}
               {processCount > 0 && (
                 <div className={styles.summaryItem}>
                   <span className={styles.summaryLabel}>加工</span>
@@ -266,9 +308,14 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
                   return (
                     <div key={obs.eventId} className={styles.observationCard}>
                       {obs.photoUrl && (
-                        <div className={styles.obsPhotoWrap}>
+                        <button
+                          type="button"
+                          className={`${styles.obsPhotoWrap} ${styles.clickablePhoto}`}
+                          onClick={() => openGalleryAt(obs.photoUrl)}
+                          aria-label="写真を拡大表示"
+                        >
                           <img className={styles.obsPhoto} src={obs.photoUrl} alt={detail.food.foodName} loading="lazy" />
-                        </div>
+                        </button>
                       )}
                       <div className={styles.obsBody}>
                         <div className={styles.obsMetaRow}>
@@ -295,18 +342,25 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
               </div>
             </section>
 
-            {/* 場所 */}
-            {detail.places.length > 0 && (
+            {/* 場所
+                内訳（namedPlaces）はSummary「Xヶ所」と同じdetail.placesから導出するため常に一致する。
+                場所未記入はここでは名前付きの場所と同列に並べず、軽い注記として分ける */}
+            {(namedPlaces.length > 0 || unrecordedPlace) && (
               <section className={styles.section}>
                 <h2 className={styles.sectionTitle}>場所</h2>
-                <div className={styles.placeList}>
-                  {detail.places.map((p) => (
-                    <div key={p.place ?? '__none__'} className={styles.placeRow}>
-                      <span className={styles.placeName}>{p.place ?? '場所未記入'}</span>
-                      <span className={styles.placeCount}>{p.observationCount}</span>
-                    </div>
-                  ))}
-                </div>
+                {namedPlaces.length > 0 && (
+                  <div className={styles.placeList}>
+                    {namedPlaces.map((p) => (
+                      <div key={p.place} className={styles.placeRow}>
+                        <span className={styles.placeName}>{p.place}</span>
+                        <span className={styles.placeCount}>{p.observationCount}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {unrecordedPlace && (
+                  <p className={styles.placeUnrecordedNote}>場所未記入 {unrecordedPlace.observationCount}件</p>
+                )}
               </section>
             )}
 
@@ -338,6 +392,8 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
           </>
         )}
       </main>
+
+      <Lightbox photos={galleryPhotos} index={galleryIndex} setIndex={setGalleryIndex} />
     </div>
   );
 }

@@ -123,6 +123,20 @@
   flex-shrink: 0;
 }
 
+/* Hero写真・Observation写真をtap/clickでLightbox表示できるようにする際、<button>要素の
+   デフォルト装飾（枠線・padding・フォント）を打ち消すための共通クラス。placeholder表示時（写真なし）は
+   <button>にならないため付与しない */
+.clickablePhoto {
+  display: block;
+  width: 100%;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
 .heroPhoto {
   position: absolute;
   inset: 0;
@@ -158,8 +172,8 @@
 /* ---------- Summary ---------- */
 
 .summaryCard {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
   background: var(--color-surface);
   border-radius: var(--radius-md);
@@ -167,10 +181,14 @@
   border: 1px solid var(--color-border);
 }
 
+/* flex-growで行を必ず埋める。項目数が3・4・5件と変わっても（0値は非表示にするため件数は可変）、
+   最終行が半端な数で終わっても右側に不自然な余白が残らない（Staff UX Audit「Summary奇数grid」対応） */
 .summaryItem {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 120px;
+  min-width: 100px;
 }
 
 .summaryLabel {
@@ -350,6 +368,12 @@
 .placeCount {
   color: var(--color-text-sub);
   font-variant-numeric: tabular-nums;
+}
+
+.placeUnrecordedNote {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+  margin: 0;
 }
 
 /* ---------- 観察部位 ---------- */

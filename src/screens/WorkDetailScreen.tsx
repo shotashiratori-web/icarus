@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import type { WorkDetail } from '../types/workLog';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
+import Lightbox from '../components/Lightbox';
 import styles from './WorkDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; workId: string };
@@ -18,22 +19,7 @@ export default function WorkDetailScreen({ go, workId }: Props) {
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
 
   const photos = detail?.photos ?? [];
-  const closeGallery = () => setGalleryIndex(null);
-  const showPrev = () => setGalleryIndex((i) => (i === null ? null : Math.max(0, i - 1)));
-  const showNext = () => setGalleryIndex((i) => (i === null ? null : Math.min(photos.length - 1, i + 1)));
-
-  // ギャラリー表示中はEscで閉じる、矢印キーで前後移動できるようにする
-  useEffect(() => {
-    if (galleryIndex === null) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeGallery();
-      else if (e.key === 'ArrowLeft') showPrev();
-      else if (e.key === 'ArrowRight') showNext();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [galleryIndex, photos.length]);
+  const lightboxPhotos = photos.map((p) => ({ url: p.photoUrl, caption: p.caption || undefined }));
 
   const load = async (token: string) => {
     setState('loading');
@@ -163,24 +149,7 @@ export default function WorkDetailScreen({ go, workId }: Props) {
         )}
       </main>
 
-      {galleryIndex !== null && photos[galleryIndex] && (
-        <div className={styles.lightboxOverlay} onClick={closeGallery}>
-          <div className={styles.lightboxContent} onClick={(e) => e.stopPropagation()}>
-            <button className={styles.lightboxClose} onClick={closeGallery} aria-label="閉じる">✕</button>
-            {galleryIndex > 0 && (
-              <button className={`${styles.lightboxNav} ${styles.lightboxPrev}`} onClick={showPrev} aria-label="前の写真">‹</button>
-            )}
-            <img src={photos[galleryIndex].photoUrl} alt="" className={styles.lightboxImg} />
-            {galleryIndex < photos.length - 1 && (
-              <button className={`${styles.lightboxNav} ${styles.lightboxNext}`} onClick={showNext} aria-label="次の写真">›</button>
-            )}
-            <div className={styles.lightboxFooter}>
-              {photos[galleryIndex].caption && <p className={styles.lightboxCaption}>{photos[galleryIndex].caption}</p>}
-              <p className={styles.lightboxCount}>{galleryIndex + 1} / {photos.length}</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <Lightbox photos={lightboxPhotos} index={galleryIndex} setIndex={setGalleryIndex} />
     </div>
   );
 }
