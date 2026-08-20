@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import FoodEncyclopediaDetailScreen, { buildProcessChains, countProcessChain } from '../src/screens/FoodEncyclopediaDetailScreen';
 import { mockUseAuth } from './testAuth';
-import type { FieldFoodDetailSuccess, FieldFoodListItem } from '../src/types/fieldFood';
+import type { FieldFoodDetailSuccess, FieldFoodListItem, FieldFoodObservation } from '../src/types/fieldFood';
 import type { ProcessEntity, ProcessedProductEntity } from '../src/types/knowledge';
 import type { RelatedProcessGroup } from '../src/api/knowledgeApi';
 
@@ -55,6 +55,22 @@ function detail(foodName: string, overrides: Partial<FieldFoodDetailSuccess> = {
   };
 }
 
+function observation(eventId: string, overrides: Partial<FieldFoodObservation> = {}): FieldFoodObservation {
+  return {
+    eventId, date: '2026-07-01', photoUrl: '', place: '', memo: '',
+    latitude: null, longitude: null, elevation: null, takenAt: null,
+    largeCategory: '', subCategory: '', observedParts: '', identificationStatus: '', createdBy: '',
+    ...overrides,
+  };
+}
+
+// Lightbox内のimg（alt=食材名で複数存在しうる、または alt=""で装飾扱い）はrole="img"で一意に拾えないため、
+// src属性で直接クリック対象のbuttonを探す（WorkDetailScreen.test.tsxと同じ方針）
+function clickPhotoByUrl(url: string) {
+  const img = document.querySelector<HTMLImageElement>(`img[src="${url}"]`);
+  fireEvent.click(img!.closest('button')!);
+}
+
 function process(overrides: Partial<ProcessEntity>): ProcessEntity {
   return {
     id: 'proc-' + Math.random(), name: '', description: '', steps: [],
@@ -78,6 +94,16 @@ async function renderReady(foodName: string) {
 async function findProcessSection(): Promise<HTMLElement> {
   const heading = await screen.findByRole('heading', { level: 2, name: '加工' });
   return heading.closest('section') as HTMLElement;
+}
+
+// Summary cardは見出しを持たないため、常に描画される「観察期間」ラベルを起点にsectionを特定する
+function findSummarySection(): HTMLElement {
+  return screen.getByText('観察期間').closest('section') as HTMLElement;
+}
+
+function findPlaceBreakdownSection(): HTMLElement | null {
+  const heading = screen.queryByRole('heading', { level: 2, name: '場所' });
+  return heading ? (heading.closest('section') as HTMLElement) : null;
 }
 
 describe('FoodEncyclopediaDetailScreen', () => {
@@ -195,6 +221,199 @@ describe('FoodEncyclopediaDetailScreen', () => {
 
     expect(screen.getByRole('heading', { level: 2, name: '観察記録' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 2, name: '加工' })).not.toBeInTheDocument();
+  });
+
+  it('7. 場所未記入のみのFood: Summaryから「場所」項目自体が消え、内訳は軽い注記のみになる', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナマコ', {
+      places: [{ place: null, observationCount: 1 }],
+    }));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('ナマコ');
+
+    // 「0ヶ所」を出すと、GPSはあるが場所名が無い観察と並んだ時に矛盾して見えるため、0件時はSummary項目ごと非表示にする
+    expect(within(findSummarySection()).queryByText('場所')).not.toBeInTheDocument();
+    expect(screen.queryByText(/ヶ所/)).not.toBeInTheDocument();
+    // 場所未記入は場所名の内訳行(placeList)としては出さない。breakdown sectionの見出し自体は残る
+    const placeSection = findPlaceBreakdownSection();
+    expect(placeSection).not.toBeNull();
+    expect(within(placeSection as HTMLElement).queryByText('場所未記入')).not.toBeInTheDocument();
+    expect(within(placeSection as HTMLElement).getByText('場所未記入 1件')).toBeInTheDocument();
+  });
+
+  it('8. 名前付きの場所と場所未記入が混在するFood: Summaryは名前付きのみを数え、内訳と注記が両方出る', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      places: [
+        { place: '早苗ヶ丘', observationCount: 3 },
+        { place: null, observationCount: 2 },
+      ],
+    }));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('トマト');
+
+    expect(screen.getByText('1ヶ所')).toBeInTheDocument();
+    expect(screen.getByText('早苗ヶ丘')).toBeInTheDocument();
+    expect(screen.queryByText('場所未記入')).not.toBeInTheDocument();
+    expect(screen.getByText('場所未記入 2件')).toBeInTheDocument();
+  });
+
+  it('9. すべて名前付きの場所のFood: 注記は出ず、内訳のみ表示される', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      places: [{ place: '早苗ヶ丘', observationCount: 5 }],
+    }));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('トマト');
+
+    expect(screen.getByText('1ヶ所')).toBeInTheDocument();
+    expect(screen.getByText('早苗ヶ丘')).toBeInTheDocument();
+    // 観察記録側の個別カードには元々「📍 場所未記入」が出うるため、breakdown section内だけを確認する
+    expect(within(findPlaceBreakdownSection() as HTMLElement).queryByText(/場所未記入/)).not.toBeInTheDocument();
+  });
+
+  it('10. 観察部位0件のFood: Summaryから「観察部位」項目が消える', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナマコ', {
+      food: listItem('ナマコ', { partCount: 0 }),
+    }));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('ナマコ');
+
+    expect(within(findSummarySection()).queryByText('観察部位')).not.toBeInTheDocument();
+  });
+
+  it('11. 観察部位ありのFood: Summaryに「観察部位」項目が出る', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      food: listItem('トマト', { partCount: 2 }),
+    }));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('トマト');
+
+    const summarySection = findSummarySection();
+    expect(within(summarySection).getByText('観察部位')).toBeInTheDocument();
+    expect(within(summarySection).getByText('2')).toBeInTheDocument();
+  });
+
+  it('12. Summary項目数: 加工なし(観察記録・観察期間のみ想定)でも加工なし/加工ありでSummary自体は常に描画される', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('カタクリ', {
+      food: listItem('カタクリ', { placeCount: 0, partCount: 0 }),
+      places: [],
+    }));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('カタクリ');
+
+    // 場所・観察部位・加工がすべて0件でも、観察記録・観察期間は常に表示される
+    const summarySection = findSummarySection();
+    expect(within(summarySection).getByText('観察記録')).toBeInTheDocument();
+    expect(within(summarySection).getByText('観察期間')).toBeInTheDocument();
+    expect(within(summarySection).queryByText('場所')).not.toBeInTheDocument();
+    expect(within(summarySection).queryByText('観察部位')).not.toBeInTheDocument();
+    expect(within(summarySection).queryByText('加工')).not.toBeInTheDocument();
+  });
+});
+
+describe('FoodEncyclopediaDetailScreen Lightbox（Stage B: Work Detailと共有）', () => {
+  beforeEach(() => {
+    fetchFieldFoodDetail.mockReset();
+    resolveFoodByName.mockReset();
+    fetchRelatedProcesses.mockReset();
+    resolveFoodByName.mockResolvedValue(null);
+  });
+
+  it('1. Hero写真click → index0でLightboxが開く', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      food: listItem('トマト', { representativePhotoUrl: 'https://x.test/hero.jpg' }),
+      observations: [
+        observation('e1', { date: '2026-07-03', photoUrl: 'https://x.test/hero.jpg' }),
+        observation('e2', { date: '2026-07-02', photoUrl: 'https://x.test/2.jpg' }),
+      ],
+    }));
+    await renderReady('トマト');
+
+    clickPhotoByUrl('https://x.test/hero.jpg');
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+  });
+
+  it('2. Observation写真click → その写真のindexでLightboxが開く', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      food: listItem('トマト', { representativePhotoUrl: 'https://x.test/hero.jpg' }),
+      observations: [
+        observation('e1', { date: '2026-07-03', photoUrl: 'https://x.test/hero.jpg' }),
+        observation('e2', { date: '2026-07-02', photoUrl: 'https://x.test/2.jpg' }),
+        observation('e3', { date: '2026-07-01', photoUrl: 'https://x.test/3.jpg' }),
+      ],
+    }));
+    await renderReady('トマト');
+
+    clickPhotoByUrl('https://x.test/3.jpg');
+    expect(screen.getByText('3 / 3')).toBeInTheDocument();
+  });
+
+  it('3. HeroとObservationが同一URL → galleryでは重複排除されて1件になる', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      food: listItem('トマト', { representativePhotoUrl: 'https://x.test/same.jpg' }),
+      observations: [
+        // e1はHeroと同じURL（Heroは「写真つき最新観察」から選ばれるため、通常はこの形になる）
+        observation('e1', { date: '2026-07-03', photoUrl: 'https://x.test/same.jpg' }),
+        observation('e2', { date: '2026-07-02', photoUrl: 'https://x.test/2.jpg' }),
+      ],
+    }));
+    await renderReady('トマト');
+
+    // 重複排除されていれば全体2件（Hero分を二重に数えない）
+    clickPhotoByUrl('https://x.test/2.jpg');
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+
+    // Heroと同一URLの観察写真をclickしても、Heroと同じ1件目として開く（別枠にならない）
+    fireEvent.keyDown(window, { key: 'Escape' });
+    clickPhotoByUrl('https://x.test/same.jpg');
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+  });
+
+  it('4. 複数写真: next/previousで移動できる', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      food: listItem('トマト', { representativePhotoUrl: null }),
+      observations: [
+        observation('e1', { date: '2026-07-03', photoUrl: 'https://x.test/1.jpg' }),
+        observation('e2', { date: '2026-07-02', photoUrl: 'https://x.test/2.jpg' }),
+        observation('e3', { date: '2026-07-01', photoUrl: 'https://x.test/3.jpg' }),
+      ],
+    }));
+    await renderReady('トマト');
+
+    clickPhotoByUrl('https://x.test/1.jpg');
+    expect(screen.getByText('1 / 3')).toBeInTheDocument();
+    expect(screen.queryByLabelText('前の写真')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('次の写真'));
+    expect(screen.getByText('2 / 3')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('前の写真'));
+    expect(screen.getByText('1 / 3')).toBeInTheDocument();
+  });
+
+  it('5. Escで閉じる', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト', {
+      food: listItem('トマト', { representativePhotoUrl: null }),
+      observations: [observation('e1', { photoUrl: 'https://x.test/1.jpg' })],
+    }));
+    await renderReady('トマト');
+
+    clickPhotoByUrl('https://x.test/1.jpg');
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByText('1 / 1')).not.toBeInTheDocument();
+  });
+
+  it('6. 写真1枚だけでもHero clickでLightboxが開く', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('カタクリ', {
+      food: listItem('カタクリ', { representativePhotoUrl: 'https://x.test/only.jpg' }),
+      observations: [observation('e1', { photoUrl: 'https://x.test/only.jpg' })],
+    }));
+    await renderReady('カタクリ');
+
+    clickPhotoByUrl('https://x.test/only.jpg');
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+    expect(screen.queryByLabelText('前の写真')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('次の写真')).not.toBeInTheDocument();
   });
 });
 
