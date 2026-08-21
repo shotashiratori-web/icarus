@@ -1,6 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { fetchFieldFoodDetail, FieldFoodNotFoundError } from '../api/fieldFoodApi';
-import { resolveFoodByName, fetchRelatedProcesses, type RelatedProcessGroup } from '../api/knowledgeApi';
+import { fetchFieldFoodDetail, fetchFieldFoods, FieldFoodNotFoundError } from '../api/fieldFoodApi';
+import {
+  resolveFoodByName, resolveFieldFoodName, fetchRelatedProcesses, fetchAllFoods,
+  type RelatedProcessGroup,
+} from '../api/knowledgeApi';
 import { NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
@@ -110,6 +113,9 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   // buildProcessChains()でroot Process判定に使う。resolveFoodByName()解決結果のidを保持する
   const [resolvedFoodId, setResolvedFoodId] = useState<string | null>(null);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
+  // Food Input Cross Navigation用。他Food chip（Food Entity id）→ Field Log側で実在する表示名。
+  // 解決できなかった（曖昧 or 候補0件）chipはこのMapに入らず、non-clickableのまま表示される
+  const [foodChipTargets, setFoodChipTargets] = useState<Map<string, string>>(new Map());
 
   const load = async (token: string) => {
     setState('loading');
@@ -131,13 +137,42 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   const loadRelatedProcesses = async (token: string) => {
     try {
       const food = await resolveFoodByName(foodName, token);
-      if (!food) { setRelatedProcesses(null); setResolvedFoodId(null); return; }
+      if (!food) { setRelatedProcesses(null); setResolvedFoodId(null); setFoodChipTargets(new Map()); return; }
       const groups = await fetchRelatedProcesses(food.id, token);
       setRelatedProcesses(groups);
       setResolvedFoodId(food.id);
+      void loadFoodChipTargets(token, groups, food.id);
     } catch {
       setRelatedProcesses(null);
       setResolvedFoodId(null);
+      setFoodChipTargets(new Map());
+    }
+  };
+
+  // 他Food chipのtap遷移先を解決する。chip数に関わらずfetchAllFoods/fetchFieldFoodsを1回ずつだけ呼び
+  // （N+1回避）、ローカルでcanonical→alias優先の逆引きを行う。失敗時は空Map（全chip non-clickable）
+  // に倒す。食材図鑑本体・加工表示には一切影響しない、Cross Navigation専用の追加ロード
+  const loadFoodChipTargets = async (token: string, groups: RelatedProcessGroup[], currentFoodId: string) => {
+    const candidateIds = new Set<string>();
+    for (const g of groups) {
+      for (const u of g.uses) {
+        if (u.type === 'food' && u.id !== currentFoodId) candidateIds.add(u.id);
+      }
+    }
+    if (candidateIds.size === 0) { setFoodChipTargets(new Map()); return; }
+    try {
+      const [allFoods, fieldFoods] = await Promise.all([fetchAllFoods(token), fetchFieldFoods({}, token)]);
+      const foodById = new Map(allFoods.map((f) => [f.id, f]));
+      const fieldFoodNames = new Set(fieldFoods.items.map((i) => i.foodName));
+      const targets = new Map<string, string>();
+      for (const id of candidateIds) {
+        const food = foodById.get(id);
+        const resolved = food && resolveFieldFoodName(food, fieldFoodNames);
+        if (resolved) targets.set(id, resolved);
+      }
+      setFoodChipTargets(targets);
+    } catch {
+      setFoodChipTargets(new Map());
     }
   };
 
@@ -384,7 +419,14 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
                 <h2 className={styles.sectionTitle}>加工</h2>
                 <div className={styles.processList}>
                   {processChains.map((node) => (
-                    <ProcessChainCard key={node.group.process.id} node={node} depth={0} />
+                    <ProcessChainCard
+                      key={node.group.process.id}
+                      node={node}
+                      depth={0}
+                      resolvedFoodId={resolvedFoodId}
+                      foodChipTargets={foodChipTargets}
+                      go={go}
+                    />
                   ))}
                 </div>
               </section>
@@ -398,10 +440,18 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   );
 }
 
+type ProcessChainCardProps = {
+  node: ProcessChainNode;
+  depth: number;
+  resolvedFoodId: string | null;
+  foodChipTargets: Map<string, string>;
+  go: (s: Screen) => void;
+};
+
 // root Process、およびそのOutputを次のInputとするdescendant Processを再帰的に描画する。
 // Process description・ProcessedProduct descriptionは表示しない（Content Curation未整理のため、
 // Food-first Encyclopedia MVP設計報告の判断により今回表示対象から外す。D1値は変更しない）
-function ProcessChainCard({ node, depth }: { node: ProcessChainNode; depth: number }) {
+function ProcessChainCard({ node, depth, resolvedFoodId, foodChipTargets, go }: ProcessChainCardProps) {
   const { group, descendants } = node;
   return (
     <div className={depth === 0 ? styles.processCard : styles.processCardNested}>
@@ -410,9 +460,29 @@ function ProcessChainCard({ node, depth }: { node: ProcessChainNode; depth: numb
       {group.uses.length > 0 && (
         <div className={styles.processProducts}>
           <span className={styles.processProductsLabel}>入力:</span>
-          {group.uses.map((u) => (
-            <span key={u.id} className={styles.productChip}>{u.name}</span>
-          ))}
+          {group.uses.map((u) => {
+            // Food Input Cross Navigation: 対象はtype==='food'のみ（processed_productは専用Detail
+            // 未実装のためnon-clickable維持）。現在表示中のFood自身も同じ画面への再遷移になり
+            // 意味が無いためnon-clickable。それ以外で、Field Log側の表示名へ安全に解決できた
+            // （foodChipTargetsに存在する）場合のみclickableにする（曖昧・候補0件はnon-clickable）
+            const targetFoodName = u.type === 'food' && u.id !== resolvedFoodId
+              ? foodChipTargets.get(u.id)
+              : undefined;
+            if (targetFoodName) {
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  className={`${styles.productChip} ${styles.clickableChip}`}
+                  onClick={() => go({ name: 'foodEncyclopediaDetail', foodName: targetFoodName })}
+                >
+                  {u.name}
+                  <span className={styles.chipChevron} aria-hidden="true">›</span>
+                </button>
+              );
+            }
+            return <span key={u.id} className={styles.productChip}>{u.name}</span>;
+          })}
         </div>
       )}
 
@@ -438,7 +508,14 @@ function ProcessChainCard({ node, depth }: { node: ProcessChainNode; depth: numb
         <div className={styles.descendantWrap}>
           <p className={styles.descendantConnector}>↓ さらに加工</p>
           {descendants.map((d) => (
-            <ProcessChainCard key={d.group.process.id} node={d} depth={depth + 1} />
+            <ProcessChainCard
+              key={d.group.process.id}
+              node={d}
+              depth={depth + 1}
+              resolvedFoodId={resolvedFoodId}
+              foodChipTargets={foodChipTargets}
+              go={go}
+            />
           ))}
         </div>
       )}

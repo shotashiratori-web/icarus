@@ -3,23 +3,27 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import FoodEncyclopediaDetailScreen, { buildProcessChains, countProcessChain } from '../src/screens/FoodEncyclopediaDetailScreen';
 import { mockUseAuth } from './testAuth';
 import type { FieldFoodDetailSuccess, FieldFoodListItem, FieldFoodObservation } from '../src/types/fieldFood';
-import type { ProcessEntity, ProcessedProductEntity } from '../src/types/knowledge';
-import type { RelatedProcessGroup } from '../src/api/knowledgeApi';
+import type { ProcessEntity, ProcessedProductEntity, FoodEntity } from '../src/types/knowledge';
+import type { RelatedProcessGroup, RelatedProcessGroupUse } from '../src/api/knowledgeApi';
 
 vi.mock('../src/context/AuthContext', () => ({ useAuth: () => mockUseAuth() }));
 
-const { fetchFieldFoodDetail, resolveFoodByName, fetchRelatedProcesses } = vi.hoisted(() => ({
+const {
+  fetchFieldFoodDetail, resolveFoodByName, fetchRelatedProcesses, fetchAllFoods, fetchFieldFoods,
+} = vi.hoisted(() => ({
   fetchFieldFoodDetail: vi.fn(),
   resolveFoodByName: vi.fn(),
   fetchRelatedProcesses: vi.fn(),
+  fetchAllFoods: vi.fn(),
+  fetchFieldFoods: vi.fn(),
 }));
 vi.mock('../src/api/fieldFoodApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/api/fieldFoodApi')>();
-  return { ...actual, fetchFieldFoodDetail };
+  return { ...actual, fetchFieldFoodDetail, fetchFieldFoods };
 });
 vi.mock('../src/api/knowledgeApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/api/knowledgeApi')>();
-  return { ...actual, resolveFoodByName, fetchRelatedProcesses };
+  return { ...actual, resolveFoodByName, fetchRelatedProcesses, fetchAllFoods };
 });
 
 function listItem(foodName: string, overrides: Partial<FieldFoodListItem> = {}): FieldFoodListItem {
@@ -85,10 +89,39 @@ function product(overrides: Partial<ProcessedProductEntity>): ProcessedProductEn
   };
 }
 
+// group.usesの要素。既存fixtureの大半はFood入力のため既定はtype:'food'
+function use(overrides: Partial<RelatedProcessGroupUse> & { id: string; name: string }): RelatedProcessGroupUse {
+  return { type: 'food', ...overrides };
+}
+
+function foodEntity(overrides: Partial<FoodEntity> & { id: string; canonicalName: string }): FoodEntity {
+  return {
+    aliases: [], usableParts: [], description: '', createdAt: '', updatedAt: '', createdBy: '', ...overrides,
+  };
+}
+
 async function renderReady(foodName: string) {
   render(<FoodEncyclopediaDetailScreen go={vi.fn()} foodName={foodName} />);
   // h1(foodName)はheaderのspan(同一テキスト)と別要素なので、role指定で一意に待つ
   await screen.findByRole('heading', { level: 1, name: foodName });
+}
+
+// go()呼び出しをtestから検証したい場合用。renderReadyと違い、mock自体を呼び出し元へ返す
+async function renderReadyCapturingGo(foodName: string) {
+  const go = vi.fn();
+  render(<FoodEncyclopediaDetailScreen go={go} foodName={foodName} />);
+  await screen.findByRole('heading', { level: 1, name: foodName });
+  return go;
+}
+
+// loadFoodChipTargets（Cross Navigation解決。候補0件なら fetchAllFoods/fetchFieldFoods を呼ばず
+// 即座に空Mapへ倒す設計のため、その呼び出し自体は待機条件にできない）の完了を待つ。
+// non-clickableを検証するtestで、解決処理がまだ走っていないだけの「未検証の合格」を防ぐため、
+// 必ず呼ばれるfetchRelatedProcessesの完了を確認した上でmicrotask/timerを1周させ、
+// resulting setState/re-renderを確定させる
+async function flushFoodChipResolution() {
+  await vi.waitFor(() => expect(fetchRelatedProcesses).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function findProcessSection(): Promise<HTMLElement> {
@@ -111,6 +144,10 @@ describe('FoodEncyclopediaDetailScreen', () => {
     fetchFieldFoodDetail.mockReset();
     resolveFoodByName.mockReset();
     fetchRelatedProcesses.mockReset();
+    // Food Input Cross Navigation用の追加ロード。個別に検証しないtestでは実ネットワークへ
+    // 飛ばさないよう既定で空を返す（＝全chip non-clickableのまま、既存の表示検証には影響しない）
+    fetchAllFoods.mockReset().mockResolvedValue([]);
+    fetchFieldFoods.mockReset().mockResolvedValue({ items: [], totalCount: 0 });
   });
 
   it('1. KnowledgeなしFood: 加工sectionが非表示でも観察本体は正常表示される', async () => {
@@ -129,7 +166,7 @@ describe('FoodEncyclopediaDetailScreen', () => {
     resolveFoodByName.mockResolvedValue({ id: 'f-tomato', canonicalName: 'トマト', aliases: [], usableParts: [], description: '', createdAt: '', updatedAt: '', createdBy: '' });
     const groups: RelatedProcessGroup[] = [{
       process: process({ id: 'proc-ketchup', name: 'トマトケチャップを作る', description: '今回Knowledge Graphの主要InputをArchitecture上限定する注記', steps: [] }),
-      uses: [{ id: 'f-tomato', name: 'トマト' }, { id: 'f-onion', name: '玉ねぎ' }],
+      uses: [use({ id: 'f-tomato', name: 'トマト' }), use({ id: 'f-onion', name: '玉ねぎ' })],
       produces: [product({ id: 'prod-ketchup', name: 'トマトケチャップ', description: 'システム設計上のメモ' })],
     }];
     fetchRelatedProcesses.mockResolvedValue(groups);
@@ -155,12 +192,12 @@ describe('FoodEncyclopediaDetailScreen', () => {
     const groups: RelatedProcessGroup[] = [
       {
         process: process({ id: 'proc-yuderu', name: 'ナマコを茹でる', steps: [{ order: 1, text: '海水で20分沸騰させて茹でる' }] }),
-        uses: [{ id: 'f-namako', name: 'ナマコ' }],
+        uses: [use({ id: 'f-namako', name: 'ナマコ' })],
         produces: [product({ id: 'prod-yudeta', name: '茹でたナマコ' }), product({ id: 'prod-yudejiru', name: 'ナマコの茹で汁' })],
       },
       {
         process: process({ id: 'proc-shio', name: 'ナマコ塩を作る', steps: [] }),
-        uses: [{ id: 'prod-yudejiru', name: 'ナマコの茹で汁' }],
+        uses: [use({ id: 'prod-yudejiru', name: 'ナマコの茹で汁', type: 'processed_product' })],
         produces: [product({ id: 'prod-shio', name: 'ナマコ塩' })],
       },
     ];
@@ -182,7 +219,7 @@ describe('FoodEncyclopediaDetailScreen', () => {
     resolveFoodByName.mockResolvedValue({ id: 'f-tomato', canonicalName: 'トマト', aliases: [], usableParts: [], description: '', createdAt: '', updatedAt: '', createdBy: '' });
     const groups: RelatedProcessGroup[] = [{
       process: process({ id: 'proc-ketchup', name: 'トマトケチャップを作る' }),
-      uses: [{ id: 'f-tomato', name: 'トマト' }, { id: 'f-onion', name: '玉ねぎ' }],
+      uses: [use({ id: 'f-tomato', name: 'トマト' }), use({ id: 'f-onion', name: '玉ねぎ' })],
       produces: [product({ id: 'prod-ketchup', name: 'トマトケチャップ' })],
     }];
     fetchRelatedProcesses.mockResolvedValue(groups);
@@ -199,7 +236,7 @@ describe('FoodEncyclopediaDetailScreen', () => {
     resolveFoodByName.mockResolvedValue({ id: 'f-anzu', canonicalName: '杏', aliases: ['アンズ'], usableParts: [], description: '', createdAt: '', updatedAt: '', createdBy: '' });
     const groups: RelatedProcessGroup[] = [{
       process: process({ id: 'proc-semidry', name: '杏セミドライを作る' }),
-      uses: [{ id: 'f-anzu', name: '杏' }],
+      uses: [use({ id: 'f-anzu', name: '杏' })],
       produces: [product({ id: 'prod-semidry', name: 'セミドライ杏' })],
     }];
     fetchRelatedProcesses.mockResolvedValue(groups);
@@ -315,6 +352,8 @@ describe('FoodEncyclopediaDetailScreen Lightbox（Stage B: Work Detailと共有�
     resolveFoodByName.mockReset();
     fetchRelatedProcesses.mockReset();
     resolveFoodByName.mockResolvedValue(null);
+    fetchAllFoods.mockReset().mockResolvedValue([]);
+    fetchFieldFoods.mockReset().mockResolvedValue({ items: [], totalCount: 0 });
   });
 
   it('1. Hero写真click → index0でLightboxが開く', async () => {
@@ -417,12 +456,153 @@ describe('FoodEncyclopediaDetailScreen Lightbox（Stage B: Work Detailと共有�
   });
 });
 
+describe('Food Input Cross Navigation（Stage C）', () => {
+  beforeEach(() => {
+    fetchFieldFoodDetail.mockReset();
+    resolveFoodByName.mockReset();
+    fetchRelatedProcesses.mockReset();
+    fetchAllFoods.mockReset();
+    fetchFieldFoods.mockReset();
+  });
+
+  it('1. canonical exact解決: 他Food chipがclickableになり、tapで解決先のfoodEncyclopediaDetailへ遷移する（トマト→玉ねぎ）', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト'));
+    resolveFoodByName.mockResolvedValue(foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }));
+    fetchRelatedProcesses.mockResolvedValue([{
+      process: process({ id: 'proc-ketchup', name: 'トマトケチャップを作る' }),
+      uses: [use({ id: 'f-tomato', name: 'トマト' }), use({ id: 'f-onion', name: '玉ねぎ' })],
+      produces: [product({ id: 'prod-ketchup', name: 'トマトケチャップ' })],
+    }]);
+    fetchAllFoods.mockResolvedValue([
+      foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }),
+      foodEntity({ id: 'f-onion', canonicalName: '玉ねぎ' }),
+    ]);
+    fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト'), listItem('玉ねぎ')], totalCount: 2 });
+    const go = await renderReadyCapturingGo('トマト');
+    await findProcessSection();
+
+    const chip = await screen.findByRole('button', { name: /玉ねぎ/ });
+    fireEvent.click(chip);
+    expect(go).toHaveBeenCalledWith({ name: 'foodEncyclopediaDetail', foodName: '玉ねぎ' });
+  });
+
+  it('2. 現在Foodのchipはnon-clickable（同じ画面への再遷移を避ける）', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト'));
+    resolveFoodByName.mockResolvedValue(foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }));
+    fetchRelatedProcesses.mockResolvedValue([{
+      process: process({ id: 'proc-ketchup', name: 'トマトケチャップを作る' }),
+      uses: [use({ id: 'f-tomato', name: 'トマト' })],
+      produces: [],
+    }]);
+    fetchAllFoods.mockResolvedValue([foodEntity({ id: 'f-tomato', canonicalName: 'トマト' })]);
+    fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト')], totalCount: 1 });
+    await renderReadyCapturingGo('トマト');
+    const section = await findProcessSection();
+    await flushFoodChipResolution();
+
+    expect(within(section).getByText('トマト')).toBeInTheDocument();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('3. ProcessedProductのchipはnon-clickable（専用Detail未実装のため）', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナマコ'));
+    resolveFoodByName.mockResolvedValue(foodEntity({ id: 'f-namako', canonicalName: 'ナマコ' }));
+    fetchRelatedProcesses.mockResolvedValue([
+      {
+        process: process({ id: 'proc-yuderu', name: 'ナマコを茹でる' }),
+        uses: [use({ id: 'f-namako', name: 'ナマコ' })],
+        produces: [product({ id: 'prod-yudejiru', name: 'ナマコの茹で汁' })],
+      },
+      {
+        process: process({ id: 'proc-shio', name: 'ナマコ塩を作る' }),
+        uses: [use({ id: 'prod-yudejiru', name: 'ナマコの茹で汁', type: 'processed_product' })],
+        produces: [product({ id: 'prod-shio', name: 'ナマコ塩' })],
+      },
+    ]);
+    fetchAllFoods.mockResolvedValue([foodEntity({ id: 'f-namako', canonicalName: 'ナマコ' })]);
+    fetchFieldFoods.mockResolvedValue({ items: [listItem('ナマコ')], totalCount: 1 });
+    await renderReadyCapturingGo('ナマコ');
+    await findProcessSection();
+    await flushFoodChipResolution();
+
+    // 「ナマコの茹で汁」はroot processのできたもの・descendant processの入力の2箇所に出る
+    expect(screen.getAllByText('ナマコの茹で汁')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /ナマコの茹で汁/ })).not.toBeInTheDocument();
+  });
+
+  it('4. Field Logに候補が存在しない他Foodのchipはnon-clickable（候補0件）', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト'));
+    resolveFoodByName.mockResolvedValue(foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }));
+    fetchRelatedProcesses.mockResolvedValue([{
+      process: process({ id: 'proc-x', name: 'X' }),
+      uses: [use({ id: 'f-tomato', name: 'トマト' }), use({ id: 'f-mystery', name: '謎の野菜' })],
+      produces: [],
+    }]);
+    fetchAllFoods.mockResolvedValue([
+      foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }),
+      foodEntity({ id: 'f-mystery', canonicalName: '謎の野菜' }),
+    ]);
+    fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト')], totalCount: 1 }); // 謎の野菜はField Logに無い
+    await renderReadyCapturingGo('トマト');
+    const section = await findProcessSection();
+    await flushFoodChipResolution();
+
+    expect(within(section).getByText('謎の野菜')).toBeInTheDocument();
+    expect(within(section).queryByRole('button', { name: /謎の野菜/ })).not.toBeInTheDocument();
+  });
+
+  it('5. alias一致が複数あるFoodのchipはnon-clickable（曖昧なら決めない）', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト'));
+    resolveFoodByName.mockResolvedValue(foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }));
+    fetchRelatedProcesses.mockResolvedValue([{
+      process: process({ id: 'proc-x', name: 'X' }),
+      uses: [use({ id: 'f-tomato', name: 'トマト' }), use({ id: 'f-ambiguous', name: 'あいまい' })],
+      produces: [],
+    }]);
+    fetchAllFoods.mockResolvedValue([
+      foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }),
+      foodEntity({ id: 'f-ambiguous', canonicalName: 'あいまい', aliases: ['あいまいA', 'あいまいB'] }),
+    ]);
+    // canonical「あいまい」自体はField Logに無く、aliasが2件ヒットする
+    fetchFieldFoods.mockResolvedValue({
+      items: [listItem('トマト'), listItem('あいまいA'), listItem('あいまいB')], totalCount: 3,
+    });
+    await renderReadyCapturingGo('トマト');
+    const section = await findProcessSection();
+    await flushFoodChipResolution();
+
+    expect(within(section).getByText('あいまい')).toBeInTheDocument();
+    expect(within(section).queryByRole('button', { name: /あいまい/ })).not.toBeInTheDocument();
+  });
+
+  it('6. 杏→アンズ: canonicalがField Logに無くaliasが1件一致する場合、alias名でclickableになる', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('トマト'));
+    resolveFoodByName.mockResolvedValue(foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }));
+    fetchRelatedProcesses.mockResolvedValue([{
+      process: process({ id: 'proc-semidry', name: '杏セミドライを作る' }),
+      uses: [use({ id: 'f-tomato', name: 'トマト' }), use({ id: 'f-anzu', name: '杏' })],
+      produces: [],
+    }]);
+    fetchAllFoods.mockResolvedValue([
+      foodEntity({ id: 'f-tomato', canonicalName: 'トマト' }),
+      foodEntity({ id: 'f-anzu', canonicalName: '杏', aliases: ['アンズ'] }),
+    ]);
+    fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト'), listItem('アンズ')], totalCount: 2 }); // 「杏」自体はField Logに無い
+    const go = await renderReadyCapturingGo('トマト');
+    await findProcessSection();
+
+    const chip = await screen.findByRole('button', { name: /杏/ });
+    fireEvent.click(chip);
+    expect(go).toHaveBeenCalledWith({ name: 'foodEncyclopediaDetail', foodName: 'アンズ' });
+  });
+});
+
 describe('buildProcessChains / countProcessChain（純粋関数の直接テスト）', () => {
   it('cycle安全性: 不正な循環データを与えてもハングせず、逆流分を含めない', () => {
     // A(uses:x, produces:b) → B(uses:b, produces:x) という不正データ（Bがxを再produceする）
     const groups: RelatedProcessGroup[] = [
-      { process: process({ id: 'PA', name: 'A' }), uses: [{ id: 'x', name: 'x' }], produces: [product({ id: 'b', name: 'b' })] },
-      { process: process({ id: 'PB', name: 'B' }), uses: [{ id: 'b', name: 'b' }], produces: [product({ id: 'x', name: 'x' })] },
+      { process: process({ id: 'PA', name: 'A' }), uses: [use({ id: 'x', name: 'x' })], produces: [product({ id: 'b', name: 'b' })] },
+      { process: process({ id: 'PB', name: 'B' }), uses: [use({ id: 'b', name: 'b', type: 'processed_product' })], produces: [product({ id: 'x', name: 'x' })] },
     ];
     const chains = buildProcessChains(groups, 'x');
     expect(countProcessChain(chains)).toBe(2); // A→Bのみ、Aへの逆流は含まない
@@ -434,9 +614,9 @@ describe('buildProcessChains / countProcessChain（純粋関数の直接テス�
   it('複数root合流時、descendantがページ全体で重複しない', () => {
     // Food Aから見てroot1・root2が両方存在し、どちらも同じdescendant Cへ合流するケース
     const groups: RelatedProcessGroup[] = [
-      { process: process({ id: 'R1', name: 'root1' }), uses: [{ id: 'food', name: 'Food' }], produces: [product({ id: 'p1', name: 'p1' })] },
-      { process: process({ id: 'R2', name: 'root2' }), uses: [{ id: 'food', name: 'Food' }], produces: [product({ id: 'p2', name: 'p2' })] },
-      { process: process({ id: 'C', name: 'C' }), uses: [{ id: 'p1', name: 'p1' }, { id: 'p2', name: 'p2' }], produces: [] },
+      { process: process({ id: 'R1', name: 'root1' }), uses: [use({ id: 'food', name: 'Food' })], produces: [product({ id: 'p1', name: 'p1' })] },
+      { process: process({ id: 'R2', name: 'root2' }), uses: [use({ id: 'food', name: 'Food' })], produces: [product({ id: 'p2', name: 'p2' })] },
+      { process: process({ id: 'C', name: 'C' }), uses: [use({ id: 'p1', name: 'p1', type: 'processed_product' }), use({ id: 'p2', name: 'p2', type: 'processed_product' })], produces: [] },
     ];
     const chains = buildProcessChains(groups, 'food');
     expect(chains).toHaveLength(2);
