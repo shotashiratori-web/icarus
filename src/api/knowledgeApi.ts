@@ -76,6 +76,20 @@ export async function resolveFoodByName(name: string, idToken: string): Promise<
   return aliasMatches[0] ?? null;
 }
 
+// resolveFoodByNameの逆方向：Food Entity（canonicalName/aliases）から、Field Log側に実在する
+// 表示名へ解決する。Food Cross Navigation（他Food chipのtap遷移）用。
+// 優先順位はresolveFoodByNameと同じ「曖昧なら決めない」原則：
+// 1. canonicalNameがField Logに存在 → canonicalへ
+// 2. canonicalが無く、aliasの完全一致がちょうど1件 → そのaliasへ
+// 3. alias一致が複数、または候補0件 → null（呼び出し側はnon-clickable扱いにする）
+// 副作用なし・fetchしない。呼び出し側がField Food名の集合を1回だけ取得して渡す設計にすることで、
+// chip数に応じたN+1リクエストを避ける
+export function resolveFieldFoodName(food: FoodEntity, fieldFoodNames: Set<string>): string | null {
+  if (fieldFoodNames.has(food.canonicalName)) return food.canonicalName;
+  const aliasMatches = food.aliases.filter((a) => fieldFoodNames.has(a));
+  return aliasMatches.length === 1 ? aliasMatches[0] : null;
+}
+
 // Food selectorが正式Food Entity（GET /foods）のみを候補にするために使う。
 // Field Log由来174食材（/field/foods）とは別物であり、混ぜない
 export async function fetchAllFoods(idToken: string): Promise<FoodEntity[]> {
@@ -107,9 +121,18 @@ async function fetchRelationsBySource(sourceType: string, sourceId: string, idTo
   return json.items;
 }
 
+// Food Input Cross Navigation（食材図鑑内でFood chipから別Food Detailへ遷移する機能）が
+// clickable判定にtypeを必要とするため保持する。ProcessedProductは専用Detail未実装のため
+// 常にnon-clickable（FoodEncyclopediaDetailScreen側の判定）
+export interface RelatedProcessGroupUse {
+  id: string;
+  name: string;
+  type: 'food' | 'processed_product';
+}
+
 export interface RelatedProcessGroup {
   process: ProcessEntity;
-  uses: { id: string; name: string }[];
+  uses: RelatedProcessGroupUse[];
   produces: ProcessedProductEntity[];
 }
 
@@ -131,7 +154,7 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
   };
 
   const visitedProcessIds = new Set<string>();
-  const usesMap = new Map<string, { id: string; name: string }[]>(); // processId -> 全input一覧（正本）
+  const usesMap = new Map<string, RelatedProcessGroupUse[]>(); // processId -> 全input一覧（正本）
   const producesMap = new Map<string, Set<string>>(); // processId -> productIds
 
   // Processが新規visited化された時点で、そのProcess自身が持つ全uses/produces Relationを取得し、
@@ -139,13 +162,13 @@ export async function fetchRelatedProcesses(foodId: string, idToken: string): Pr
   // （起点Foodに関わらず同じProcessは常に同じuses一覧になる）
   const loadProcessRelations = async (processId: string): Promise<{ type: 'processed_product'; id: string }[]> => {
     const relations = await fetchRelationsBySource('process', processId, idToken);
-    const uses: { id: string; name: string }[] = [];
+    const uses: RelatedProcessGroupUse[] = [];
     const productIds = new Set<string>();
     const nextNodes: { type: 'processed_product'; id: string }[] = [];
     for (const r of relations) {
       if (r.relationType === 'uses' && (r.targetType === 'food' || r.targetType === 'processed_product')) {
         const name = nameOf(r.targetType, r.targetId);
-        if (name) uses.push({ id: r.targetId, name });
+        if (name) uses.push({ id: r.targetId, name, type: r.targetType });
       } else if (r.relationType === 'produces' && r.targetType === 'processed_product') {
         productIds.add(r.targetId);
         nextNodes.push({ type: 'processed_product', id: r.targetId });

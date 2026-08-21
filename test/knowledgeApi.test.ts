@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { resolveFoodByName, FoodAliasConflictError, fetchRelatedProcesses } from '../src/api/knowledgeApi';
+import { resolveFoodByName, resolveFieldFoodName, FoodAliasConflictError, fetchRelatedProcesses } from '../src/api/knowledgeApi';
 import type { FoodEntity, ProcessEntity, ProcessedProductEntity, KnowledgeRelation } from '../src/types/knowledge';
 
 // resolveFoodByName()自体の解決ロジック（canonical優先・confirmed alias exact・conflict時は安全側でthrow）を
@@ -37,6 +37,34 @@ describe('resolveFoodByName', () => {
       { ...杏, id: 'f2', canonicalName: '食材B', aliases: ['同名'] },
     ]);
     await expect(resolveFoodByName('同名', 'token')).rejects.toBeInstanceOf(FoodAliasConflictError);
+  });
+});
+
+// resolveFoodByNameの逆方向：Food Entity → Field Log側の実在表示名。Food Input Cross Navigation
+// （食材図鑑内で他Food chipから別Food Detailへ遷移する機能）が使う。fetchしない純粋関数のため
+// 直接検証する（副作用なし）
+describe('resolveFieldFoodName', () => {
+  const tomato = { id: 'f-tomato', canonicalName: 'トマト', aliases: [], usableParts: [], description: '', createdAt: '', updatedAt: '', createdBy: '' };
+
+  it('canonical exactがField Logに存在する場合、canonicalへ解決する（トマト）', () => {
+    const result = resolveFieldFoodName(tomato, new Set(['トマト', '玉ねぎ']));
+    expect(result).toBe('トマト');
+  });
+
+  it('canonicalが存在せず、aliasの完全一致がちょうど1件の場合、そのaliasへ解決する（杏→アンズ）', () => {
+    const result = resolveFieldFoodName(杏, new Set(['アンズ', 'トマト']));
+    expect(result).toBe('アンズ');
+  });
+
+  it('canonicalが存在せず、aliasの完全一致が複数ある場合は解決しない（曖昧なら決めない）', () => {
+    const ambiguous = { ...杏, aliases: ['アンズ', 'カラモモ'] };
+    const result = resolveFieldFoodName(ambiguous, new Set(['アンズ', 'カラモモ']));
+    expect(result).toBeNull();
+  });
+
+  it('canonical・aliasともField Logに候補が無い場合は解決しない', () => {
+    const result = resolveFieldFoodName(tomato, new Set(['玉ねぎ']));
+    expect(result).toBeNull();
   });
 });
 
@@ -136,7 +164,7 @@ describe('fetchRelatedProcesses', () => {
 
     const groups = await fetchRelatedProcesses('f-anzu', 'token');
     expect(groups).toHaveLength(1);
-    expect(groups[0].uses).toEqual([{ id: 'f-anzu', name: '杏' }]);
+    expect(groups[0].uses).toEqual([{ id: 'f-anzu', name: '杏', type: 'food' }]);
     expect(groups[0].produces.map((p) => p.name).sort()).toEqual(['セミドライ杏', '杏の濃縮シロップ']);
   });
 
@@ -160,9 +188,9 @@ describe('fetchRelatedProcesses', () => {
     expect(groups).toHaveLength(2);
     const root = groups.find((g) => g.process.name === 'ナマコを茹でる')!;
     const descendant = groups.find((g) => g.process.name === 'ナマコ塩を作る')!;
-    expect(root.uses).toEqual([{ id: 'f-namako', name: 'ナマコ' }]);
+    expect(root.uses).toEqual([{ id: 'f-namako', name: 'ナマコ', type: 'food' }]);
     expect(root.produces.map((p) => p.name).sort()).toEqual(['ナマコの茹で汁', '茹でたナマコ']);
-    expect(descendant.uses).toEqual([{ id: 'pp-yudejiru', name: 'ナマコの茹で汁' }]);
+    expect(descendant.uses).toEqual([{ id: 'pp-yudejiru', name: 'ナマコの茹で汁', type: 'processed_product' }]);
     expect(descendant.produces.map((p) => p.name)).toEqual(['ナマコ塩']);
   });
 
@@ -187,7 +215,7 @@ describe('fetchRelatedProcesses', () => {
     const groups = await fetchRelatedProcesses('f-x', 'token');
     expect(groups).toHaveLength(3); // A/B/Cそれぞれ1回のみ（循環で重複追加されない）
     const b = groups.find((g) => g.process.name === 'B')!;
-    expect(b.uses).toEqual([{ id: 'pp-1', name: 'P1' }]); // 循環で複数回積まれていない
+    expect(b.uses).toEqual([{ id: 'pp-1', name: 'P1', type: 'processed_product' }]); // 循環で複数回積まれていない
   });
 
   it('22. hop-limit: 深いchainでもhop上限（10）で打ち切られ、ハングしない', async () => {

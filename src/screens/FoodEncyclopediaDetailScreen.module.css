@@ -452,6 +452,28 @@
   overflow-wrap: break-word;
 }
 
+/* clickable Food chip（他Food Detailへ遷移可能）。色だけに依存せず、下線・chevron・
+   pressed stateで非clickableのspanと区別する */
+.clickableChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.clickableChip:active {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+}
+
+.chipChevron {
+  font-size: var(--font-size-xs);
+}
+
 .stepsBlock {
   display: flex;
   flex-direction: column;
