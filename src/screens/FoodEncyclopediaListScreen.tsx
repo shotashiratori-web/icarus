@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { fetchFieldFoods } from '../api/fieldFoodApi';
-import { NetworkUnknownError } from '../api/workApi';
+import { useEffect, useMemo, useRef } from 'react';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
+import { useFoodEncyclopediaListStore } from '../store/foodEncyclopediaListStore';
 import type { FieldFoodListItem } from '../types/fieldFood';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import styles from './FoodEncyclopediaListScreen.module.css';
 
 type Props = { go: (s: Screen) => void };
-type LoadState = 'loading' | 'ready' | 'error';
 
 // 分類は「植物/山菜」のように大分類・小分類を合わせて表示する。
 // 競合（同一foodで実分類が複数）がある場合は多数決で確定せず、確認を促す表示にする
@@ -21,29 +19,37 @@ function classificationLabel(item: FieldFoodListItem): string {
 
 export default function FoodEncyclopediaListScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
-  const [items, setItems] = useState<FieldFoodListItem[]>([]);
-  const [state, setState] = useState<LoadState>('loading');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [largeCategoryFilter, setLargeCategoryFilter] = useState('');
+  const {
+    items, loadState: state, errorMessage, searchQuery, largeCategoryFilter, scrollPosition,
+    setSearchQuery, setLargeCategoryFilter, setScrollPosition, ensureLoaded, retry,
+  } = useFoodEncyclopediaListStore();
 
-  const load = async (token: string) => {
-    setState('loading');
-    try {
-      const result = await fetchFieldFoods({}, token);
-      setItems(result.items);
-      setState('ready');
-    } catch (e) {
-      if (e instanceof TokenExpiredError) { handleTokenExpired(); return; }
-      setErrorMessage(e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました');
-      setState('error');
-    }
-  };
-
+  // Detail往復（Food Input Cross Navigationでの複数Detail経由を含む）では再fetchせず、
+  // 保持済みのitems・検索/絞り込み状態をそのまま表示する（UX-006対応）
   useEffect(() => {
-    if (authState === 'ready' && idToken) void load(idToken);
+    if (authState === 'ready' && idToken) {
+      ensureLoaded(idToken).catch((e) => {
+        if (e instanceof TokenExpiredError) handleTokenExpired();
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, idToken]);
+
+  // Detail往復後、一覧がready（=filtered結果も同じ描画で確定済み）になった直後に
+  // 保存済みscroll位置を1回だけ復元する。ZukanFieldMapScreenのlistScrollTop復元と同じ方針
+  const hasRestoredScrollRef = useRef(false);
+  useEffect(() => {
+    if (state !== 'ready') return;
+    if (hasRestoredScrollRef.current) return;
+    hasRestoredScrollRef.current = true;
+    if (scrollPosition > 0) window.scrollTo(0, scrollPosition);
+  }, [state, scrollPosition]);
+
+  const openDetail = (foodName: string) => {
+    // Food Detailへ移動する直前のscroll位置だけを保存する（scrollイベントごとの高頻度更新はしない）
+    setScrollPosition(window.scrollY);
+    go({ name: 'foodEncyclopediaDetail', foodName });
+  };
 
   const largeCategoryOptions = useMemo(() => {
     const set = new Set(items.map((i) => i.largeCategory).filter((v): v is string => Boolean(v)));
@@ -96,7 +102,7 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
               />
             </div>
 
-            {state === 'loading' && (
+            {(state === 'loading' || state === 'idle') && (
               <div className={styles.skeletonGrid}>
                 {[0, 1, 2, 3].map((i) => (<div key={i} className={styles.skeletonCard} />))}
               </div>
@@ -105,7 +111,12 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
             {state === 'error' && (
               <div className={styles.errorBox}>
                 <p className={styles.errorText}>{errorMessage}</p>
-                <button className={styles.retryBtn} onClick={() => idToken && load(idToken)}>再読み込み</button>
+                <button
+                  className={styles.retryBtn}
+                  onClick={() => idToken && retry(idToken).catch((e) => { if (e instanceof TokenExpiredError) handleTokenExpired(); })}
+                >
+                  再読み込み
+                </button>
               </div>
             )}
 
@@ -133,7 +144,7 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
                     <button
                       key={food.foodName}
                       className={styles.card}
-                      onClick={() => go({ name: 'foodEncyclopediaDetail', foodName: food.foodName })}
+                      onClick={() => openDetail(food.foodName)}
                     >
                       <div className={styles.photoWrap}>
                         {food.representativePhotoUrl
