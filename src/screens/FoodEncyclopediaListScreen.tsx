@@ -35,19 +35,25 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, idToken]);
 
+  // icarus/webはhtml/body/#rootがoverflow:hiddenの固定シェルで、window/documentレベルの
+  // スクロールが存在しない。実際にスクロールするのはこの画面の.main要素（overflow-y:auto）自身
+  // （ZukanFieldMapScreenのlistRef.current.scrollTopと同じ理由・同じ方式）
+  const mainRef = useRef<HTMLElement | null>(null);
+
   // Detail往復後、一覧がready（=filtered結果も同じ描画で確定済み）になった直後に
   // 保存済みscroll位置を1回だけ復元する。ZukanFieldMapScreenのlistScrollTop復元と同じ方針
   const hasRestoredScrollRef = useRef(false);
   useEffect(() => {
     if (state !== 'ready') return;
     if (hasRestoredScrollRef.current) return;
+    if (!mainRef.current) return;
     hasRestoredScrollRef.current = true;
-    if (scrollPosition > 0) window.scrollTo(0, scrollPosition);
+    mainRef.current.scrollTop = scrollPosition;
   }, [state, scrollPosition]);
 
   const openDetail = (foodName: string) => {
     // Food Detailへ移動する直前のscroll位置だけを保存する（scrollイベントごとの高頻度更新はしない）
-    setScrollPosition(window.scrollY);
+    setScrollPosition(mainRef.current?.scrollTop ?? 0);
     go({ name: 'foodEncyclopediaDetail', foodName });
   };
 
@@ -74,7 +80,7 @@ export default function FoodEncyclopediaListScreen({ go }: Props) {
         <HomeButton go={go} />
       </header>
 
-      <main className={styles.main}>
+      <main ref={mainRef} className={styles.main}>
         {authState === 'checking' && (
           <div className={styles.skeletonGrid}>
             {[0, 1, 2, 3].map((i) => (<div key={i} className={styles.skeletonCard} />))}

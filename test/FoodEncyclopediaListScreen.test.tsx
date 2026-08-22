@@ -89,9 +89,6 @@ describe('FoodEncyclopediaListScreen UX-006: State Persistence', () => {
   beforeEach(() => {
     fetchFieldFoods.mockReset();
     resetStore();
-    // window.scrollTo/scrollYをtestごとにspyするため、前testのspyを必ず復元してから始める
-    // （復元し忘れると前testのmock実装がwindow上に残り、次testの呼び出し回数に混入する）
-    vi.restoreAllMocks();
   });
 
   it('1. 検索条件がstoreへ保持される', async () => {
@@ -175,39 +172,46 @@ describe('FoodEncyclopediaListScreen UX-006: State Persistence', () => {
     expect(fetchFieldFoods).toHaveBeenCalledTimes(1);
   });
 
-  it('6. 保存済みscroll位置をready後に復元する', async () => {
+  // icarus/webはhtml/body/#rootがoverflow:hiddenの固定シェルで、window/documentレベルの
+  // スクロールは存在しない（本番実機確認で発覚。window.scrollY/scrollToは常に0でno-op）。
+  // 実際にスクロールするのは画面自身の.main要素（overflow-y:auto）のため、以下は
+  // window.scrollTo呼び出しの有無ではなく、.main要素の実scrollTopを直接検証する
+  function getMain(): HTMLElement {
+    return document.querySelector('main') as HTMLElement;
+  }
+
+  it('6. 保存済みscroll位置をready後に.main要素のscrollTopへ復元する', async () => {
     fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト')], totalCount: 1 });
     useFoodEncyclopediaListStore.setState({ scrollPosition: 480 });
-    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 
     render(<FoodEncyclopediaListScreen go={vi.fn()} />);
     await screen.findByText('トマト');
 
-    await vi.waitFor(() => expect(scrollToSpy).toHaveBeenCalledWith(0, 480));
+    await vi.waitFor(() => expect(getMain().scrollTop).toBe(480));
   });
 
-  it('7. scroll復元は1回だけ行われる', async () => {
+  it('7. scroll復元は1回だけ行われ、その後ユーザーが動かした位置を上書きしない', async () => {
     fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト'), listItem('玉ねぎ')], totalCount: 2 });
     useFoodEncyclopediaListStore.setState({ scrollPosition: 300 });
-    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 
     render(<FoodEncyclopediaListScreen go={vi.fn()} />);
     await screen.findByText('玉ねぎ');
-    await vi.waitFor(() => expect(scrollToSpy).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(getMain().scrollTop).toBe(300));
 
-    // stateが変化しても（検索による再描画等）復元は再発火しない
+    // 復元後にユーザー自身がscrollした位置を、検索等による再描画が勝手に巻き戻さないこと
+    getMain().scrollTop = 50;
     fireEvent.change(screen.getByPlaceholderText('食材名で検索'), { target: { value: 'トマト' } });
     expect(screen.getByText('トマト')).toBeInTheDocument();
-    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    expect(getMain().scrollTop).toBe(50);
   });
 
-  it('8. Food card tap時に現在のscrollYがstoreへ保存される', async () => {
+  it('8. Food card tap時に.main要素の現在のscrollTopがstoreへ保存される', async () => {
     fetchFieldFoods.mockResolvedValue({ items: [listItem('トマト')], totalCount: 1 });
-    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(777);
     const go = vi.fn();
 
     render(<FoodEncyclopediaListScreen go={go} />);
     const card = await screen.findByText('トマト');
+    getMain().scrollTop = 777;
     fireEvent.click(card.closest('button')!);
 
     expect(useFoodEncyclopediaListStore.getState().scrollPosition).toBe(777);
