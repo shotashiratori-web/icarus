@@ -4,9 +4,13 @@ import { TokenExpiredError } from './icarusApi';
 // Cloudinaryアップロード段階の失敗を、D1保存段階の失敗と区別して呼び出し元(adapter)へ伝えるための専用エラー。
 // 「写真のアップロードに失敗しました」という段階の明確な表示に使う
 export class PhotoUploadFailedError extends Error {
-  constructor(message: string) {
+  // APIレスポンスのcode（例: ASSET_UNSUPPORTED_MIME_TYPE）。errorMapping側で恒久的失敗か
+  // 一時的失敗かを判定するために保持する。未指定（通信断・5xx等）ならundefinedのまま
+  code?: string;
+  constructor(message: string, code?: string) {
     super(message);
     this.name = 'PhotoUploadFailedError';
+    this.code = code;
   }
 }
 
@@ -100,11 +104,14 @@ export interface FieldLogD1SubmitInput {
   food: string;
   place: string;
   memo: string;
-  photoUrl: string; // 写真なしの場合は ''
+  photoUrl: string; // 写真なしの場合は ''。assetId指定時は必ず''（Workerが両方の同時指定を拒否する）
   latitude?: number;
   longitude?: number;
   takenAt?: string;
   largeCategory?: string;
+  // Photo Asset Architecture v1（Stage 1）。指定時、写真の実体はR2 Asset側にあり
+  // photoUrlは''のまま送る（asset_linksが正本、Phase4原則）
+  assetId?: string;
 }
 
 export interface FieldLogD1SubmitResult {
@@ -143,6 +150,7 @@ export async function submitFieldLogD1(input: FieldLogD1SubmitInput, idToken: st
         longitude: input.longitude,
         takenAt: input.takenAt,
         largeCategory: input.largeCategory,
+        assetId: input.assetId,
         clientVersion: 'icarus-web-unit-d',
       }),
     });

@@ -16,9 +16,21 @@ export interface PhotoEntry {
   largeCategory?: string;
   place?: string;
   harvested?: string;
-  // PC一括写真送信の重複チェック用（元ファイルのSHA-256）。他画面では未設定のまま
+  // PC一括写真送信の重複チェック用（元ファイルのSHA-256）。Photo Asset Architecture v1（R2経路）でも
+  // 同じ意味（resize前の元FileバイトのSHA-256）でそのまま使う
   fileHash?: string;
   fileName?: string;
+  // Photo Asset Architecture v1（Stage 1: Admin Field Log R2 MVP）専用。
+  // resize済みJPEG（base64、上のbase64フィールド）とは別に、resize前の元Fileそのものをbase64で保持する。
+  // R2へのアップロードが完了する（assetIdが確定する）までの間だけ保持し、成功したらクリアする
+  // （既存のCloudinary経路のphotoBase64→photoUrlという冪等パターンと同じ）
+  assetOriginalBase64?: string;
+  assetMimeType?: string;
+  assetSizeBytes?: number;
+  assetWidth?: number;
+  assetHeight?: number;
+  // Asset作成・R2アップロード・finalizeが完了した後に確定する。一度確定したら再アップロードしない
+  assetId?: string;
 }
 
 export type SubmitMode = 'batch' | 'individual';

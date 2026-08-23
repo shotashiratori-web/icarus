@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   resizeToJpeg, fetchGps, fetchFoodCandidates,
   extractExifDate, extractExifGps,
+  sha256Hex, readFileAsBase64, getImageDimensions, isHeicFile,
 } from '../api/icarusApi';
 import {
   emptyCommonFields,
@@ -20,10 +21,11 @@ import {
 import { saveFoodLogDraft, loadFoodLogDraft, clearFoodLogDraft } from '../db/localDB';
 import { useAuth } from '../context/AuthContext';
 import { submitWithFallback } from '../submission/orchestrator';
+import { UNSUPPORTED_MEDIA_TYPE_DESCRIPTION } from '../submission/errorMapping';
 import * as queueDB from '../submission/queueDB';
 import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
 import type { FieldLogD1SubmissionPayload } from '../submission/adapters/fieldLogD1Adapter';
-import { FIELD_LOG_D1_ENABLED_STAFF } from '../config';
+import { FIELD_LOG_D1_ENABLED_STAFF, PHOTO_ASSET_R2_ENABLED } from '../config';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { buildFieldLogId } from '../types/zukan';
 import type { Screen } from '../App';
@@ -34,6 +36,15 @@ import styles from './FoodLogScreen.module.css';
 function isFieldLogD1Enabled(userEmail: string): boolean {
   const normalized = userEmail.trim().toLowerCase();
   return FIELD_LOG_D1_ENABLED_STAFF.some((e) => e.toLowerCase() === normalized);
+}
+
+// Photo Asset Architecture v1（Stage 1）。R2 Assetのmime_typeとして保存する値を決める。
+// file.typeはブラウザ/OSによって空文字やHEIC判定が不安定なことがあるため、既存のisHeicFile()
+// （拡張子+MIME両方を見る、HEIC変換要否判定で既に使われている判定）を流用して補う
+function resolveAssetMimeType(file: File): string {
+  if (isHeicFile(file)) return 'image/heic';
+  if (file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/heif') return file.type;
+  return file.name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
 }
 
 type Phase = 'photoSelect' | 'photoEdit' | 'confirm' | 'sending' | 'complete';
@@ -134,16 +145,29 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
     const remaining = MAX_PHOTOS - photos.length;
     const toProcess = files.slice(0, remaining);
     setPhotoProcessing(true);
+    // Photo Asset Architecture v1（Stage 1: Admin Field Log R2 MVP）対象かどうか。
+    // 一般スタッフ・Work Log・Wine・Spotは対象外（isFieldLogD1Enabledと同じAdmin限定判定を流用）
+    const useR2Asset = PHOTO_ASSET_R2_ENABLED && isFieldLogD1Enabled(userEmail);
+    // Stage 1A: Photo Asset APIはimage/jpegのみ受け付ける（400 ASSET_UNSUPPORTED_MIME_TYPE）。
+    // 正本の判定はAPI側のまま変えないが、選択直後にわかっていれば保留キューへ積む前に案内できる
+    // （UX改善。isHeicFile()の誤判定でAPIまで到達しても、そちらは引き続き明確な4xxで拒否される）
+    const rejectedForMimeType = useR2Asset ? toProcess.filter((f) => isHeicFile(f)) : [];
+    const acceptable = useR2Asset ? toProcess.filter((f) => !isHeicFile(f)) : toProcess;
     try {
       // 写真自体のEXIF GPSを最優先で使う（撮影場所と登録場所がずれるケースに対応）。
       // EXIFにGPSが無い写真（スクショ・位置情報オフの端末など）だけ、同じ場所で撮ったものとみなし
       // ライブ位置情報を1回だけ取得して共有で補う
       const newEntries = await Promise.all(
-        toProcess.map(async (file) => {
-          const [base64, exif, exifGps] = await Promise.all([
+        acceptable.map(async (file) => {
+          // resize後JPEG（プレビュー・既存Cloudinary経路用）と、Asset original用の元Fileメタデータを並列取得。
+          // resize済みJPEGはR2 originalとして使わない（元FileそのものをassetOriginalBase64として別途保持する）
+          const [base64, exif, exifGps, assetOriginalBase64, fileHash, dimensions] = await Promise.all([
             resizeToJpeg(file),
             extractExifDate(file),
             extractExifGps(file),
+            useR2Asset ? readFileAsBase64(file) : Promise.resolve(undefined),
+            useR2Asset ? sha256Hex(file) : Promise.resolve(undefined),
+            useR2Asset ? getImageDimensions(file) : Promise.resolve(null),
           ]);
           const entry = emptyPhotoEntry();
           return {
@@ -153,6 +177,15 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
             date: exif?.date ?? '',
             takenAt: exif?.takenAt,
             gps: exifGps ? { ...exifGps, accuracy: 0 } : undefined,
+            fileName: file.name,
+            ...(useR2Asset ? {
+              assetOriginalBase64,
+              fileHash,
+              assetMimeType: resolveAssetMimeType(file),
+              assetSizeBytes: file.size,
+              assetWidth: dimensions?.width,
+              assetHeight: dimensions?.height,
+            } : {}),
           };
         }),
       );
@@ -167,6 +200,9 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
       }
 
       setPhotos(prev => [...prev, ...newEntries]);
+      if (rejectedForMimeType.length > 0) {
+        alert(UNSUPPORTED_MEDIA_TYPE_DESCRIPTION);
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : '写真の処理に失敗しました');
     } finally {
@@ -255,6 +291,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
       if (useD1) {
         // Unit D（Worker+D1新経路）。requestId/eventIdは送信開始時に生成済みのものをそのまま使い、
         // 再試行でも作り直さない（D1冪等性の根拠のため）
+        const useR2Asset = PHOTO_ASSET_R2_ENABLED && !!photos[i].assetOriginalBase64;
         const d1Payload: FieldLogD1SubmissionPayload = {
           eventId: photos[i].eventId,
           requestId: photos[i].requestId,
@@ -267,8 +304,16 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
           longitude: photos[i].gps?.lng,
           takenAt: photos[i].takenAt,
           hasPhoto: !!photos[i].base64,
-          photoBase64: photos[i].base64 || undefined,
           photoFileName: photos[i].fileName,
+          // useR2AssetならCloudinary経路(photoBase64)は使わない。既存Cloudinary分岐は無変更のまま残す
+          photoBase64: useR2Asset ? undefined : (photos[i].base64 || undefined),
+          useR2Asset,
+          assetOriginalBase64: useR2Asset ? photos[i].assetOriginalBase64 : undefined,
+          assetFileHash: useR2Asset ? photos[i].fileHash : undefined,
+          assetMimeType: useR2Asset ? photos[i].assetMimeType : undefined,
+          assetSizeBytes: useR2Asset ? photos[i].assetSizeBytes : undefined,
+          assetWidth: useR2Asset ? photos[i].assetWidth : undefined,
+          assetHeight: useR2Asset ? photos[i].assetHeight : undefined,
         };
         outcome = await submitWithFallback({
           entity: 'fieldLogD1',

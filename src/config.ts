@@ -53,3 +53,12 @@ export const FIELD_SUBMIT_D1_URL = `${WORKER_URL}/field/submit-d1`;
 export const FIELD_LOG_D1_ENABLED_STAFF: string[] = [
   'shota.shiratori@liftup-power.co',
 ];
+
+// Photo Asset Architecture v1（Stage 1: Admin Field Log R2 MVP）。既存Cloudinary経路（signed upload、
+// FIELD_CLOUDINARY_SIGNATURE_URL）はコードごと残したまま、この値をfalseにするだけで旧経路へ戻せる
+// （汎用feature flag基盤は作らない、という設計判断どおりの単純なスイッチ）
+export const PHOTO_ASSET_R2_ENABLED = true;
+export const ASSETS_CREATE_URL = `${WORKER_URL}/assets`;
+export function assetFinalizeUrl(assetId: string): string {
+  return `${WORKER_URL}/assets/${encodeURIComponent(assetId)}/finalize`;
+}
