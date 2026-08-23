@@ -52,14 +52,16 @@ async function postJson<T>(url: string, idToken: string, body: unknown): Promise
   if (res.status === 401) {
     throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
   }
-  let json: T & { status?: string; message?: string };
+  let json: T & { status?: string; message?: string; code?: string };
   try {
-    json = (await res.json()) as T & { status?: string; message?: string };
+    json = (await res.json()) as T & { status?: string; message?: string; code?: string };
   } catch {
     throw new PhotoUploadFailedError(`サーバーエラー (HTTP ${res.status})`);
   }
   if (json.status === 'error') {
-    throw new PhotoUploadFailedError(json.message || '処理に失敗しました');
+    // json.code（例: ASSET_UNSUPPORTED_MIME_TYPE）をそのまま保持する。ここで捨てると
+    // errorMapping側で恒久的失敗（MIME不一致）と一時的失敗（通信断・5xx等）を区別できなくなる
+    throw new PhotoUploadFailedError(json.message || '処理に失敗しました', json.code);
   }
   return json;
 }

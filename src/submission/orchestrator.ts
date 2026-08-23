@@ -95,6 +95,13 @@ export async function resendAll(idToken: string | null): Promise<{ succeeded: nu
   let succeeded = 0;
   let stillPending = 0;
   for (const item of items) {
+    // retryable:false（例: ASSET_UNSUPPORTED_MIME_TYPE）は再送しても結果が変わらない恒久的失敗のため、
+    // 「すべて再送」の対象からは除外する（無意味なAPI呼び出し・queueの無駄な再送ループを防ぐ）。
+    // 保留一覧からは消えない＝データは失われない。個別の「再送」操作までは禁止しない
+    if (item.lastError?.retryable === false) {
+      stillPending++;
+      continue;
+    }
     const result = await resendItem(item.id, idToken);
     if (result.ok) succeeded++;
     else stillPending++;

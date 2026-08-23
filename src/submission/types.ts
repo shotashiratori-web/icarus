@@ -21,7 +21,10 @@ export type ErrorCode =
   | 'SERVER_ERROR'
   | 'UPLOAD_FAILED'
   | 'IMAGE_PARSE_FAILED'
-  | 'GPS_NOT_FOUND';
+  | 'GPS_NOT_FOUND'
+  // Stage 1A: Photo Asset APIがASSET_UNSUPPORTED_MIME_TYPE（例: HEIC/HEIF）で拒否した場合専用。
+  // ファイル形式が原因の恒久的失敗であり、再送しても結果は変わらないためretryable:falseで扱う
+  | 'UNSUPPORTED_MEDIA_TYPE';
 
 export interface SubmissionError {
   code: ErrorCode;

@@ -21,6 +21,7 @@ import {
 import { saveFoodLogDraft, loadFoodLogDraft, clearFoodLogDraft } from '../db/localDB';
 import { useAuth } from '../context/AuthContext';
 import { submitWithFallback } from '../submission/orchestrator';
+import { UNSUPPORTED_MEDIA_TYPE_DESCRIPTION } from '../submission/errorMapping';
 import * as queueDB from '../submission/queueDB';
 import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
 import type { FieldLogD1SubmissionPayload } from '../submission/adapters/fieldLogD1Adapter';
@@ -147,12 +148,17 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
     // Photo Asset Architecture v1（Stage 1: Admin Field Log R2 MVP）対象かどうか。
     // 一般スタッフ・Work Log・Wine・Spotは対象外（isFieldLogD1Enabledと同じAdmin限定判定を流用）
     const useR2Asset = PHOTO_ASSET_R2_ENABLED && isFieldLogD1Enabled(userEmail);
+    // Stage 1A: Photo Asset APIはimage/jpegのみ受け付ける（400 ASSET_UNSUPPORTED_MIME_TYPE）。
+    // 正本の判定はAPI側のまま変えないが、選択直後にわかっていれば保留キューへ積む前に案内できる
+    // （UX改善。isHeicFile()の誤判定でAPIまで到達しても、そちらは引き続き明確な4xxで拒否される）
+    const rejectedForMimeType = useR2Asset ? toProcess.filter((f) => isHeicFile(f)) : [];
+    const acceptable = useR2Asset ? toProcess.filter((f) => !isHeicFile(f)) : toProcess;
     try {
       // 写真自体のEXIF GPSを最優先で使う（撮影場所と登録場所がずれるケースに対応）。
       // EXIFにGPSが無い写真（スクショ・位置情報オフの端末など）だけ、同じ場所で撮ったものとみなし
       // ライブ位置情報を1回だけ取得して共有で補う
       const newEntries = await Promise.all(
-        toProcess.map(async (file) => {
+        acceptable.map(async (file) => {
           // resize後JPEG（プレビュー・既存Cloudinary経路用）と、Asset original用の元Fileメタデータを並列取得。
           // resize済みJPEGはR2 originalとして使わない（元FileそのものをassetOriginalBase64として別途保持する）
           const [base64, exif, exifGps, assetOriginalBase64, fileHash, dimensions] = await Promise.all([
@@ -194,6 +200,9 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
       }
 
       setPhotos(prev => [...prev, ...newEntries]);
+      if (rejectedForMimeType.length > 0) {
+        alert(UNSUPPORTED_MEDIA_TYPE_DESCRIPTION);
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : '写真の処理に失敗しました');
     } finally {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { PhotoUploadFailedError } from '../src/api/fieldLogD1Api';
 
 // Photo Asset Architecture v1（Stage 1）。fieldLogD1Adapterのsubmit()が、
 // useR2Asset有無でR2 Asset経路/既存Cloudinary経路を正しく呼び分けることを検証する。
@@ -141,5 +142,43 @@ describe('fieldLogD1Adapter.submit', () => {
       expect.objectContaining({ photoUrl: 'https://res.cloudinary.com/dpawe0o5p/image/upload/v1/icarus-field-log/x.jpg', assetId: undefined }),
       'token',
     );
+  });
+
+  // Stage 1A: unsupported MIME（ASSET_UNSUPPORTED_MIME_TYPE）のretry分類修正に伴う回帰確認。
+  // 「HEICを勝手にJPEG変換しない」「HEICをCloudinaryへ自動fallbackしない」という
+  // Photo Asset Architecture本体の原則（監査済み）を、エラー分類の変更後も壊していないことを確認する
+  it('6/7. useR2Asset=trueでcreateUploadAndFinalizeAssetがASSET_UNSUPPORTED_MIME_TYPEで失敗しても、HEIC→JPEG変換もCloudinary自動fallbackも行わずそのままthrowする', async () => {
+    const apiError = new PhotoUploadFailedError(
+      'mimeType must be one of: image/jpeg',
+      'ASSET_UNSUPPORTED_MIME_TYPE',
+    );
+    createUploadAndFinalizeAsset.mockRejectedValue(apiError);
+    const adapter = await getAdapter();
+
+    const payload: Record<string, unknown> = {
+      ...BASE_PAYLOAD,
+      hasPhoto: true,
+      useR2Asset: true,
+      assetOriginalBase64: 'BASE64ORIGINAL_HEIC_BYTES',
+      assetFileHash: 'e'.repeat(64),
+      assetMimeType: 'image/heic',
+      photoFileName: 'IMG_9999.HEIC',
+    };
+
+    await expect(adapter.submit(payload, 'token')).rejects.toBe(apiError);
+
+    // createUploadAndFinalizeAssetへ渡した元mimeType/originalBase64がそのまま（HEICのまま）であること
+    expect(createUploadAndFinalizeAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: 'image/heic', originalFilename: 'IMG_9999.HEIC' }),
+      'BASE64ORIGINAL_HEIC_BYTES',
+      'token',
+    );
+    // 失敗後にCloudinary経路（uploadFieldLogPhoto）へ自動fallbackしていないこと
+    expect(uploadFieldLogPhoto).not.toHaveBeenCalled();
+    // D1保存（submitFieldLogD1）まで到達していないこと（assetが失敗した時点で止まる）
+    expect(submitFieldLogD1).not.toHaveBeenCalled();
+    // 呼び出し元がpayload.assetOriginalBase64を失敗後に別のJPEGへ差し替えていないこと（変換していないことの確認）
+    expect(payload.assetOriginalBase64).toBe('BASE64ORIGINAL_HEIC_BYTES');
+    expect(payload.assetMimeType).toBe('image/heic');
   });
 });

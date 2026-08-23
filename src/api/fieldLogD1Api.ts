@@ -4,9 +4,13 @@ import { TokenExpiredError } from './icarusApi';
 // Cloudinaryアップロード段階の失敗を、D1保存段階の失敗と区別して呼び出し元(adapter)へ伝えるための専用エラー。
 // 「写真のアップロードに失敗しました」という段階の明確な表示に使う
 export class PhotoUploadFailedError extends Error {
-  constructor(message: string) {
+  // APIレスポンスのcode（例: ASSET_UNSUPPORTED_MIME_TYPE）。errorMapping側で恒久的失敗か
+  // 一時的失敗かを判定するために保持する。未指定（通信断・5xx等）ならundefinedのまま
+  code?: string;
+  constructor(message: string, code?: string) {
     super(message);
     this.name = 'PhotoUploadFailedError';
+    this.code = code;
   }
 }
 
