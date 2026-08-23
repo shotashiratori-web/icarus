@@ -247,3 +247,33 @@ export async function resizeToJpeg(
     img.src = objectUrl;
   });
 }
+
+// Photo Asset Architecture v1（Stage 1）専用。resize前の元Fileそのものをbase64化する
+// （resizeToJpeg()はcanvas再描画でリサイズ後JPEGを返すが、こちらは一切変換しない）
+export function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Photo Asset Architecture v1（Stage 1）専用。元Fileの実寸法を取得する（resizeはしない）。
+// HEICはブラウザによってはデコードできない（Safari/iOSは可、多くのデスクトップChromeは不可）ため、
+// 取得できなければnullを返す（widthEmpty/height省略はD1スキーマ上nullable、致命的ではない）
+export function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(null);
+    };
+    img.src = objectUrl;
+  });
+}

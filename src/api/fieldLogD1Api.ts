@@ -100,11 +100,14 @@ export interface FieldLogD1SubmitInput {
   food: string;
   place: string;
   memo: string;
-  photoUrl: string; // 写真なしの場合は ''
+  photoUrl: string; // 写真なしの場合は ''。assetId指定時は必ず''（Workerが両方の同時指定を拒否する）
   latitude?: number;
   longitude?: number;
   takenAt?: string;
   largeCategory?: string;
+  // Photo Asset Architecture v1（Stage 1）。指定時、写真の実体はR2 Asset側にあり
+  // photoUrlは''のまま送る（asset_linksが正本、Phase4原則）
+  assetId?: string;
 }
 
 export interface FieldLogD1SubmitResult {
@@ -143,6 +146,7 @@ export async function submitFieldLogD1(input: FieldLogD1SubmitInput, idToken: st
         longitude: input.longitude,
         takenAt: input.takenAt,
         largeCategory: input.largeCategory,
+        assetId: input.assetId,
         clientVersion: 'icarus-web-unit-d',
       }),
     });
