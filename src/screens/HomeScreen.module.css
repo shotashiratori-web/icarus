@@ -131,6 +131,25 @@
   font-size: 20px;
 }
 
+/* 見る・調べる内の低優先度リンク（ワイン/スポット等、まだ育成中の機能） */
+.navRowSecondary {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.navBtnSecondary {
+  flex: 1;
+  text-align: center;
+  color: var(--color-text-sub);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+.navBtnSecondary:active {
+  background: var(--color-surface);
+}
+
 /* Mini recent lists (home widgets) */
 .miniGroup {
   display: flex;
