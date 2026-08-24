@@ -55,90 +55,28 @@ export default function HomeScreen({ go }: Props) {
           </div>
         )}
 
-        {/* Primary CTA */}
-        <button
-          className={styles.cta}
-          onClick={() => go({ name: 'record', noteId: null })}
-        >
-          <span className={styles.ctaIcon}>✏️</span>
-          <span className={styles.ctaLabel}>新しいワインノート</span>
-          <span className={styles.ctaArrow}>→ 作る</span>
-        </button>
-
-        <button
-          className={styles.cta}
-          onClick={() => go({ name: 'foodLog' })}
-        >
-          <span className={styles.ctaIcon}>🌿</span>
-          <span className={styles.ctaLabel}>食材ログを送る</span>
-          <span className={styles.ctaArrow}>→ 記録</span>
-        </button>
-
-        <div className={styles.navRow}>
-          <button className={styles.navBtn} onClick={() => go({ name: 'field' })}>
-            <span className={styles.navIcon}>📍</span>
-            <span>フィールド</span>
+        {/* ── 今日やる ── */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>今日やる</h2>
+          </div>
+          <button
+            className={styles.cta}
+            onClick={() => go({ name: 'foodLog' })}
+          >
+            <span className={styles.ctaIcon}>🌿</span>
+            <span className={styles.ctaLabel}>フィールドログを記録</span>
+            <span className={styles.ctaArrow}>→ 記録</span>
           </button>
-          <button className={styles.navBtn} onClick={() => go({ name: 'processing' })}>
-            <span className={styles.navIcon}>🧂</span>
-            <span>加工</span>
+          <button
+            className={styles.cta}
+            onClick={() => go({ name: 'workForm', mode: 'create' })}
+          >
+            <span className={styles.ctaIcon}>🧂</span>
+            <span className={styles.ctaLabel}>作業ログを記録</span>
+            <span className={styles.ctaArrow}>→ 記録</span>
           </button>
-        </div>
-
-        {staffMe && (
-          <div className={styles.navRow}>
-            <button className={styles.navBtn} onClick={() => go({ name: 'daily' })}>
-              <span className={styles.navIcon}>📝</span>
-              <span>Lift Up Daily</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'zukan' })}>
-              <span className={styles.navIcon}>📚</span>
-              <span>図鑑（試作版）</span>
-            </button>
-          </div>
-        )}
-
-        {staffMe && (
-          <div className={styles.navRow}>
-            <button className={styles.navBtn} onClick={() => go({ name: 'photoBulkUpload' })}>
-              <span className={styles.navIcon}>🗂️</span>
-              <span>PC一括写真送信</span>
-            </button>
-          </div>
-        )}
-
-        {staffMe?.role === 'admin' && (
-          <div className={styles.navRow}>
-            <button className={styles.navBtn} onClick={() => go({ name: 'processEditor' })}>
-              <span className={styles.navIcon}>🧬</span>
-              <span>加工知識を登録</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'foodEditorList' })}>
-              <span className={styles.navIcon}>🥕</span>
-              <span>Foodを登録・編集</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
-              <span className={styles.navIcon}>🛡️</span>
-              <span>スタッフ管理</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'dailyAdmin' })}>
-              <span className={styles.navIcon}>📋</span>
-              <span>Daily確認</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'spotList' })}>
-              <span className={styles.navIcon}>📍</span>
-              <span>スポット管理</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'metaDebug' })}>
-              <span className={styles.navIcon}>🔬</span>
-              <span>画像メタデータ調査</span>
-            </button>
-            <button className={styles.navBtn} onClick={() => go({ name: 'photoHashRepair' })}>
-              <span className={styles.navIcon}>🩹</span>
-              <span>写真ハッシュ補完</span>
-            </button>
-          </div>
-        )}
+        </section>
 
         {pendingItems.length > 0 && (
           <section className={styles.section}>
@@ -155,86 +93,179 @@ export default function HomeScreen({ go }: Props) {
           </section>
         )}
 
-        {(recentObservations.length > 0 || recentProcessing.length > 0) && (
-          <section className={styles.section}>
-            {recentObservations.length > 0 && (
-              <div className={styles.miniGroup}>
-                <div className={styles.sectionHeader}>
-                  <h2 className={styles.sectionTitle}>最近の観察</h2>
-                  <button className={styles.viewAll} onClick={() => go({ name: 'field' })}>もっと見る</button>
-                </div>
-                <ul className={styles.miniList}>
-                  {recentObservations.map(item => (
-                    <li key={item.eventId} className={styles.miniItem}>
-                      <span className={styles.miniName}>{item.food}</span>
-                      <span className={styles.miniDate}>{item.date.slice(5)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        {/* ── 見る・調べる ── */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>見る・調べる</h2>
+          </div>
+          <div className={styles.navRow}>
+            <button className={styles.navBtn} onClick={() => go({ name: 'foodEncyclopediaList' })}>
+              <span className={styles.navIcon}>📚</span>
+              <span>食材図鑑</span>
+            </button>
+            <button className={styles.navBtn} onClick={() => go({ name: 'zukanFieldMap', from: { name: 'home' } })}>
+              <span className={styles.navIcon}>📍</span>
+              <span>フィールドマップ</span>
+            </button>
+          </div>
+          <div className={styles.navRowSecondary}>
+            <button className={styles.navBtnSecondary} onClick={() => go({ name: 'list' })}>
+              <span>ワイン</span>
+            </button>
+            <button className={styles.navBtnSecondary} onClick={() => go({ name: 'spotList' })}>
+              <span>スポット</span>
+            </button>
+          </div>
+        </section>
 
-            {recentProcessing.length > 0 && (
-              <div className={styles.miniGroup}>
-                <div className={styles.sectionHeader}>
-                  <h2 className={styles.sectionTitle}>最近の作業</h2>
-                  <button className={styles.viewAll} onClick={() => go({ name: 'processing' })}>もっと見る</button>
-                </div>
-                <ul className={styles.miniList}>
-                  {recentProcessing.map(item => (
-                    <li key={item.workId} className={styles.miniItem}>
-                      <span className={styles.miniName}>{item.processingName}</span>
-                      <span className={styles.miniDate}>{item.datetime.slice(5, 10)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* 最近のノート */}
-        {recent.length > 0 && (
+        {/* ── 最近の観察（写真つき） ── */}
+        {recentObservations.length > 0 && (
           <section className={styles.section}>
             <div className={styles.sectionHeader}>
-              <h2 className={styles.sectionTitle}>最近のノート</h2>
-              <button
-                className={styles.viewAll}
-                onClick={() => go({ name: 'list' })}
-              >
-                全部見る
-              </button>
+              <h2 className={styles.sectionTitle}>最近の観察</h2>
+              <button className={styles.viewAll} onClick={() => go({ name: 'field' })}>もっと見る</button>
             </div>
             <div className={styles.thumbnails}>
-              {recent.map(n => (
-                <button
-                  key={n.id}
-                  className={styles.thumb}
-                  onClick={() => go({ name: 'review', noteId: n.id })}
-                >
-                  {n.label_photo_url ? (
-                    <img src={n.label_photo_url} alt="" className={styles.thumbImg} />
+              {recentObservations.map(item => (
+                <div key={item.eventId} className={styles.thumb}>
+                  {item.photoUrl ? (
+                    <img src={item.photoUrl} alt="" className={styles.thumbImg} />
                   ) : (
-                    <div className={styles.thumbPlaceholder}>🍷</div>
+                    <div className={styles.thumbPlaceholder}>🌿</div>
                   )}
-                  <p className={styles.thumbName}>
-                    {(n.fields.wine_name.text || '名称未設定').slice(0, 10)}
-                  </p>
-                  <p className={styles.thumbDate}>
-                    {n.fields.tasting_date.text.slice(5)}
-                  </p>
-                </button>
+                  <p className={styles.thumbName}>{item.food}</p>
+                  <p className={styles.thumbDate}>{item.date.slice(5)}</p>
+                </div>
               ))}
             </div>
           </section>
         )}
 
-        {/* 初回: ノートがない場合 */}
-        {recent.length === 0 && (
-          <p className={styles.empty}>
-            最初のワインノートを作りましょう。
-          </p>
+        {recentProcessing.length > 0 && (
+          <section className={styles.section}>
+            <div className={styles.miniGroup}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionTitle}>最近の作業</h2>
+                <button className={styles.viewAll} onClick={() => go({ name: 'processing' })}>もっと見る</button>
+              </div>
+              <ul className={styles.miniList}>
+                {recentProcessing.map(item => (
+                  <li key={item.workId} className={styles.miniItem}>
+                    <span className={styles.miniName}>{item.processingName}</span>
+                    <span className={styles.miniDate}>{item.datetime.slice(5, 10)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
         )}
+
+        {/* ── 管理・編集 ── */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>管理・編集</h2>
+          </div>
+
+          <button
+            className={styles.cta}
+            onClick={() => go({ name: 'record', noteId: null })}
+          >
+            <span className={styles.ctaIcon}>✏️</span>
+            <span className={styles.ctaLabel}>新しいワインノート</span>
+            <span className={styles.ctaArrow}>→ 作る</span>
+          </button>
+
+          {staffMe && (
+            <div className={styles.navRow}>
+              <button className={styles.navBtn} onClick={() => go({ name: 'daily' })}>
+                <span className={styles.navIcon}>📝</span>
+                <span>Lift Up Daily</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'zukan' })}>
+                <span className={styles.navIcon}>📚</span>
+                <span>図鑑（試作版）</span>
+              </button>
+            </div>
+          )}
+
+          {staffMe && (
+            <div className={styles.navRow}>
+              <button className={styles.navBtn} onClick={() => go({ name: 'photoBulkUpload' })}>
+                <span className={styles.navIcon}>🗂️</span>
+                <span>PC一括写真送信</span>
+              </button>
+            </div>
+          )}
+
+          {staffMe?.role === 'admin' && (
+            <div className={styles.navRow}>
+              <button className={styles.navBtn} onClick={() => go({ name: 'processEditor' })}>
+                <span className={styles.navIcon}>🧬</span>
+                <span>加工知識を登録</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'foodEditorList' })}>
+                <span className={styles.navIcon}>🥕</span>
+                <span>Foodを登録・編集</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'staffApproval' })}>
+                <span className={styles.navIcon}>🛡️</span>
+                <span>スタッフ管理</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'dailyAdmin' })}>
+                <span className={styles.navIcon}>📋</span>
+                <span>Daily確認</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'spotList' })}>
+                <span className={styles.navIcon}>📍</span>
+                <span>スポット管理</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'metaDebug' })}>
+                <span className={styles.navIcon}>🔬</span>
+                <span>画像メタデータ調査</span>
+              </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'photoHashRepair' })}>
+                <span className={styles.navIcon}>🩹</span>
+                <span>写真ハッシュ補完</span>
+              </button>
+            </div>
+          )}
+
+          {/* 最近のワインノート */}
+          {recent.length > 0 && (
+            <div className={styles.miniGroup}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionTitle}>最近のワインノート</h2>
+                <button
+                  className={styles.viewAll}
+                  onClick={() => go({ name: 'list' })}
+                >
+                  全部見る
+                </button>
+              </div>
+              <div className={styles.thumbnails}>
+                {recent.map(n => (
+                  <button
+                    key={n.id}
+                    className={styles.thumb}
+                    onClick={() => go({ name: 'review', noteId: n.id })}
+                  >
+                    {n.label_photo_url ? (
+                      <img src={n.label_photo_url} alt="" className={styles.thumbImg} />
+                    ) : (
+                      <div className={styles.thumbPlaceholder}>🍷</div>
+                    )}
+                    <p className={styles.thumbName}>
+                      {(n.fields.wine_name.text || '名称未設定').slice(0, 10)}
+                    </p>
+                    <p className={styles.thumbDate}>
+                      {n.fields.tasting_date.text.slice(5)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
