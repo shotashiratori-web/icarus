@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAllNotes } from '../db/localDB';
 import { fetchRecentFieldObservations, fetchRecentWorkLogs } from '../api/fieldApi';
-import { requestSilentIdToken } from '../api/googleAuth';
 import { useAuth } from '../context/AuthContext';
 import { useSubmissionQueue, selectCountsByEntity } from '../submission/queueStore';
 import { ENTITY_LABELS, type SubmissionEntity } from '../submission/types';
@@ -13,7 +12,7 @@ import styles from './HomeScreen.module.css';
 type Props = { go: (s: Screen) => void };
 
 export default function HomeScreen({ go }: Props) {
-  const { authState, staffMe, signInContainerRef } = useAuth();
+  const { authState, staffMe, signInContainerRef, idToken } = useAuth();
   const [recent, setRecent] = useState<WineNote[]>([]);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
@@ -26,19 +25,19 @@ export default function HomeScreen({ go }: Props) {
   }, []);
 
   // 最近の観察・最近の作業（失敗してもホーム画面全体には影響させない）
+  // 認証は他画面と同様、useAuth()のセッショントークンをそのまま使う
+  // （Google IDトークンの再取得はしない。/field/recentはセッショントークンで認可される）
   useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
     let cancelled = false;
-    requestSilentIdToken().then(token => {
-      if (cancelled || !token) return;
-      fetchRecentFieldObservations(token, 3)
-        .then(items => { if (!cancelled) setRecentObservations(items); })
-        .catch(() => {});
-      fetchRecentWorkLogs(token, 3)
-        .then(items => { if (!cancelled) setRecentProcessing(items); })
-        .catch(() => {});
-    });
+    fetchRecentFieldObservations(idToken, 3)
+      .then(items => { if (!cancelled) setRecentObservations(items); })
+      .catch(() => {});
+    fetchRecentWorkLogs(idToken, 3)
+      .then(items => { if (!cancelled) setRecentProcessing(items); })
+      .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [authState, idToken]);
 
   return (
     <div className={styles.root}>
