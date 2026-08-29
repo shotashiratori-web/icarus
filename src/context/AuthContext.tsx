@@ -7,7 +7,7 @@ import type { StaffMe } from '../types/staff';
 
 export type AuthState = 'checking' | 'ready' | 'signedOut';
 
-interface AuthContextValue {
+export interface AuthContextValue {
   idToken: string | null; // 実体はWorkerが発行する長期セッショントークン（GoogleのIDトークンそのものではない）
   userEmail: string;
   authState: AuthState;

@@ -77,6 +77,33 @@ export async function createWineTastingNote(
   return parseWineTastingNoteResponse(res);
 }
 
+// Stage 1C-B: Wine Detail用の読み取り専用一覧取得。GET /wine-tasting-notesはStage 1Aの実装により
+// created_by=auth.emailで常にスコープされる（private ownership）——ここではクライアント側で
+// 追加のフィルタは行わない（server側の保証に任せる）。orderingもserver契約（updated_at DESC）のまま使う
+export async function fetchWineTastingNotesByWine(wineId: string, idToken: string): Promise<WineTastingNoteItem[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${WINE_TASTING_NOTES_URL}?wineId=${encodeURIComponent(wineId)}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+  } catch {
+    throw new Error('ネットワークエラーが発生しました。通信状況を確認してください。');
+  }
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
+  }
+  let json: { status: 'success' | 'error'; items?: WineTastingNoteItem[]; message?: string };
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`サーバーエラー (HTTP ${res.status})`);
+  }
+  if (json.status !== 'success' || !json.items) {
+    throw new Error(json.message || '取得に失敗しました');
+  }
+  return json.items;
+}
+
 // 一度サーバーへ作成済み（d1_note_id保持済み）のNoteを再送・編集する経路。
 // 同一requestIdへのPOST再送で内容差分409を起こさないための分岐（adapter側で使い分ける）
 export async function updateWineTastingNote(
