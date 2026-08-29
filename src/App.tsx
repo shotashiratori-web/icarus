@@ -118,11 +118,14 @@ function AppRoutes() {
     saveCurrentScreen(s);
   };
 
-  // Tasting Note Persistence v1（Stage 1B）完成条件12: アプリ起動時（ログイン確立時）/ online復帰時に
-  // sync_status='local'/'failed'のワインノートを再送する。専用エンジンは作らずSubmission Frameworkを再利用
+  // Tasting Note Persistence v1（Stage 1B）完成条件12 + stale syncing recovery:
+  // アプリ起動時（ログイン確立時）はlocal/failedに加えsyncingも再送対象に含める——新しいApp
+  // instanceが起動した時点で、前回instanceのnetwork requestは進行中として信用できないため。
+  // online復帰時は同一instance内の進行中requestとの二重送信を避けるためsyncingは含めない。
+  // 専用エンジンは作らず既存Submission Frameworkを再利用する
   useEffect(() => {
     if (authState !== 'ready' || !idToken) return;
-    void retryPendingWineTastingNotes(idToken);
+    void retryPendingWineTastingNotes(idToken, { includeSyncing: true });
   }, [authState, idToken]);
 
   useEffect(() => {

@@ -26,12 +26,18 @@ export function buildWineTastingNotePayload(note: WineNote): WineTastingNoteSubm
 
 // 未ログイン/オフラインなら何もしない（sync_status='local'のまま、起動時/online復帰時の
 // retryPendingWineTastingNotesに委ねる）。ログイン済み+オンラインならSubmission Frameworkへ送る
+//
+// sync_status='syncing'は「今まさにこの関数内で進行中」を表すだけで、ブロック条件には使わない
+// （synced以外はすべて送信対象）。同一セッション内の二重発火はinFlightだけで防ぐ——新しいApp
+// instance起動直後はinFlightが空のため、前回instanceがsyncing状態のまま強制終了/crash/reload/
+// OS killで残したNoteも、次回起動時のretryPendingWineTastingNotes(includeSyncing:true)経由で
+// ここへ到達し、正しく再送される（stale syncing recovery）
 export async function syncWineTastingNote(noteId: string, idToken: string | null): Promise<void> {
   if (!idToken || !navigator.onLine) return;
   if (inFlight.has(noteId)) return;
 
   const note = await getNote(noteId);
-  if (!note || note.sync_status === 'synced' || note.sync_status === 'syncing') return;
+  if (!note || note.sync_status === 'synced') return;
 
   inFlight.add(noteId);
   try {
@@ -55,11 +61,25 @@ export async function syncWineTastingNote(noteId: string, idToken: string | null
   }
 }
 
-// アプリ起動時（authState=='ready'到達時）/ online復帰時に呼ぶ。local・failedのみが対象（Stage 1Bの完成条件12）
-export async function retryPendingWineTastingNotes(idToken: string | null): Promise<void> {
+export interface RetryPendingWineTastingNotesOptions {
+  // App起動時のみtrue。同一App instance内での進行中request二重送信を避けるため、
+  // online復帰時（呼び出し元がfalseのまま渡す＝デフォルト）はsyncingを対象に含めない。
+  // 新しいinstanceが起動した時点で、前回instanceのnetwork requestはもはや信用できないため対象に含める
+  includeSyncing?: boolean;
+}
+
+// アプリ起動時（authState=='ready'到達時）/ online復帰時に呼ぶ。
+// 起動時: local・failed・syncing（stale syncing recovery）／online復帰時: local・failedのみ
+export async function retryPendingWineTastingNotes(
+  idToken: string | null,
+  options: RetryPendingWineTastingNotesOptions = {},
+): Promise<void> {
   if (!idToken || !navigator.onLine) return;
+  const { includeSyncing = false } = options;
   const notes = await getAllNotes();
-  const targets = notes.filter((n) => n.sync_status === 'local' || n.sync_status === 'failed');
+  const targets = notes.filter((n) =>
+    n.sync_status === 'local' || n.sync_status === 'failed' || (includeSyncing && n.sync_status === 'syncing'),
+  );
   for (const note of targets) {
     await syncWineTastingNote(note.id, idToken);
   }

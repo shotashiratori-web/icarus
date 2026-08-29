@@ -100,4 +100,45 @@ describe('wineTastingNoteAdapter.submit', () => {
     await expect(adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-2' }, 'token')).resolves.toBeDefined();
     expect(saveNote).not.toHaveBeenCalled();
   });
+
+  // stale syncing recovery（POST retry safety）: 前回instanceがcrash等でsyncingのまま残した
+  // Note（未同期＝remoteIdなし）を再送しても、同一requestIdのままPOSTすること（Stage 1A側の
+  // requestId UNIQUE制約により、同一payloadなら新規rowを増やさずduplicate:trueで吸収される）
+  it('POST retry safety: syncing復旧の再送でも同一requestIdでPOSTし続ける（変更しない）', async () => {
+    createWineTastingNote.mockResolvedValue({ id: 'server-id-3', requestId: 'note-3' });
+    // ローカルNoteのd1_note_idがまだnullのまま（前回instanceがcrash等で書き戻し前に落ちた想定）。
+    // syncWineTastingNote実装同様、呼び出しごとにpayloadをnoteから再構築するため毎回remoteId=nullになる
+    getNote.mockResolvedValue({ id: 'note-3', d1_note_id: null, sync_status: 'syncing' });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-3' }, 'token');
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-3' }, 'token'); // 2回目＝再送を模擬
+
+    expect(createWineTastingNote).toHaveBeenCalledTimes(2);
+    for (const call of createWineTastingNote.mock.calls) {
+      expect(call[0].requestId).toBe('note-3');
+    }
+  });
+
+  // stale syncing recovery（PATCH retry safety）: 既にd1_note_idを持つNote（前回instanceが
+  // create成功後、sync_status更新前にcrash等）を再送しても、PATCH先のidは変えない。
+  // UPDATE文なので再送してもrowが増えず、requestId/d1_note_idともに不変であること
+  it('PATCH retry safety: syncing復旧の再送でも同一d1_note_id宛にPATCHし続け、値を変更しない', async () => {
+    updateWineTastingNote.mockResolvedValue({ id: 'server-id-4', requestId: 'note-4' });
+    const adapter = await getAdapter();
+
+    const payload = { ...BASE_PAYLOAD, requestId: 'note-4', remoteId: 'server-id-4' };
+    await adapter.submit(payload, 'token');
+    await adapter.submit(payload, 'token'); // 2回目＝再送を模擬
+
+    expect(updateWineTastingNote).toHaveBeenCalledTimes(2);
+    for (const call of updateWineTastingNote.mock.calls) {
+      expect(call[0]).toBe('server-id-4'); // PATCH先id不変
+    }
+    expect(payload.remoteId).toBe('server-id-4'); // d1_note_id相当の値も不変
+    expect(createWineTastingNote).not.toHaveBeenCalled();
+    // PATCH経路はローカルNoteのd1_note_id書き戻しが不要（既に持っている）ため、getNote/saveNoteは呼ばれない
+    expect(getNote).not.toHaveBeenCalled();
+    expect(saveNote).not.toHaveBeenCalled();
+  });
 });
