@@ -9,6 +9,7 @@ type NoteStore = {
   setNote: (note: WineNote) => void;
   updateField: (fieldId: keyof WineNote['fields'], data: Partial<MixedFieldData>) => void;
   setPhoto: (url: string | null) => void;
+  setWineId: (wineId: string | null) => void;
   setSyncStatus: (status: WineNote['sync_status']) => void;
   setNotionPageId: (id: string) => void;
   persist: () => Promise<void>;
@@ -40,6 +41,14 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const { note } = get();
     if (!note) return;
     set({ note: { ...note, label_photo_url: url }, isDirty: true });
+  },
+
+  // Stage 1C-A: wine_idの設定/解除（null）。他のWine Entity fieldをsnapshotへ上書きしない
+  // （記録時点の認識を保持する契約はStage 1Aのまま）
+  setWineId: (wineId) => {
+    const { note } = get();
+    if (!note) return;
+    set({ note: { ...note, wine_id: wineId }, isDirty: true });
   },
 
   setSyncStatus: (status) => {

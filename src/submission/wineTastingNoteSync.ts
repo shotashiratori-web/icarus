@@ -12,6 +12,7 @@ export function buildWineTastingNotePayload(note: WineNote): WineTastingNoteSubm
   return {
     requestId: note.id,
     remoteId: note.d1_note_id,
+    wineId: note.wine_id,
     wineNameSnapshot: f.wine_name.text,
     producerSnapshot: f.producer.text,
     vintageSnapshot: f.vintage.text,

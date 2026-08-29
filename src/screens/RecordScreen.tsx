@@ -2,22 +2,27 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { useNoteStore } from '../store/noteStore';
 import { getNote } from '../db/localDB';
 import { newWineNote } from '../types/wine';
-import { resizeToJpeg } from '../api/icarusApi';
+import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
+import { fetchWine } from '../api/wineEntityApi';
 import { useAuth } from '../context/AuthContext';
 import { syncWineTastingNote } from '../submission/wineTastingNoteSync';
+import WineLinkPicker from './WineLinkPicker';
+import type { WineEntity } from '../types/wineEntity';
 import type { Screen } from '../App';
 import styles from './RecordScreen.module.css';
 
 type Props = { noteId: string | null; go: (s: Screen) => void };
 
 export default function RecordScreen({ noteId, go }: Props) {
-  const { note, setNote, updateField, setPhoto, persist, clear } = useNoteStore();
-  const { idToken } = useAuth();
+  const { note, setNote, updateField, setPhoto, setWineId, persist, clear } = useNoteStore();
+  const { idToken, handleTokenExpired } = useAuth();
   const saving = useRef(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  const [linkedWine, setLinkedWine] = useState<WineEntity | null>(null);
+  const [showWinePicker, setShowWinePicker] = useState(false);
 
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -47,6 +52,33 @@ export default function RecordScreen({ noteId, go }: Props) {
     }
     return () => clear();
   }, [noteId]);
+
+  // Stage 1C-A: note.wine_idが設定されていれば、表示用にWine Entity本体を取得する
+  // （wine_idはUUIDのみ保持しているため、title/producer/vintage表示にはfetchが必要）
+  useEffect(() => {
+    if (!note?.wine_id || !idToken) { setLinkedWine(null); return; }
+    let cancelled = false;
+    fetchWine(note.wine_id, idToken)
+      .then((w) => { if (!cancelled) setLinkedWine(w); })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e instanceof TokenExpiredError) { handleTokenExpired(); return; }
+        setLinkedWine(null);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note?.wine_id, idToken]);
+
+  const handleSelectWine = (wine: WineEntity) => {
+    setWineId(wine.id);
+    setLinkedWine(wine);
+    setShowWinePicker(false);
+  };
+
+  const handleUnlinkWine = () => {
+    setWineId(null);
+    setLinkedWine(null);
+  };
 
   // 保存してHomeへ
   const handleSave = useCallback(async () => {
@@ -197,6 +229,35 @@ export default function RecordScreen({ noteId, go }: Props) {
             </div>
           </div>
 
+          {/* WINE LINK（Stage 1C-A）: 未接続でもNote保存は可能。自動紐付け・自動新規作成はしない */}
+          <div className={styles.field}>
+            <label className={styles.label}>ワイン図鑑</label>
+            {note.wine_id ? (
+              <div className={styles.wineLinkConnected}>
+                <div className={styles.wineLinkInfo}>
+                  <p className={styles.wineLinkTitle}>{linkedWine?.title ?? '読み込み中…'}</p>
+                  {linkedWine && (
+                    <p className={styles.wineLinkMeta}>
+                      {[linkedWine.producer, linkedWine.vintage ? String(linkedWine.vintage) : ''].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+                <div className={styles.wineLinkActions}>
+                  <button type="button" className={styles.wineLinkBtn} onClick={() => setShowWinePicker(true)} disabled={!idToken}>
+                    変更
+                  </button>
+                  <button type="button" className={styles.wineLinkBtnDanger} onClick={handleUnlinkWine}>
+                    紐付けを解除
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className={styles.wineLinkBtn} onClick={() => setShowWinePicker(true)} disabled={!idToken}>
+                🍷 ワイン図鑑と紐付ける
+              </button>
+            )}
+          </div>
+
           {/* MEMO */}
           <div className={styles.field}>
             <label className={styles.label} htmlFor="memo">MEMO</label>
@@ -212,6 +273,18 @@ export default function RecordScreen({ noteId, go }: Props) {
 
         </div>
       </main>
+
+      {showWinePicker && idToken && (
+        <WineLinkPicker
+          initialQuery={f.wine_name.text}
+          producerHint={f.producer.text}
+          vintageHint={f.vintage.text}
+          idToken={idToken}
+          onSelect={handleSelectWine}
+          onClose={() => setShowWinePicker(false)}
+          onTokenExpired={handleTokenExpired}
+        />
+      )}
     </div>
   );
 }

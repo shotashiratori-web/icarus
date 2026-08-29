@@ -108,15 +108,22 @@ export async function saveNote(note: WineNote): Promise<void> {
   await db.put(STORE, { ...note, updated_at: new Date().toISOString() });
 }
 
+// Stage 1C-A以前に作成されたNoteはwine_idフィールド自体を持たない（IndexedDBはschemaless）。
+// 欠損時はnullとして扱う（「Wine未接続」と同じ意味）。テストから直接呼べるようexportする
+export function normalizeNote(note: WineNote): WineNote {
+  return { ...note, wine_id: note.wine_id ?? null };
+}
+
 export async function getNote(id: string): Promise<WineNote | undefined> {
   const db = await getDB();
-  return db.get(STORE, id);
+  const note = await db.get(STORE, id);
+  return note ? normalizeNote(note) : undefined;
 }
 
 export async function getAllNotes(): Promise<WineNote[]> {
   const db = await getDB();
   const all = await db.getAllFromIndex(STORE, 'updated_at');
-  return all.reverse();
+  return all.reverse().map(normalizeNote);
 }
 
 export async function getDrafts(): Promise<WineNote[]> {

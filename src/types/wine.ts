@@ -42,6 +42,9 @@ export type WineNote = {
   // Tasting Note Persistence v1（Stage 1B）。D1 wine_tasting_notesの行id。一度同期に成功したら保持し、
   // 以後の再送/編集はPATCH（このid宛て）を使う。nullのままなら未同期＝次回はPOST（新規作成）
   d1_note_id: string | null;
+  // Tasting Note Persistence v1（Stage 1C-A）。接続先Wine EntityのUUID。ユーザーの手動選択でのみ設定される
+  // （自動紐付け・自動新規作成はしない）。nullのままでもNote保存・同期は成立する
+  wine_id: string | null;
 };
 
 export const emptyField = (): MixedFieldData => ({
@@ -75,5 +78,6 @@ export const newWineNote = (): WineNote => {
     sync_status: 'local',
     notion_page_id: null,
     d1_note_id: null,
+    wine_id: null,
   };
 };
