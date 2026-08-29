@@ -5,10 +5,12 @@ import { mapIcarusApiError } from '../errorMapping';
 
 // Tasting Note Persistence v1（Stage 1B）。requestId = WineNote.id（不変）。
 // remoteId（d1_note_id）が無ければ新規POST、あればPATCH——同一requestIdへの内容変更POSTによる
-// 409（Stage 1A idempotency契約）を避けるための分岐。wine_idは今回接続UX対象外のため常にnull
+// 409（Stage 1A idempotency契約）を避けるための分岐。
+// Stage 1C-A: wineIdはnote.wine_idをそのまま渡す（nullable、接続はユーザー手動選択のみ）
 export interface WineTastingNoteSubmissionPayload {
   requestId: string;
   remoteId: string | null;
+  wineId: string | null;
   wineNameSnapshot: string;
   producerSnapshot: string;
   vintageSnapshot: string;
@@ -22,7 +24,7 @@ export interface WineTastingNoteSubmissionPayload {
 
 function toFieldsInput(payload: WineTastingNoteSubmissionPayload): WineTastingNoteFieldsInput {
   return {
-    wineId: null,
+    wineId: payload.wineId,
     tastingDate: payload.tastingDate,
     location: payload.location,
     wineNameSnapshot: payload.wineNameSnapshot,

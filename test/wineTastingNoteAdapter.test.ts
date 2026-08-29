@@ -29,6 +29,7 @@ async function getAdapter() {
 const BASE_PAYLOAD = {
   requestId: 'note-1',
   remoteId: null as string | null,
+  wineId: null as string | null,
   wineNameSnapshot: 'モンロゼ AK',
   producerSnapshot: 'ドメーヌ・モン',
   vintageSnapshot: '2021',
@@ -140,5 +141,70 @@ describe('wineTastingNoteAdapter.submit', () => {
     // PATCH経路はローカルNoteのd1_note_id書き戻しが不要（既に持っている）ため、getNote/saveNoteは呼ばれない
     expect(getNote).not.toHaveBeenCalled();
     expect(saveNote).not.toHaveBeenCalled();
+  });
+
+  // Tasting Note Persistence v1（Stage 1C-A）: wineId配線のテスト
+  it('3. wineId未接続（null）ならPOST payloadにもwineId:nullで送信される', async () => {
+    createWineTastingNote.mockResolvedValue({ id: 'server-id-5', requestId: 'note-5' });
+    getNote.mockResolvedValue({ id: 'note-5', d1_note_id: null, wine_id: null });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-5', wineId: null }, 'token');
+
+    expect(createWineTastingNote).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'note-5', wineId: null }),
+      'token',
+    );
+  });
+
+  it('4. wineId接続済み（UUID）ならPOST payloadにそのUUIDが送信される', async () => {
+    createWineTastingNote.mockResolvedValue({ id: 'server-id-6', requestId: 'note-6' });
+    getNote.mockResolvedValue({ id: 'note-6', d1_note_id: null, wine_id: 'wine-uuid-1' });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-6', wineId: 'wine-uuid-1' }, 'token');
+
+    expect(createWineTastingNote).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'note-6', wineId: 'wine-uuid-1' }),
+      'token',
+    );
+  });
+
+  it('6. remoteId設定済み（PATCH経路）でもwineIdがそのままfieldsへ含まれる', async () => {
+    updateWineTastingNote.mockResolvedValue({ id: 'server-id-7', requestId: 'note-7' });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-7', remoteId: 'server-id-7', wineId: 'wine-uuid-2' }, 'token');
+
+    expect(updateWineTastingNote).toHaveBeenCalledWith(
+      'server-id-7',
+      expect.objectContaining({ wineId: 'wine-uuid-2' }),
+      'token',
+    );
+  });
+
+  it('7. 紐付け解除（wineId: null）でPATCHすると、fieldsのwineIdもnullで送信される', async () => {
+    updateWineTastingNote.mockResolvedValue({ id: 'server-id-8', requestId: 'note-8' });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-8', remoteId: 'server-id-8', wineId: null }, 'token');
+
+    expect(updateWineTastingNote).toHaveBeenCalledWith(
+      'server-id-8',
+      expect.objectContaining({ wineId: null }),
+      'token',
+    );
+  });
+
+  it('18. wine紐付け経路はWine Entity新規作成APIを一切呼ばない（このモジュールはcreateWineをimportしていない）', async () => {
+    createWineTastingNote.mockResolvedValue({ id: 'server-id-9', requestId: 'note-9' });
+    getNote.mockResolvedValue({ id: 'note-9', d1_note_id: null, wine_id: null });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ ...BASE_PAYLOAD, requestId: 'note-9', wineId: null }, 'token');
+
+    // wineTastingNoteAdapter.tsのimportにcreateWine（Wine Entity新規作成API）が
+    // 含まれていないことがモック構成自体で保証される（呼びようがない）
+    expect(createWineTastingNote).toHaveBeenCalledTimes(1);
   });
 });

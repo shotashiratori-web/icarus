@@ -38,6 +38,7 @@ function makeNote(overrides: Partial<WineNote>): WineNote {
     sync_status: 'local',
     notion_page_id: null,
     d1_note_id: null,
+    wine_id: null,
     ...overrides,
   };
 }
@@ -204,6 +205,34 @@ describe('syncWineTastingNote', () => {
 
     // このモジュールはdeleteNoteを一切importしていない＝削除しようがないことが構成自体で保証される
     expect(saveNote).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'note-stale-4', sync_status: 'failed' }));
+  });
+
+  // Tasting Note Persistence v1（Stage 1C-A）
+  it('17/19. wine_id未選択（null）のNoteも従来通りsyncされ、payload.wineId=nullで送信される（Stage 1B回帰なし）', async () => {
+    const note = makeNote({ sync_status: 'local', wine_id: null });
+    getNote.mockResolvedValueOnce(note).mockResolvedValueOnce(note);
+    submitWithFallback.mockResolvedValue({ ok: true });
+
+    const { syncWineTastingNote } = await import('../src/submission/wineTastingNoteSync');
+    await syncWineTastingNote('note-1', 'token');
+
+    expect(submitWithFallback).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ wineId: null }) }),
+    );
+    expect(saveNote).toHaveBeenLastCalledWith(expect.objectContaining({ sync_status: 'synced' }));
+  });
+
+  it('wine_id接続済みのNoteはpayload.wineIdにそのUUIDを含めて送信する', async () => {
+    const note = makeNote({ sync_status: 'local', wine_id: 'wine-uuid-5' });
+    getNote.mockResolvedValueOnce(note).mockResolvedValueOnce(note);
+    submitWithFallback.mockResolvedValue({ ok: true });
+
+    const { syncWineTastingNote } = await import('../src/submission/wineTastingNoteSync');
+    await syncWineTastingNote('note-1', 'token');
+
+    expect(submitWithFallback).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ wineId: 'wine-uuid-5' }) }),
+    );
   });
 });
 

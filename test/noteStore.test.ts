@@ -47,4 +47,53 @@ describe('noteStore.persist', () => {
 
     expect(saveNote).toHaveBeenCalledWith(expect.objectContaining({ sync_status: 'synced' }));
   });
+
+  // Tasting Note Persistence v1（Stage 1C-A）
+  it('5. synced状態のNoteでwine_idを変更（setWineId）すると、他フィールド編集と同様にlocalへ降格する', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    const note = { ...newWineNote(), sync_status: 'synced' as const, d1_note_id: 'server-1', wine_id: null };
+    useNoteStore.getState().setNote(note);
+    useNoteStore.getState().setWineId('wine-uuid-1');
+
+    await useNoteStore.getState().persist();
+
+    expect(saveNote).toHaveBeenCalledWith(expect.objectContaining({ sync_status: 'local', wine_id: 'wine-uuid-1' }));
+  });
+
+  it('8. wine_idを設定しても、wine_name/producer/vintage等のsnapshot元フィールドは変更しない', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    const note = newWineNote();
+    note.fields.wine_name.text = '記録時点のワイン名';
+    note.fields.producer.text = '記録時点の生産者';
+    note.fields.vintage.text = '2020';
+    useNoteStore.getState().setNote(note);
+
+    useNoteStore.getState().setWineId('wine-uuid-2');
+
+    const after = useNoteStore.getState().note!;
+    expect(after.wine_id).toBe('wine-uuid-2');
+    expect(after.fields.wine_name.text).toBe('記録時点のワイン名');
+    expect(after.fields.producer.text).toBe('記録時点の生産者');
+    expect(after.fields.vintage.text).toBe('2020');
+  });
+
+  it('7. setWineId(null)で紐付けを解除できる（Note自体・他フィールドは残る）', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    const note = { ...newWineNote(), wine_id: 'wine-uuid-3', sync_status: 'synced' as const, d1_note_id: 'server-2' };
+    useNoteStore.getState().setNote(note);
+
+    useNoteStore.getState().setWineId(null);
+    await useNoteStore.getState().persist();
+
+    expect(saveNote).toHaveBeenCalledWith(expect.objectContaining({ wine_id: null, d1_note_id: 'server-2', sync_status: 'local' }));
+  });
+
+  it('setWineIdはnoteが無ければ何もしない', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().clear();
+
+    useNoteStore.getState().setWineId('wine-uuid-4');
+
+    expect(useNoteStore.getState().note).toBeNull();
+  });
 });
