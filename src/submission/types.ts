@@ -1,4 +1,4 @@
-export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'daily' | 'workLog';
+export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'wineTastingNote' | 'daily' | 'workLog';
 
 export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   foodLog: '食材ログ',
@@ -6,6 +6,8 @@ export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   fieldLogD1: '食材ログ（新経路）',
   spot: 'スポット',
   wine: 'ワイン',
+  // Tasting Note Persistence v1（Stage 1B）。Wine Entity（'wine'、図鑑）とは別物（ADR-0001）
+  wineTastingNote: 'テイスティングノート',
   daily: 'Daily',
   workLog: '作業ログ',
 };

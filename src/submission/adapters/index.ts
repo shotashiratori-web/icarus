@@ -2,3 +2,4 @@
 // App.tsx冒頭で一度importすることで、どの画面が最初にsubmitWithFallbackを呼んでもレジストリが埋まっている状態を保証する。
 import './foodLogAdapter';
 import './fieldLogD1Adapter';
+import './wineTastingNoteAdapter';

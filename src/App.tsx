@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import HomeScreen from './screens/HomeScreen';
 import RecordScreen from './screens/RecordScreen';
 import ReviewDetailScreen from './screens/ReviewDetailScreen';
@@ -33,6 +33,7 @@ import FoodEditorListScreen from './screens/FoodEditorListScreen';
 import FoodEditorFormScreen from './screens/FoodEditorFormScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
+import { retryPendingWineTastingNotes } from './submission/wineTastingNoteSync';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
@@ -109,13 +110,27 @@ function initialScreen(): Screen {
 
 function AppRoutes() {
   const [screen, setScreen] = useState<Screen>(initialScreen);
-  const { authState, staffMe } = useAuth();
+  const { authState, idToken, staffMe } = useAuth();
 
   // リロードで現在の画面へ戻れるよう、遷移のたびにsessionStorageへ保存する
   const go = (s: Screen) => {
     setScreen(s);
     saveCurrentScreen(s);
   };
+
+  // Tasting Note Persistence v1（Stage 1B）完成条件12: アプリ起動時（ログイン確立時）/ online復帰時に
+  // sync_status='local'/'failed'のワインノートを再送する。専用エンジンは作らずSubmission Frameworkを再利用
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
+    void retryPendingWineTastingNotes(idToken);
+  }, [authState, idToken]);
+
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
+    const onOnline = () => void retryPendingWineTastingNotes(idToken);
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [authState, idToken]);
 
   // メタデータ調査画面は認証不要・データ送信なしのため、承認ゲートより先に描画する
   if (screen.name === 'metaDebug') return <MetaDebugScreen go={go} />;

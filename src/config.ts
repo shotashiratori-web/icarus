@@ -62,3 +62,10 @@ export const ASSETS_CREATE_URL = `${WORKER_URL}/assets`;
 export function assetFinalizeUrl(assetId: string): string {
   return `${WORKER_URL}/assets/${encodeURIComponent(assetId)}/finalize`;
 }
+
+// Tasting Note Persistence v1（Stage 1B）。既存の「ワインノート」(IndexedDB、ADR-0001)をD1 wine_tasting_notesへ
+// 同期するための送信先。Wine Entity（/wines）とは別物
+export const WINE_TASTING_NOTES_URL = `${WORKER_URL}/wine-tasting-notes`;
+export function wineTastingNoteByIdUrl(id: string): string {
+  return `${WORKER_URL}/wine-tasting-notes/${encodeURIComponent(id)}`;
+}
