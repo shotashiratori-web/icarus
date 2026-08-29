@@ -3,6 +3,8 @@ import { useNoteStore } from '../store/noteStore';
 import { getNote } from '../db/localDB';
 import { newWineNote } from '../types/wine';
 import { resizeToJpeg } from '../api/icarusApi';
+import { useAuth } from '../context/AuthContext';
+import { syncWineTastingNote } from '../submission/wineTastingNoteSync';
 import type { Screen } from '../App';
 import styles from './RecordScreen.module.css';
 
@@ -10,6 +12,7 @@ type Props = { noteId: string | null; go: (s: Screen) => void };
 
 export default function RecordScreen({ noteId, go }: Props) {
   const { note, setNote, updateField, setPhoto, persist, clear } = useNoteStore();
+  const { idToken } = useAuth();
   const saving = useRef(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -52,13 +55,14 @@ export default function RecordScreen({ noteId, go }: Props) {
     setSaveState('saving');
     try {
       await persist();
+      void syncWineTastingNote(note.id, idToken);
       setSaveState('done');
       setTimeout(() => go({ name: 'home' }), 600);
     } catch (e) {
       setSaveState('error');
       saving.current = false;
     }
-  }, [note, persist, go]);
+  }, [note, persist, go, idToken]);
 
   // ⌘+S
   useEffect(() => {
@@ -76,9 +80,10 @@ export default function RecordScreen({ noteId, go }: Props) {
   const handleBack = useCallback(async () => {
     if (note && useNoteStore.getState().isDirty) {
       await persist();
+      void syncWineTastingNote(note.id, idToken);
     }
     go({ name: 'home' });
-  }, [note, persist, go]);
+  }, [note, persist, go, idToken]);
 
   if (!note) return <div className={styles.loading}>読み込み中…</div>;
 

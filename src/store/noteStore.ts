@@ -55,10 +55,15 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   persist: async () => {
-    const { note } = get();
+    const { note, isDirty } = get();
     if (!note) return;
-    await saveNote(note);
-    set({ isDirty: false });
+    // 同期済みNoteを編集した場合、保存時にsync_status を'local'へ戻し再送対象にする
+    // （Stage 1B: 編集後もsync_status='synced'のまま残ると、変更内容がサーバーへ反映されない）
+    const toSave: WineNote = isDirty && note.sync_status === 'synced'
+      ? { ...note, sync_status: 'local' }
+      : note;
+    await saveNote(toSave);
+    set({ note: toSave, isDirty: false });
   },
 
   clear: () => set({ note: null, isDirty: false }),
