@@ -2,10 +2,11 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { useNoteStore } from '../store/noteStore';
 import { getNote } from '../db/localDB';
 import { newWineNote } from '../types/wine';
-import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
+import { resizeToJpeg, readFileAsBase64, sha256Hex, isHeicFile, TokenExpiredError } from '../api/icarusApi';
 import { fetchWine } from '../api/wineEntityApi';
 import { useAuth } from '../context/AuthContext';
 import { syncWineTastingNote } from '../submission/wineTastingNoteSync';
+import { syncWineTastingNotePhoto } from '../submission/wineTastingNotePhotoSync';
 import WineLinkPicker from './WineLinkPicker';
 import type { WineEntity } from '../types/wineEntity';
 import type { Screen } from '../App';
@@ -13,8 +14,16 @@ import styles from './RecordScreen.module.css';
 
 type Props = { noteId: string | null; go: (s: Screen) => void };
 
+// Stage 1D-C: v1はJPEGのみをserver syncの対象とする（既存Photo Asset ALLOWED_ASSET_MIME_TYPESと同じ契約）。
+// file.typeが空文字になる環境があるため、既存isHeicFile()と同じ理由でfilenameへのフォールバックを持つ
+function isJpegFile(file: File): boolean {
+  if (file.type) return file.type === 'image/jpeg';
+  const name = file.name.toLowerCase();
+  return name.endsWith('.jpg') || name.endsWith('.jpeg');
+}
+
 export default function RecordScreen({ noteId, go }: Props) {
-  const { note, setNote, updateField, setPhoto, setWineId, persist, clear } = useNoteStore();
+  const { note, setNote, updateField, setPhotoSelected, setPhotoUnsupported, removePhoto, setWineId, persist, clear } = useNoteStore();
   const { idToken, handleTokenExpired } = useAuth();
   const saving = useRef(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
@@ -31,13 +40,45 @@ export default function RecordScreen({ noteId, go }: Props) {
     setPhotoBusy(true);
     setPhotoError('');
     try {
-      const base64 = await resizeToJpeg(file);
-      setPhoto(`data:image/jpeg;base64,${base64}`);
+      // Stage 4: previewはresizeToJpegの結果を即表示する。Photo Asset uploadの完了を待たない
+      const previewBase64 = await resizeToJpeg(file);
+      const previewUrl = `data:image/jpeg;base64,${previewBase64}`;
+
+      // Stage 8/9: v1はJPEGのみをserver syncの対象とする。HEIC等はpreviewだけ出しsyncはfailedにする
+      // （preview成功 ≠ server sync可能。既存Photo Asset ALLOWED_ASSET_MIME_TYPES契約は変更しない）
+      if (!isJpegFile(file)) {
+        setPhotoUnsupported({ previewUrl, filename: file.name, mimeType: file.type || (isHeicFile(file) ? 'image/heic' : '') });
+        return;
+      }
+
+      // Stage 3/5: JPEGのOriginal（無加工）とhashを並列取得。resize後previewとは別に保持する
+      const [originalBase64, fileHash] = await Promise.all([
+        readFileAsBase64(file),
+        sha256Hex(file),
+      ]);
+      setPhotoSelected({
+        previewUrl,
+        originalBase64,
+        filename: file.name,
+        mimeType: 'image/jpeg',
+        fileHash,
+      });
     } catch {
       setPhotoError('写真の読み込みに失敗しました');
     } finally {
       setPhotoBusy(false);
     }
+  };
+
+  const handleRemovePhoto = () => {
+    removePhoto();
+  };
+
+  // Stage 15: retryable（UPLOAD_FAILED/FINALIZE_FAILED/LINK_FAILED/UNLINK_FAILED）のみ手動retryを出す。
+  // UNSUPPORTED_MEDIA_TYPEは恒久的失敗のためretryボタンを出さない（JPEGを選び直す導線のみ）
+  const handleRetryPhoto = () => {
+    if (!note) return;
+    void syncWineTastingNotePhoto(note.id, idToken);
   };
 
   // ノートを読み込む or 新規作成
@@ -88,6 +129,9 @@ export default function RecordScreen({ noteId, go }: Props) {
     try {
       await persist();
       void syncWineTastingNote(note.id, idToken);
+      // Stage 1D-C Stage 11: d1_note_id/photo_operationのgateはsyncWineTastingNotePhoto内で
+      // 既に持っているため、ここでは無条件に呼んでよい（未同期Noteでは自動的にno-opになる）
+      void syncWineTastingNotePhoto(note.id, idToken);
       setSaveState('done');
       setTimeout(() => go({ name: 'home' }), 600);
     } catch (e) {
@@ -113,6 +157,7 @@ export default function RecordScreen({ noteId, go }: Props) {
     if (note && useNoteStore.getState().isDirty) {
       await persist();
       void syncWineTastingNote(note.id, idToken);
+      void syncWineTastingNotePhoto(note.id, idToken);
     }
     go({ name: 'home' });
   }, [note, persist, go, idToken]);
@@ -166,11 +211,27 @@ export default function RecordScreen({ noteId, go }: Props) {
               onChange={handlePhotoChange}
             />
             {note.label_photo_url && (
-              <button type="button" className={styles.photoRemoveBtn} onClick={() => setPhoto(null)}>
+              <button type="button" className={styles.photoRemoveBtn} onClick={handleRemovePhoto}>
                 写真を削除
               </button>
             )}
             {photoError && <p className={styles.photoError}>{photoError}</p>}
+
+            {/* Stage 1D-C Stage 14: 本文の同期状態表示とは競合しない、控えめな写真専用ステータス */}
+            {note.photo_sync_status === 'uploading' && (
+              <p className={styles.photoStatusHint}>写真を同期中…</p>
+            )}
+            {note.photo_sync_status === 'failed' && note.photo_sync_error_code === 'UNSUPPORTED_MEDIA_TYPE' && (
+              <p className={styles.photoStatusHint}>この写真形式はまだ同期できません。JPEG画像を選び直してください。</p>
+            )}
+            {note.photo_sync_status === 'failed' && note.photo_sync_error_code !== 'UNSUPPORTED_MEDIA_TYPE' && (
+              <div className={styles.photoStatusRow}>
+                <p className={styles.photoStatusHint}>写真の同期に失敗しました</p>
+                <button type="button" className={styles.photoRetryBtn} onClick={handleRetryPhoto}>
+                  再試行
+                </button>
+              </div>
+            )}
           </div>
 
           {/* NAME */}

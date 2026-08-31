@@ -128,6 +128,48 @@ describe('wineTastingNotePhotoAdapter.submit — sync（upload/finalize/link）'
     expect(lastCall.photo_operation).toBe('none');
   });
 
+  it('6. link成功時にphoto_server_linked=trueを保存する（Pre-PR監査で追加）', async () => {
+    const note = makeNote({ photo_asset_id: 'asset-existing', photo_server_linked: false });
+    getNote.mockResolvedValue(note);
+    linkWineTastingNotePhoto.mockResolvedValue({ duplicate: false });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ noteId: 'note-1' }, 'token');
+
+    const lastCall = saveNote.mock.calls[saveNote.mock.calls.length - 1][0];
+    expect(lastCall.photo_server_linked).toBe(true);
+  });
+
+  it('link失敗時はphoto_server_linkedを変更しない（Pre-PR監査で追加）', async () => {
+    const note = makeNote({ photo_asset_id: 'asset-existing', photo_server_linked: true });
+    getNote.mockResolvedValue(note);
+    linkWineTastingNotePhoto.mockRejectedValue(new Error('link network error'));
+    const adapter = await getAdapter();
+
+    await expect(adapter.submit({ noteId: 'note-1' }, 'token')).rejects.toThrow();
+
+    const lastCall = saveNote.mock.calls[saveNote.mock.calls.length - 1][0];
+    expect(lastCall.photo_server_linked).toBe(true);
+  });
+
+  it('27. link成功時にphoto_original_base64をclearする（identity/filename/mimeType/hashは保持）', async () => {
+    const note = makeNote({ photo_asset_id: 'asset-existing', photo_request_id: 'req-existing' });
+    getNote.mockResolvedValue(note);
+    linkWineTastingNotePhoto.mockResolvedValue({ duplicate: false });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ noteId: 'note-1' }, 'token');
+
+    const lastCall = saveNote.mock.calls[saveNote.mock.calls.length - 1][0];
+    expect(lastCall.photo_original_base64).toBeNull();
+    // local preview/identity/debug用のfieldはStage 23の方針どおり保持する
+    expect(lastCall.photo_asset_id).toBe('asset-existing');
+    expect(lastCall.photo_request_id).toBe('req-existing');
+    expect(lastCall.photo_original_filename).toBe('photo.jpg');
+    expect(lastCall.photo_original_mime_type).toBe('image/jpeg');
+    expect(lastCall.photo_file_hash).toBe('a'.repeat(64));
+  });
+
   it('13. upload失敗（コード無し）はUPLOAD_FAILEDへ分類する', async () => {
     const note = makeNote({ photo_asset_id: null });
     getNote.mockResolvedValue(note);
@@ -238,8 +280,8 @@ describe('wineTastingNotePhotoAdapter.submit — remove（unlink）', () => {
     expect(unlinkWineTastingNotePhoto).toHaveBeenCalledWith('d1-note-1', 'token');
   });
 
-  it('17. unlink成功後はidentityを完全にクリアする', async () => {
-    const note = makeNote({ photo_operation: 'remove', photo_asset_id: 'asset-existing', photo_request_id: 'req-1' });
+  it('17. unlink成功後はidentityを完全にクリアする（photo_server_linkedもfalseへ）', async () => {
+    const note = makeNote({ photo_operation: 'remove', photo_asset_id: 'asset-existing', photo_request_id: 'req-1', photo_server_linked: true });
     getNote.mockResolvedValue(note);
     unlinkWineTastingNotePhoto.mockResolvedValue({ removed: true });
     const adapter = await getAdapter();
@@ -251,6 +293,7 @@ describe('wineTastingNotePhotoAdapter.submit — remove（unlink）', () => {
     expect(lastCall.photo_sync_error_code).toBeNull();
     expect(lastCall.photo_operation).toBe('none');
     expect(lastCall.photo_asset_id).toBeNull();
+    expect(lastCall.photo_server_linked).toBe(false);
     expect(lastCall.photo_original_base64).toBeNull();
     expect(lastCall.photo_original_filename).toBe('');
     expect(lastCall.photo_original_mime_type).toBe('');
@@ -258,8 +301,8 @@ describe('wineTastingNotePhotoAdapter.submit — remove（unlink）', () => {
     expect(lastCall.photo_request_id).toBeNull();
   });
 
-  it('18. unlink失敗時はidentity（photo_asset_id等）を保持し、UNLINK_FAILEDへ分類する', async () => {
-    const note = makeNote({ photo_operation: 'remove', photo_asset_id: 'asset-existing' });
+  it('18. unlink失敗時はidentity（photo_asset_id等）とphoto_server_linked=trueを保持し、UNLINK_FAILEDへ分類する', async () => {
+    const note = makeNote({ photo_operation: 'remove', photo_asset_id: 'asset-existing', photo_server_linked: true });
     getNote.mockResolvedValue(note);
     unlinkWineTastingNotePhoto.mockRejectedValue(new Error('network error'));
     const adapter = await getAdapter();
@@ -270,6 +313,8 @@ describe('wineTastingNotePhotoAdapter.submit — remove（unlink）', () => {
     expect(lastCall.photo_sync_status).toBe('failed');
     expect(lastCall.photo_sync_error_code).toBe('UNLINK_FAILED');
     expect(lastCall.photo_asset_id).toBe('asset-existing');
+    // unlinkがまだ完了していないため、server-linkedの記憶を消してはいけない（次回retryのために必須）
+    expect(lastCall.photo_server_linked).toBe(true);
   });
 
   it('removeでd1_note_idが無ければserver呼び出し無しでローカルidentityのみ整理する', async () => {
@@ -283,5 +328,6 @@ describe('wineTastingNotePhotoAdapter.submit — remove（unlink）', () => {
     const lastCall = saveNote.mock.calls[saveNote.mock.calls.length - 1][0];
     expect(lastCall.photo_operation).toBe('none');
     expect(lastCall.photo_original_base64).toBeNull();
+    expect(lastCall.photo_server_linked).toBe(false);
   });
 });

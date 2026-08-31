@@ -58,6 +58,56 @@ describe('normalizeNote — legacy Note互換', () => {
   });
 });
 
+// Tasting Note Persistence v1（Stage 1D-C Pre-PR監査）。photo_server_linkedはphoto_asset_idとは
+// 独立に「serverに現在label linkが存在するか」を表すstate。新写真選択のたびリセットされる
+// photo_asset_idだけでは、差し替え中に削除した場合の旧server linkの存在を判定できないため追加した
+// （offline/reloadを跨いでもunlink intentを保持できることをここで検証する）。
+describe('normalizeNote — photo_server_linked（Pre-PR監査で追加）', () => {
+  it('8a. フィールド自体が無い旧レコードはfalseへ補完する（未sync相当）', () => {
+    const legacy = { ...newWineNote() } as Partial<WineNote>;
+    delete legacy.photo_server_linked;
+
+    const normalized = normalizeNote(legacy as WineNote);
+    expect(normalized.photo_server_linked).toBe(false);
+  });
+
+  it('8b. フィールドが無く、かつphoto_sync_status=synced+photo_asset_id有りの旧レコードはtrueへ補完する（安全側の移行default）', () => {
+    const legacy = {
+      ...newWineNote(),
+      photo_sync_status: 'synced' as const,
+      photo_asset_id: 'asset-legacy-1',
+    } as Partial<WineNote>;
+    delete legacy.photo_server_linked;
+
+    const normalized = normalizeNote(legacy as WineNote);
+    expect(normalized.photo_server_linked).toBe(true);
+  });
+
+  it('8c. 明示的にtrueが保存されていれば、sync_statusに関わらずそのまま保持する（offline/reload耐性）', () => {
+    // 差し替え中（新写真選択→未upload）にreloadした状態を再現：
+    // photo_sync_status='local'（新candidateの状態）だが、旧写真はserver-linkedのまま
+    const note: WineNote = {
+      ...newWineNote(),
+      photo_sync_status: 'local',
+      photo_asset_id: null,
+      photo_server_linked: true,
+    };
+    const normalized = normalizeNote(note);
+    expect(normalized.photo_server_linked).toBe(true);
+  });
+
+  it('8d. 明示的にfalseが保存されていれば、他条件に関わらずfalseのまま保持する', () => {
+    const note: WineNote = {
+      ...newWineNote(),
+      photo_sync_status: 'synced',
+      photo_asset_id: 'asset-1',
+      photo_server_linked: false,
+    };
+    const normalized = normalizeNote(note);
+    expect(normalized.photo_server_linked).toBe(false);
+  });
+});
+
 describe('sync_status と photo_sync_status の独立性', () => {
   it('3. 本文synced + 写真failedが同時に成立する（写真失敗で本文を巻き戻さない）', () => {
     const note: WineNote = {

@@ -70,8 +70,14 @@ export type WineNote = {
   photo_sync_status: PhotoSyncStatus;
   photo_sync_error_code: PhotoSyncErrorCode | null;
   photo_operation: PhotoOperation;
-  // Stage 1D-A linkの対象。finalize成功時点で即保存する（link失敗してもR2再uploadしないため）
+  // Stage 1D-A linkの対象＝「今回uploadしようとしているcandidate Asset」。finalize成功時点で
+  // 即保存する（link失敗してもR2再uploadしないため）。新しい写真を選び直すたびnullへリセットされる
   photo_asset_id: string | null;
+  // Stage 1D-C（Pre-PR監査で追加）。「serverに現在label linkが存在するか」を示す、photo_asset_idとは
+  // 独立したstate。photo_asset_idは新写真選択のたびリセットされるため、それだけでは
+  // 「旧写真のserver linkがまだ残っているか」を判定できない（差し替え中に削除すると旧linkが孤立する
+  // バグの原因になった）。link成功時にtrue、unlink成功時にfalseへ。新写真選択/HEIC選択では変更しない
+  photo_server_linked: boolean;
   // 元Fileそのもの（resize後JPEGではない）。upload成功後もStage 1D-Bではすぐ削除しない
   // （RecordScreen統合前のrollback/debug容易性を優先。IndexedDB容量とのトレードオフはSTOP報告で明示）
   photo_original_base64: string | null;
@@ -119,6 +125,7 @@ export const newWineNote = (): WineNote => {
     photo_sync_error_code: null,
     photo_operation: 'none',
     photo_asset_id: null,
+    photo_server_linked: false,
     photo_original_base64: null,
     photo_original_filename: '',
     photo_original_mime_type: '',
