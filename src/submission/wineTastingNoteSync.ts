@@ -2,6 +2,7 @@ import { getAllNotes, getNote, saveNote } from '../db/localDB';
 import type { WineNote } from '../types/wine';
 import { submitWithFallback } from './orchestrator';
 import type { WineTastingNoteSubmissionPayload } from './adapters/wineTastingNoteAdapter';
+import { syncWineTastingNotePhoto } from './wineTastingNotePhotoSync';
 
 // 同一noteに対する同時多重発火（例: 保存ボタン連打とアプリ起動時再送が重なる）を
 // このセッション内だけ防ぐ。永続化はしない——タブを跨いだ排他制御はStage 1Bの対象外
@@ -57,6 +58,12 @@ export async function syncWineTastingNote(noteId: string, idToken: string | null
     const latest = await getNote(noteId);
     if (!latest) return;
     await saveNote({ ...latest, sync_status: result.ok ? 'synced' : 'failed' });
+
+    // Stage 1D-B Stage 26: 本文syncが成功しd1_note_idが確定した直後、保留中の写真があれば
+    // fire-and-forgetで写真syncを起動する（本文が先、写真は後——同期的にawaitしない）
+    if (result.ok) {
+      void syncWineTastingNotePhoto(noteId, idToken);
+    }
   } finally {
     inFlight.delete(noteId);
   }

@@ -108,10 +108,23 @@ export async function saveNote(note: WineNote): Promise<void> {
   await db.put(STORE, { ...note, updated_at: new Date().toISOString() });
 }
 
-// Stage 1C-A以前に作成されたNoteはwine_idフィールド自体を持たない（IndexedDBはschemaless）。
-// 欠損時はnullとして扱う（「Wine未接続」と同じ意味）。テストから直接呼べるようexportする
+// Stage 1C-A/1D-B以前に作成されたNoteは該当フィールド自体を持たない（IndexedDBはschemaless）。
+// 欠損時は安全なdefaultへ補完する（write-timeにmigrationしない、read-timeに都度補完する方式）。
+// テストから直接呼べるようexportする
 export function normalizeNote(note: WineNote): WineNote {
-  return { ...note, wine_id: note.wine_id ?? null };
+  return {
+    ...note,
+    wine_id: note.wine_id ?? null,
+    photo_sync_status: note.photo_sync_status ?? 'none',
+    photo_sync_error_code: note.photo_sync_error_code ?? null,
+    photo_operation: note.photo_operation ?? 'none',
+    photo_asset_id: note.photo_asset_id ?? null,
+    photo_original_base64: note.photo_original_base64 ?? null,
+    photo_original_filename: note.photo_original_filename ?? '',
+    photo_original_mime_type: note.photo_original_mime_type ?? '',
+    photo_file_hash: note.photo_file_hash ?? null,
+    photo_request_id: note.photo_request_id ?? null,
+  };
 }
 
 export async function getNote(id: string): Promise<WineNote | undefined> {

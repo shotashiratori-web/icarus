@@ -69,3 +69,12 @@ export const WINE_TASTING_NOTES_URL = `${WORKER_URL}/wine-tasting-notes`;
 export function wineTastingNoteByIdUrl(id: string): string {
   return `${WORKER_URL}/wine-tasting-notes/${encodeURIComponent(id)}`;
 }
+
+// Tasting Note Persistence v1（Stage 1D-A/1D-B）。label Assetのlink/unlink専用route。
+// 本文POST/PATCHとは別経路（非結合）
+export function wineTastingNoteAssetsUrl(id: string): string {
+  return `${WORKER_URL}/wine-tasting-notes/${encodeURIComponent(id)}/assets`;
+}
+export function wineTastingNoteLabelAssetUrl(id: string): string {
+  return `${WORKER_URL}/wine-tasting-notes/${encodeURIComponent(id)}/assets/label`;
+}

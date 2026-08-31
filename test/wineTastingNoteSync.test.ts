@@ -12,9 +12,11 @@ const { getAllNotes, getNote, saveNote } = vi.hoisted(() => ({
   getNote: vi.fn(),
   saveNote: vi.fn(),
 }));
+const { syncWineTastingNotePhoto } = vi.hoisted(() => ({ syncWineTastingNotePhoto: vi.fn() }));
 
 vi.mock('../src/submission/orchestrator', () => ({ submitWithFallback }));
 vi.mock('../src/db/localDB', () => ({ getAllNotes, getNote, saveNote }));
+vi.mock('../src/submission/wineTastingNotePhotoSync', () => ({ syncWineTastingNotePhoto }));
 
 function makeNote(overrides: Partial<WineNote>): WineNote {
   return {
@@ -39,6 +41,15 @@ function makeNote(overrides: Partial<WineNote>): WineNote {
     notion_page_id: null,
     d1_note_id: null,
     wine_id: null,
+    photo_sync_status: 'none',
+    photo_sync_error_code: null,
+    photo_operation: 'none',
+    photo_asset_id: null,
+    photo_original_base64: null,
+    photo_original_filename: '',
+    photo_original_mime_type: '',
+    photo_file_hash: null,
+    photo_request_id: null,
     ...overrides,
   };
 }
@@ -52,11 +63,34 @@ describe('syncWineTastingNote', () => {
     getNote.mockReset();
     saveNote.mockReset();
     saveNote.mockResolvedValue(undefined);
+    syncWineTastingNotePhoto.mockReset();
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
   });
 
   afterEach(() => {
     Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true });
+  });
+
+  it('Stage 1D-B: 本文sync成功時、保留中の写真syncをfire-and-forgetで起動する', async () => {
+    const note = makeNote({ sync_status: 'local' });
+    getNote.mockResolvedValueOnce(note).mockResolvedValueOnce(note);
+    submitWithFallback.mockResolvedValue({ ok: true });
+
+    const { syncWineTastingNote } = await import('../src/submission/wineTastingNoteSync');
+    await syncWineTastingNote('note-1', 'token');
+
+    expect(syncWineTastingNotePhoto).toHaveBeenCalledWith('note-1', 'token');
+  });
+
+  it('Stage 1D-B: 本文sync失敗時は写真syncを起動しない', async () => {
+    const note = makeNote({ sync_status: 'local' });
+    getNote.mockResolvedValueOnce(note).mockResolvedValueOnce(note);
+    submitWithFallback.mockResolvedValue({ ok: false, item: { ...note, state: 'pending' } });
+
+    const { syncWineTastingNote } = await import('../src/submission/wineTastingNoteSync');
+    await syncWineTastingNote('note-1', 'token');
+
+    expect(syncWineTastingNotePhoto).not.toHaveBeenCalled();
   });
 
   it('1/4. 未ログイン(idToken=null)なら何も送信せず、sync_statusも変更しない', async () => {
