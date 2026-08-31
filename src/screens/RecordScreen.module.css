@@ -200,6 +200,25 @@
   color: var(--color-accent);
 }
 
+/* Stage 1D-C: 写真sync状態表示（本文の同期状態表示とは別、控えめなヒント） */
+.photoStatusHint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.photoStatusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.photoRetryBtn {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
 /* WINE LINK（Stage 1C-A） */
 .wineLinkConnected {
   display: flex;

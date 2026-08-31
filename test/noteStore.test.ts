@@ -97,3 +97,162 @@ describe('noteStore.persist', () => {
     expect(useNoteStore.getState().note).toBeNull();
   });
 });
+
+// Tasting Note Persistence v1（Stage 1D-C）
+describe('noteStore.setPhotoSelected / setPhotoUnsupported / removePhoto', () => {
+  beforeEach(() => {
+    saveNote.mockReset();
+    saveNote.mockResolvedValue(undefined);
+  });
+
+  it('2/3/4/5/7. JPEG選択: preview・Original Base64・hash・filename・mimeType・photo_operation・statusを保存する', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().setNote(newWineNote());
+
+    useNoteStore.getState().setPhotoSelected({
+      previewUrl: 'data:image/jpeg;base64,PREVIEW',
+      originalBase64: 'ORIGINAL_BASE64',
+      filename: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      fileHash: 'a'.repeat(64),
+    });
+
+    const after = useNoteStore.getState().note!;
+    expect(after.label_photo_url).toBe('data:image/jpeg;base64,PREVIEW');
+    expect(after.photo_original_base64).toBe('ORIGINAL_BASE64');
+    expect(after.photo_original_filename).toBe('photo.jpg');
+    expect(after.photo_original_mime_type).toBe('image/jpeg');
+    expect(after.photo_file_hash).toBe('a'.repeat(64));
+    expect(after.photo_operation).toBe('sync');
+    expect(after.photo_sync_status).toBe('local');
+    expect(after.photo_sync_error_code).toBeNull();
+    expect(useNoteStore.getState().isDirty).toBe(true);
+  });
+
+  it('6. photo_request_idを新規発行する', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().setNote(newWineNote());
+
+    useNoteStore.getState().setPhotoSelected({
+      previewUrl: 'data:image/jpeg;base64,X', originalBase64: 'X', filename: 'a.jpg', mimeType: 'image/jpeg', fileHash: 'b'.repeat(64),
+    });
+
+    const requestId = useNoteStore.getState().note!.photo_request_id;
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it('9/10. 既存写真から別写真への変更でphoto_asset_id/photo_request_idがリセットされる', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().setNote({
+      ...newWineNote(),
+      photo_asset_id: 'old-asset-id',
+      photo_request_id: 'old-request-id',
+      photo_sync_status: 'synced',
+    });
+
+    useNoteStore.getState().setPhotoSelected({
+      previewUrl: 'data:image/jpeg;base64,NEW', originalBase64: 'NEW_ORIGINAL', filename: 'new.jpg', mimeType: 'image/jpeg', fileHash: 'c'.repeat(64),
+    });
+
+    const after = useNoteStore.getState().note!;
+    expect(after.photo_asset_id).toBeNull();
+    expect(after.photo_request_id).not.toBe('old-request-id');
+    expect(after.photo_request_id).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it('11. 写真を変更してもwine_name/producer等のNote本文fieldは変更しない', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    const note = newWineNote();
+    note.fields.wine_name.text = '既存のワイン名';
+    note.fields.memo.text = '既存のメモ';
+    useNoteStore.getState().setNote(note);
+
+    useNoteStore.getState().setPhotoSelected({
+      previewUrl: 'data:image/jpeg;base64,X', originalBase64: 'X', filename: 'a.jpg', mimeType: 'image/jpeg', fileHash: 'd'.repeat(64),
+    });
+
+    const after = useNoteStore.getState().note!;
+    expect(after.fields.wine_name.text).toBe('既存のワイン名');
+    expect(after.fields.memo.text).toBe('既存のメモ');
+  });
+
+  it('12/13. HEIC等JPEG以外の選択はpreviewのみ設定しUNSUPPORTED_MEDIA_TYPEでfailedにする', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().setNote(newWineNote());
+
+    useNoteStore.getState().setPhotoUnsupported({
+      previewUrl: 'data:image/jpeg;base64,HEICPREVIEW', filename: 'photo.heic', mimeType: 'image/heic',
+    });
+
+    const after = useNoteStore.getState().note!;
+    expect(after.label_photo_url).toBe('data:image/jpeg;base64,HEICPREVIEW');
+    expect(after.photo_operation).toBe('sync');
+    expect(after.photo_sync_status).toBe('failed');
+    expect(after.photo_sync_error_code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    expect(after.photo_original_base64).toBeNull();
+    expect(after.photo_file_hash).toBeNull();
+  });
+
+  it('24. server未linkの写真解除はローカルidentityを即clearする（local-only）', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().setNote({
+      ...newWineNote(),
+      label_photo_url: 'data:image/jpeg;base64,X',
+      photo_asset_id: null,
+      photo_sync_status: 'local',
+      photo_operation: 'sync',
+      photo_original_base64: 'X',
+      photo_original_filename: 'a.jpg',
+      photo_original_mime_type: 'image/jpeg',
+      photo_file_hash: 'e'.repeat(64),
+      photo_request_id: 'req-1',
+    });
+
+    useNoteStore.getState().removePhoto();
+
+    const after = useNoteStore.getState().note!;
+    expect(after.label_photo_url).toBeNull();
+    expect(after.photo_sync_status).toBe('none');
+    expect(after.photo_operation).toBe('none');
+    expect(after.photo_asset_id).toBeNull();
+    expect(after.photo_original_base64).toBeNull();
+    expect(after.photo_original_filename).toBe('');
+    expect(after.photo_original_mime_type).toBe('');
+    expect(after.photo_file_hash).toBeNull();
+    expect(after.photo_request_id).toBeNull();
+  });
+
+  it('25/26. server-linked写真の解除はremoveへ保留し、unlinkまでidentityを保持する', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().setNote({
+      ...newWineNote(),
+      label_photo_url: 'data:image/jpeg;base64,X',
+      photo_asset_id: 'server-asset-1',
+      photo_request_id: 'req-1',
+      photo_file_hash: 'f'.repeat(64),
+      photo_original_filename: 'a.jpg',
+      photo_original_mime_type: 'image/jpeg',
+      photo_sync_status: 'synced',
+      photo_operation: 'none',
+    });
+
+    useNoteStore.getState().removePhoto();
+
+    const after = useNoteStore.getState().note!;
+    expect(after.label_photo_url).toBeNull();
+    expect(after.photo_operation).toBe('remove');
+    expect(after.photo_sync_status).toBe('local');
+    expect(after.photo_sync_error_code).toBeNull();
+    // unlink完了までidentityは保持する
+    expect(after.photo_asset_id).toBe('server-asset-1');
+    expect(after.photo_request_id).toBe('req-1');
+    expect(after.photo_file_hash).toBe('f'.repeat(64));
+  });
+
+  it('removePhotoはnoteが無ければ何もしない', async () => {
+    const { useNoteStore } = await import('../src/store/noteStore');
+    useNoteStore.getState().clear();
+    useNoteStore.getState().removePhoto();
+    expect(useNoteStore.getState().note).toBeNull();
+  });
+});

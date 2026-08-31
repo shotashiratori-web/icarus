@@ -128,6 +128,24 @@ describe('wineTastingNotePhotoAdapter.submit — sync（upload/finalize/link）'
     expect(lastCall.photo_operation).toBe('none');
   });
 
+  it('27. link成功時にphoto_original_base64をclearする（identity/filename/mimeType/hashは保持）', async () => {
+    const note = makeNote({ photo_asset_id: 'asset-existing', photo_request_id: 'req-existing' });
+    getNote.mockResolvedValue(note);
+    linkWineTastingNotePhoto.mockResolvedValue({ duplicate: false });
+    const adapter = await getAdapter();
+
+    await adapter.submit({ noteId: 'note-1' }, 'token');
+
+    const lastCall = saveNote.mock.calls[saveNote.mock.calls.length - 1][0];
+    expect(lastCall.photo_original_base64).toBeNull();
+    // local preview/identity/debug用のfieldはStage 23の方針どおり保持する
+    expect(lastCall.photo_asset_id).toBe('asset-existing');
+    expect(lastCall.photo_request_id).toBe('req-existing');
+    expect(lastCall.photo_original_filename).toBe('photo.jpg');
+    expect(lastCall.photo_original_mime_type).toBe('image/jpeg');
+    expect(lastCall.photo_file_hash).toBe('a'.repeat(64));
+  });
+
   it('13. upload失敗（コード無し）はUPLOAD_FAILEDへ分類する', async () => {
     const note = makeNote({ photo_asset_id: null });
     getNote.mockResolvedValue(note);

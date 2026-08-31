@@ -131,7 +131,16 @@ registerAdapter<WineTastingNotePhotoSubmissionPayload>({
 
     const afterLink = await getNote(payload.noteId);
     if (afterLink) {
-      await saveNote({ ...afterLink, photo_sync_status: 'synced', photo_sync_error_code: null, photo_operation: 'none' });
+      // Stage 1D-C Stage 22: link成功（=server正本が確立した）時点でOriginal Base64をclearする。
+      // label_photo_url（local preview）・photo_asset_id・photo_request_id・photo_file_hash・
+      // filename/mimeTypeは引き続き保持する（Stage 23: local preview/identity/debug/再表示のため）
+      await saveNote({
+        ...afterLink,
+        photo_sync_status: 'synced',
+        photo_sync_error_code: null,
+        photo_operation: 'none',
+        photo_original_base64: null,
+      });
     }
   },
   // フレームワーク側（Pending List表示用）は既存Field Logの分類をそのまま再利用する。
