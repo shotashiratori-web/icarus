@@ -34,6 +34,7 @@ import FoodEditorFormScreen from './screens/FoodEditorFormScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import { retryPendingWineTastingNotes } from './submission/wineTastingNoteSync';
+import { retryPendingWineTastingNotePhotos } from './submission/wineTastingNotePhotoSync';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
@@ -125,12 +126,22 @@ function AppRoutes() {
   // 専用エンジンは作らず既存Submission Frameworkを再利用する
   useEffect(() => {
     if (authState !== 'ready' || !idToken) return;
-    void retryPendingWineTastingNotes(idToken, { includeSyncing: true });
+    void (async () => {
+      // Stage 1D-B: 写真retryは本文retryの後（本文が先、Stage 25）。d1_note_id未確定のNoteは
+      // 写真retry-scan側で自然にskipされるため、ここでは単に順序だけを守ればよい
+      await retryPendingWineTastingNotes(idToken, { includeSyncing: true });
+      await retryPendingWineTastingNotePhotos(idToken, { includeUploading: true });
+    })();
   }, [authState, idToken]);
 
   useEffect(() => {
     if (authState !== 'ready' || !idToken) return;
-    const onOnline = () => void retryPendingWineTastingNotes(idToken);
+    const onOnline = () => {
+      void (async () => {
+        await retryPendingWineTastingNotes(idToken);
+        await retryPendingWineTastingNotePhotos(idToken);
+      })();
+    };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, [authState, idToken]);

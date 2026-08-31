@@ -1,4 +1,4 @@
-import { WINE_TASTING_NOTES_URL, wineTastingNoteByIdUrl } from '../config';
+import { WINE_TASTING_NOTES_URL, wineTastingNoteByIdUrl, wineTastingNoteAssetsUrl, wineTastingNoteLabelAssetUrl } from '../config';
 import { TokenExpiredError } from './icarusApi';
 
 export interface WineTastingNoteFieldsInput {
@@ -122,4 +122,72 @@ export async function updateWineTastingNote(
     throw new Error('ネットワークエラーが発生しました。通信状況を確認してください。');
   }
   return parseWineTastingNoteResponse(res);
+}
+
+interface WineTastingNoteAssetLinkResponse {
+  status: 'success' | 'error';
+  assetId?: string;
+  duplicate?: boolean;
+  message?: string;
+  code?: string;
+}
+
+// Stage 1D-A link API client。本文POST/PATCHとは非結合（Final Design比較A）。
+// v1ではrole='label'固定
+export async function linkWineTastingNotePhoto(noteId: string, assetId: string, idToken: string): Promise<{ duplicate: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(wineTastingNoteAssetsUrl(noteId), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ assetId, role: 'label' }),
+    });
+  } catch {
+    throw new Error('ネットワークエラーが発生しました。通信状況を確認してください。');
+  }
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
+  }
+  let json: WineTastingNoteAssetLinkResponse;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`サーバーエラー (HTTP ${res.status})`);
+  }
+  if (json.status !== 'success') {
+    throw new Error(json.message || '写真の紐付けに失敗しました');
+  }
+  return { duplicate: json.duplicate ?? false };
+}
+
+interface WineTastingNoteUnlinkResponse {
+  status: 'success' | 'error';
+  removed?: boolean;
+  message?: string;
+}
+
+// Stage 1D-A unlink API client。既存linkが無い場合もidempotent success
+export async function unlinkWineTastingNotePhoto(noteId: string, idToken: string): Promise<{ removed: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(wineTastingNoteLabelAssetUrl(noteId), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+  } catch {
+    throw new Error('ネットワークエラーが発生しました。通信状況を確認してください。');
+  }
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
+  }
+  let json: WineTastingNoteUnlinkResponse;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`サーバーエラー (HTTP ${res.status})`);
+  }
+  if (json.status !== 'success') {
+    throw new Error(json.message || '写真の紐付け解除に失敗しました');
+  }
+  return { removed: json.removed ?? false };
 }
