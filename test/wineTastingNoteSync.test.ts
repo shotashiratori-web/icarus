@@ -45,6 +45,7 @@ function makeNote(overrides: Partial<WineNote>): WineNote {
     photo_sync_error_code: null,
     photo_operation: 'none',
     photo_asset_id: null,
+    photo_server_linked: false,
     photo_original_base64: null,
     photo_original_filename: '',
     photo_original_mime_type: '',

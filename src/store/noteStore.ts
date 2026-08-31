@@ -21,7 +21,9 @@ type NoteStore = {
   // Stage 1D-C: HEIC等JPEG以外の選択時。previewは出すがsync対象外として即failedにする（Stage 9）
   setPhotoUnsupported: (input: { previewUrl: string; filename: string; mimeType: string }) => void;
   // Stage 1D-C: 写真削除。server未linkならローカルidentityを即clear（Stage 17）、
-  // server-linkedならunlink完了までidentityを保持したままphoto_operation='remove'にする（Stage 18）
+  // server-linkedならunlink完了までidentityを保持したままphoto_operation='remove'にする（Stage 18）。
+  // 判定はphoto_server_linkedで行う（photo_asset_idは新写真選択のたびリセットされるcandidate用の
+  // fieldであり、「serverに旧写真のlinkが残っているか」を表さないため。Pre-PR監査で修正）
   removePhoto: () => void;
   setWineId: (wineId: string | null) => void;
   setSyncStatus: (status: WineNote['sync_status']) => void;
@@ -70,6 +72,8 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
         // 新しい写真は別Photo Asset intent。旧Assetへの参照は持ち込まない。
         // requestIdは新しいFileを選んだこの瞬間に発行する（Stage 7）。同じ写真のretryでは
         // adapter側が既存値をそのまま使い回すため、ここで再生成されることはない
+        // 注意: photo_server_linkedはここで変更しない。旧写真が既にserver linkされていた場合、
+        // 新写真を選んだだけではserver側のlinkは消えていないため（Pre-PR監査で明確化）
         photo_asset_id: null,
         photo_request_id: crypto.randomUUID(),
         photo_original_base64: input.originalBase64,
@@ -105,7 +109,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   removePhoto: () => {
     const { note } = get();
     if (!note) return;
-    if (note.photo_asset_id) {
+    if (note.photo_server_linked) {
       set({
         note: {
           ...note,
@@ -126,6 +130,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
         photo_sync_status: 'none',
         photo_sync_error_code: null,
         photo_asset_id: null,
+        photo_server_linked: false,
         photo_original_base64: null,
         photo_original_filename: '',
         photo_original_mime_type: '',

@@ -53,25 +53,29 @@ registerAdapter<WineTastingNotePhotoSubmissionPayload>({
         await saveNote({
           ...note,
           photo_sync_status: 'none', photo_sync_error_code: null, photo_operation: 'none',
-          photo_asset_id: null, photo_original_base64: null, photo_original_filename: '',
-          photo_original_mime_type: '', photo_file_hash: null, photo_request_id: null,
+          photo_asset_id: null, photo_server_linked: false, photo_original_base64: null,
+          photo_original_filename: '', photo_original_mime_type: '', photo_file_hash: null,
+          photo_request_id: null,
         });
         return;
       }
       try {
         await unlinkWineTastingNotePhoto(note.d1_note_id, idToken);
       } catch (err) {
+        // Pre-PR監査: unlink失敗時はphoto_server_linkedを変更しない（trueのまま維持）。
+        // まだserver側にlinkが残っている可能性が高く、falseにするとretryされなくなる
         await markFailed_(payload.noteId, 'UNLINK_FAILED');
         throw err;
       }
-      // Stage 20: server unlink成功後にのみidentityを整理する
+      // Stage 20 / Pre-PR監査: server unlink成功後にのみidentityを整理し、photo_server_linkedをfalseへ
       const afterUnlink = await getNote(payload.noteId);
       if (afterUnlink) {
         await saveNote({
           ...afterUnlink,
           photo_sync_status: 'none', photo_sync_error_code: null, photo_operation: 'none',
-          photo_asset_id: null, photo_original_base64: null, photo_original_filename: '',
-          photo_original_mime_type: '', photo_file_hash: null, photo_request_id: null,
+          photo_asset_id: null, photo_server_linked: false, photo_original_base64: null,
+          photo_original_filename: '', photo_original_mime_type: '', photo_file_hash: null,
+          photo_request_id: null,
         });
       }
       return;
@@ -133,12 +137,15 @@ registerAdapter<WineTastingNotePhotoSubmissionPayload>({
     if (afterLink) {
       // Stage 1D-C Stage 22: link成功（=server正本が確立した）時点でOriginal Base64をclearする。
       // label_photo_url（local preview）・photo_asset_id・photo_request_id・photo_file_hash・
-      // filename/mimeTypeは引き続き保持する（Stage 23: local preview/identity/debug/再表示のため）
+      // filename/mimeTypeは引き続き保持する（Stage 23: local preview/identity/debug/再表示のため）。
+      // Pre-PR監査: photo_server_linked=trueもここで確定する（次に別の写真へ差し替えても、
+      // これが「serverに旧写真のlinkが残っている」ことを覚えておくための唯一のsourceになる）
       await saveNote({
         ...afterLink,
         photo_sync_status: 'synced',
         photo_sync_error_code: null,
         photo_operation: 'none',
+        photo_server_linked: true,
         photo_original_base64: null,
       });
     }

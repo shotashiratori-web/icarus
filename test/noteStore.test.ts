@@ -193,6 +193,117 @@ describe('noteStore.setPhotoSelected / setPhotoUnsupported / removePhoto', () =>
     expect(after.photo_file_hash).toBeNull();
   });
 
+  // Pre-PR監査（Stage 1D-C push前に発見）: photo_asset_idは新写真選択のたびリセットされる
+  // candidate用のfieldであり、「serverに旧写真のlinkが残っているか」を表さない。
+  // removePhoto()の分岐をphoto_server_linkedへ切り替えたことで、以下の差し替え中削除ケースで
+  // 旧server linkが孤立（orphan）しなくなることを検証する。
+  describe('Pre-PR監査: server-linked写真の差し替え中に削除しても旧linkが孤立しない', () => {
+    it('1. server-linked → 新JPEG選択 → 削除 → unlink保留（operation=remove）', async () => {
+      const { useNoteStore } = await import('../src/store/noteStore');
+      useNoteStore.getState().setNote({
+        ...newWineNote(),
+        d1_note_id: 'd1-note-1',
+        photo_asset_id: 'OLD_ASSET',
+        photo_server_linked: true,
+        photo_sync_status: 'synced',
+        photo_operation: 'none',
+      });
+
+      useNoteStore.getState().setPhotoSelected({
+        previewUrl: 'data:image/jpeg;base64,NEW', originalBase64: 'NEW_ORIGINAL',
+        filename: 'new.jpg', mimeType: 'image/jpeg', fileHash: 'b'.repeat(64),
+      });
+      // 新写真選択直後、candidateのphoto_asset_idはリセットされるが、旧server linkの記憶は残る
+      expect(useNoteStore.getState().note!.photo_asset_id).toBeNull();
+      expect(useNoteStore.getState().note!.photo_server_linked).toBe(true);
+
+      useNoteStore.getState().removePhoto();
+
+      const after = useNoteStore.getState().note!;
+      expect(after.photo_operation).toBe('remove');
+      expect(after.photo_sync_status).toBe('local');
+    });
+
+    it('2. server-linked → 新JPEG upload失敗 → 削除 → unlink保留（operation=remove）', async () => {
+      const { useNoteStore } = await import('../src/store/noteStore');
+      // upload失敗直後の状態を再現：candidateはasset_id未確定のままfailedへ。旧server linkは無傷
+      useNoteStore.getState().setNote({
+        ...newWineNote(),
+        d1_note_id: 'd1-note-1',
+        photo_asset_id: null,
+        photo_server_linked: true,
+        photo_sync_status: 'failed',
+        photo_sync_error_code: 'UPLOAD_FAILED',
+        photo_operation: 'sync',
+      });
+
+      useNoteStore.getState().removePhoto();
+
+      const after = useNoteStore.getState().note!;
+      expect(after.photo_operation).toBe('remove');
+    });
+
+    it('3. server-linked → HEIC選択 → 削除 → unlink保留（operation=remove）', async () => {
+      const { useNoteStore } = await import('../src/store/noteStore');
+      useNoteStore.getState().setNote({
+        ...newWineNote(),
+        d1_note_id: 'd1-note-1',
+        photo_asset_id: 'OLD_ASSET',
+        photo_server_linked: true,
+        photo_sync_status: 'synced',
+        photo_operation: 'none',
+      });
+
+      useNoteStore.getState().setPhotoUnsupported({
+        previewUrl: 'data:image/jpeg;base64,HEIC', filename: 'photo.heic', mimeType: 'image/heic',
+      });
+      expect(useNoteStore.getState().note!.photo_asset_id).toBeNull();
+      expect(useNoteStore.getState().note!.photo_server_linked).toBe(true);
+
+      useNoteStore.getState().removePhoto();
+
+      const after = useNoteStore.getState().note!;
+      expect(after.photo_operation).toBe('remove');
+    });
+
+    it('4. server-linked → 新Asset finalize成功/link失敗 → 削除 → unlink保留（operation=remove）', async () => {
+      const { useNoteStore } = await import('../src/store/noteStore');
+      // finalize成功でcandidateのasset_idは新しい値に確定するが、link失敗のためphoto_server_linkedは
+      // まだ旧写真を指したまま（trueのまま、adapterが変更しない）
+      useNoteStore.getState().setNote({
+        ...newWineNote(),
+        d1_note_id: 'd1-note-1',
+        photo_asset_id: 'NEW_CANDIDATE_ASSET',
+        photo_server_linked: true,
+        photo_sync_status: 'failed',
+        photo_sync_error_code: 'LINK_FAILED',
+        photo_operation: 'sync',
+      });
+
+      useNoteStore.getState().removePhoto();
+
+      const after = useNoteStore.getState().note!;
+      expect(after.photo_operation).toBe('remove');
+    });
+
+    it('5. 純粋local-only写真（一度もserver linkしていない） → 削除 → server unlink不要（operation=none）', async () => {
+      const { useNoteStore } = await import('../src/store/noteStore');
+      useNoteStore.getState().setNote({
+        ...newWineNote(),
+        d1_note_id: null,
+        photo_asset_id: null,
+        photo_server_linked: false,
+        photo_sync_status: 'local',
+        photo_operation: 'sync',
+      });
+
+      useNoteStore.getState().removePhoto();
+
+      const after = useNoteStore.getState().note!;
+      expect(after.photo_operation).toBe('none');
+    });
+  });
+
   it('24. server未linkの写真解除はローカルidentityを即clearする（local-only）', async () => {
     const { useNoteStore } = await import('../src/store/noteStore');
     useNoteStore.getState().setNote({
@@ -228,6 +339,7 @@ describe('noteStore.setPhotoSelected / setPhotoUnsupported / removePhoto', () =>
       ...newWineNote(),
       label_photo_url: 'data:image/jpeg;base64,X',
       photo_asset_id: 'server-asset-1',
+      photo_server_linked: true,
       photo_request_id: 'req-1',
       photo_file_hash: 'f'.repeat(64),
       photo_original_filename: 'a.jpg',

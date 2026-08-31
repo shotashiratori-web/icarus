@@ -119,6 +119,10 @@ export function normalizeNote(note: WineNote): WineNote {
     photo_sync_error_code: note.photo_sync_error_code ?? null,
     photo_operation: note.photo_operation ?? 'none',
     photo_asset_id: note.photo_asset_id ?? null,
+    // Stage 1D-C（Pre-PR監査で追加）。フィールド自体を持たない旧レコードのdefaultはfalseだが、
+    // 既にphoto_sync_status='synced'かつphoto_asset_id有りのレコード（本フィールド追加前にsync済み）
+    // だけは、server linkが実在する可能性が高いためtrueへ補完する（安全側に倒す）
+    photo_server_linked: note.photo_server_linked ?? (note.photo_sync_status === 'synced' && !!note.photo_asset_id),
     photo_original_base64: note.photo_original_base64 ?? null,
     photo_original_filename: note.photo_original_filename ?? '',
     photo_original_mime_type: note.photo_original_mime_type ?? '',
