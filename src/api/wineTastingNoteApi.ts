@@ -32,6 +32,10 @@ export interface WineTastingNoteItem {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  // Stage 1D-D-A: server signed URL（icarus-api Stage 1D-Aで先行実装済み）。
+  // GET /wine-tasting-notes・GET /:id のみ含む（POST/PATCH応答にはフィールド自体が存在しないためoptional）。
+  // linkされたlabel Assetがstatus='ready'の場合のみ値が入り、それ以外はnull
+  photoUrl?: string | null;
 }
 
 interface WineTastingNoteApiResponse {

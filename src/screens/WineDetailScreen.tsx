@@ -102,6 +102,9 @@ export default function WineDetailScreen({ go, entry }: Props) {
               <div className={styles.tastingNoteList}>
                 {tastingNotes.map((note) => (
                   <div key={note.id} className={styles.tastingNoteCard}>
+                    {note.photoUrl && (
+                      <img className={styles.tastingNotePhoto} src={note.photoUrl} alt="" />
+                    )}
                     {(note.tastingDate || note.location) && (
                       <div className={styles.tastingNoteMeta}>
                         {note.tastingDate && <span>{note.tastingDate}</span>}
