@@ -58,6 +58,7 @@ function note(overrides: Partial<WineTastingNoteItem> = {}): WineTastingNoteItem
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
     createdBy: 'staff@example.com',
+    photoUrl: null,
     ...overrides,
   };
 }
@@ -197,6 +198,27 @@ describe('WineDetailScreen — Tasting Notes（Stage 1C-B）', () => {
     const { container } = render(<WineDetailScreen go={vi.fn()} entry={wine()} />);
 
     await waitFor(() => expect(container.querySelectorAll('[class*="tastingNoteCard"]')).toHaveLength(2));
+  });
+
+  it('17. photoUrlがあればカード内に<img>を描画する（Stage 1D-D-A）', async () => {
+    fetchWineTastingNotesByWine.mockResolvedValue([
+      note({ id: 'n1', photoUrl: 'https://icarus-api.example.workers.dev/assets/a1/image?variant=thumbnail&expires=1&signature=sig' }),
+    ]);
+    const { container } = render(<WineDetailScreen go={vi.fn()} entry={wine()} />);
+
+    await waitFor(() => {
+      const img = container.querySelector('[class*="tastingNotePhoto"]') as HTMLImageElement | null;
+      expect(img).not.toBeNull();
+      expect(img!.src).toBe('https://icarus-api.example.workers.dev/assets/a1/image?variant=thumbnail&expires=1&signature=sig');
+    });
+  });
+
+  it('18. photoUrlがnullなら<img>を描画しない（プレースホルダーも出さない、既存レイアウトのまま）', async () => {
+    fetchWineTastingNotesByWine.mockResolvedValue([note({ id: 'n1', photoUrl: null, memoText: '写真なしメモ' })]);
+    const { container } = render(<WineDetailScreen go={vi.fn()} entry={wine()} />);
+
+    await waitFor(() => expect(screen.getByText('写真なしメモ')).toBeInTheDocument());
+    expect(container.querySelector('[class*="tastingNotePhoto"]')).toBeNull();
   });
 });
 
