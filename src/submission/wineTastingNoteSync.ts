@@ -34,15 +34,19 @@ export function buildWineTastingNotePayload(note: WineNote): WineTastingNoteSubm
 // instance起動直後はinFlightが空のため、前回instanceがsyncing状態のまま強制終了/crash/reload/
 // OS killで残したNoteも、次回起動時のretryPendingWineTastingNotes(includeSyncing:true)経由で
 // ここへ到達し、正しく再送される（stale syncing recovery）
+//
+// inFlight.add()は最初のawaitより前、同期的に行う（wineTastingNotePhotoSync.tsと同型）。
+// has()チェックとadd()の間にawaitを挟むと、同時に呼ばれた2回目の呼び出しがhas()チェック時点で
+// まだ登録されていないinFlightを通過してしまう（check-then-actの非atomic競合）
 export async function syncWineTastingNote(noteId: string, idToken: string | null): Promise<void> {
   if (!idToken || !navigator.onLine) return;
   if (inFlight.has(noteId)) return;
-
-  const note = await getNote(noteId);
-  if (!note || note.sync_status === 'synced') return;
-
   inFlight.add(noteId);
+
   try {
+    const note = await getNote(noteId);
+    if (!note || note.sync_status === 'synced') return;
+
     await saveNote({ ...note, sync_status: 'syncing' });
 
     const payload = buildWineTastingNotePayload(note);

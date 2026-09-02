@@ -72,6 +72,21 @@ describe('syncWineTastingNote', () => {
     Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true });
   });
 
+  it('同一noteIdの同時呼び出しはinFlightで二重送信を防止する（写真sync側test #25と同型）', async () => {
+    const note = makeNote({ sync_status: 'local' });
+    getNote.mockResolvedValue(note);
+    let resolveSubmit!: (v: { ok: true }) => void;
+    submitWithFallback.mockReturnValue(new Promise((resolve) => { resolveSubmit = resolve; }));
+    const { syncWineTastingNote } = await import('../src/submission/wineTastingNoteSync');
+
+    const first = syncWineTastingNote('note-1', 'token');
+    const second = syncWineTastingNote('note-1', 'token'); // 1回目が完了する前に呼ぶ
+    resolveSubmit({ ok: true });
+    await Promise.all([first, second]);
+
+    expect(submitWithFallback).toHaveBeenCalledTimes(1);
+  });
+
   it('Stage 1D-B: 本文sync成功時、保留中の写真syncをfire-and-forgetで起動する', async () => {
     const note = makeNote({ sync_status: 'local' });
     getNote.mockResolvedValueOnce(note).mockResolvedValueOnce(note);
