@@ -176,16 +176,19 @@ describe('noteStore.setPhotoSelected / setPhotoUnsupported / removePhoto', () =>
     expect(after.fields.memo.text).toBe('既存のメモ');
   });
 
-  it('12/13. HEIC等JPEG以外の選択はpreviewのみ設定しUNSUPPORTED_MEDIA_TYPEでfailedにする', async () => {
+  // HEIC-B（HEIC Support v1）でHEIC/HEIFはsetPhotoSelected経由の対応formatへ移ったため、
+  // このsetPhotoUnsupported経路の代表例はPNG等の非対応formatへ更新した（noteStore自体は
+  // formatを判定しない・呼び出し元の値をそのまま保存するだけなので、挙動は変更していない）
+  it('12/13. PNG等JPEG/HEIC/HEIF以外の選択はpreviewのみ設定しUNSUPPORTED_MEDIA_TYPEでfailedにする', async () => {
     const { useNoteStore } = await import('../src/store/noteStore');
     useNoteStore.getState().setNote(newWineNote());
 
     useNoteStore.getState().setPhotoUnsupported({
-      previewUrl: 'data:image/jpeg;base64,HEICPREVIEW', filename: 'photo.heic', mimeType: 'image/heic',
+      previewUrl: 'data:image/jpeg;base64,PNGPREVIEW', filename: 'photo.png', mimeType: 'image/png',
     });
 
     const after = useNoteStore.getState().note!;
-    expect(after.label_photo_url).toBe('data:image/jpeg;base64,HEICPREVIEW');
+    expect(after.label_photo_url).toBe('data:image/jpeg;base64,PNGPREVIEW');
     expect(after.photo_operation).toBe('sync');
     expect(after.photo_sync_status).toBe('failed');
     expect(after.photo_sync_error_code).toBe('UNSUPPORTED_MEDIA_TYPE');
@@ -243,7 +246,10 @@ describe('noteStore.setPhotoSelected / setPhotoUnsupported / removePhoto', () =>
       expect(after.photo_operation).toBe('remove');
     });
 
-    it('3. server-linked → HEIC選択 → 削除 → unlink保留（operation=remove）', async () => {
+    // HEIC-B（HEIC Support v1）: HEICはsetPhotoSelected経由の対応formatになったため、
+    // 「新HEIC選択」はJPEGと同じ経路（test 1）で検証する。photo_server_linkedの保持ロジックは
+    // mimeTypeを見ないため、この形でも旧server linkの孤立防止（replacement safety）を確認できる
+    it('3. server-linked → 新HEIC選択 → 削除 → unlink保留（operation=remove、HEIC replacement safety）', async () => {
       const { useNoteStore } = await import('../src/store/noteStore');
       useNoteStore.getState().setNote({
         ...newWineNote(),
@@ -254,11 +260,14 @@ describe('noteStore.setPhotoSelected / setPhotoUnsupported / removePhoto', () =>
         photo_operation: 'none',
       });
 
-      useNoteStore.getState().setPhotoUnsupported({
-        previewUrl: 'data:image/jpeg;base64,HEIC', filename: 'photo.heic', mimeType: 'image/heic',
+      useNoteStore.getState().setPhotoSelected({
+        previewUrl: 'data:image/jpeg;base64,HEICPREVIEW', originalBase64: 'HEIC_ORIGINAL',
+        filename: 'new.heic', mimeType: 'image/heic', fileHash: 'c'.repeat(64),
       });
+      // 新写真選択直後、candidateのphoto_asset_idはリセットされるが、旧server linkの記憶は残る
       expect(useNoteStore.getState().note!.photo_asset_id).toBeNull();
       expect(useNoteStore.getState().note!.photo_server_linked).toBe(true);
+      expect(useNoteStore.getState().note!.photo_original_mime_type).toBe('image/heic');
 
       useNoteStore.getState().removePhoto();
 

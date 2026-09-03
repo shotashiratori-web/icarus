@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { useNoteStore } from '../store/noteStore';
 import { getNote } from '../db/localDB';
 import { newWineNote } from '../types/wine';
-import { resizeToJpeg, readFileAsBase64, sha256Hex, isHeicFile, TokenExpiredError } from '../api/icarusApi';
+import { resizeToJpeg, readFileAsBase64, sha256Hex, convertHeicToJpeg, TokenExpiredError } from '../api/icarusApi';
 import { fetchWine } from '../api/wineEntityApi';
 import { useAuth } from '../context/AuthContext';
 import { syncWineTastingNote } from '../submission/wineTastingNoteSync';
@@ -14,12 +14,31 @@ import styles from './RecordScreen.module.css';
 
 type Props = { noteId: string | null; go: (s: Screen) => void };
 
-// Stage 1D-C: v1はJPEGのみをserver syncの対象とする（既存Photo Asset ALLOWED_ASSET_MIME_TYPESと同じ契約）。
-// file.typeが空文字になる環境があるため、既存isHeicFile()と同じ理由でfilenameへのフォールバックを持つ
-function isJpegFile(file: File): boolean {
-  if (file.type) return file.type === 'image/jpeg';
+// HEIC Support v1（HEIC-B）: server syncの対象はimage/jpeg・image/heic・image/heifの3種
+//（既存Photo Asset ALLOWED_ASSET_MIME_TYPESと同じ契約、HEIC-Aでserver側も拡張済み）。
+// file.typeがブラウザ/OSにより空文字や不正確になる環境があるため、file.typeを優先しつつ
+// 拡張子で補完する。application/octet-stream等を推測でHEIC/JPEG扱いすることはしない
+// （曖昧なまま通すとPhoto Asset側のmime_type契約と食い違う恐れがあるため）
+export function resolvePhotoMimeType(file: File): string {
+  const type = file.type.toLowerCase();
+  if (type === 'image/heic') return 'image/heic';
+  if (type === 'image/heif') return 'image/heif';
+  if (type === 'image/jpeg') return 'image/jpeg';
+
   const name = file.name.toLowerCase();
-  return name.endsWith('.jpg') || name.endsWith('.jpeg');
+  if (name.endsWith('.heic')) return 'image/heic';
+  if (name.endsWith('.heif')) return 'image/heif';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+
+  return type;
+}
+
+function isHeicOrHeifMimeType(mimeType: string): boolean {
+  return mimeType === 'image/heic' || mimeType === 'image/heif';
+}
+
+function isSupportedPhotoMimeType(mimeType: string): boolean {
+  return mimeType === 'image/jpeg' || isHeicOrHeifMimeType(mimeType);
 }
 
 export default function RecordScreen({ noteId, go }: Props) {
@@ -40,18 +59,25 @@ export default function RecordScreen({ noteId, go }: Props) {
     setPhotoBusy(true);
     setPhotoError('');
     try {
-      // Stage 4: previewはresizeToJpegの結果を即表示する。Photo Asset uploadの完了を待たない
-      const previewBase64 = await resizeToJpeg(file);
+      const mimeType = resolvePhotoMimeType(file);
+      const heic = isHeicOrHeifMimeType(mimeType);
+
+      // HEIC-B: previewはresizeToJpegの結果を即表示する。Photo Asset uploadの完了を待たない。
+      // HEICはbrowserのcanvasで直接decodeできない環境があるため、preview専用にheic2any
+      // （convertHeicToJpeg、Field Log「PC一括写真送信」で本番実績のある同じ関数）でJPEG化してから
+      // resizeToJpegへ渡す。この変換結果はpreview（label_photo_url）にのみ使い、Originalには使わない
+      const previewSourceFile = heic ? await convertHeicToJpeg(file) : file;
+      const previewBase64 = await resizeToJpeg(previewSourceFile);
       const previewUrl = `data:image/jpeg;base64,${previewBase64}`;
 
-      // Stage 8/9: v1はJPEGのみをserver syncの対象とする。HEIC等はpreviewだけ出しsyncはfailedにする
-      // （preview成功 ≠ server sync可能。既存Photo Asset ALLOWED_ASSET_MIME_TYPES契約は変更しない）
-      if (!isJpegFile(file)) {
-        setPhotoUnsupported({ previewUrl, filename: file.name, mimeType: file.type || (isHeicFile(file) ? 'image/heic' : '') });
+      // v1でserver syncの対象とするのはJPEG/HEIC/HEIFのみ（Photo Asset ALLOWED_ASSET_MIME_TYPES契約と同じ）
+      if (!isSupportedPhotoMimeType(mimeType)) {
+        setPhotoUnsupported({ previewUrl, filename: file.name, mimeType });
         return;
       }
 
-      // Stage 3/5: JPEGのOriginal（無加工）とhashを並列取得。resize後previewとは別に保持する
+      // Original（無加工の元File）とhashを並列取得。resize後previewとは別に保持する。
+      // HEICでもOriginalは変換しない——heic2any変換結果はpreview専用（Original保持の原則）
       const [originalBase64, fileHash] = await Promise.all([
         readFileAsBase64(file),
         sha256Hex(file),
@@ -60,7 +86,7 @@ export default function RecordScreen({ noteId, go }: Props) {
         previewUrl,
         originalBase64,
         filename: file.name,
-        mimeType: 'image/jpeg',
+        mimeType,
         fileHash,
       });
     } catch {
