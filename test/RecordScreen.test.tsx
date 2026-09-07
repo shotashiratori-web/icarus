@@ -196,6 +196,15 @@ describe('RecordScreen — 写真選択（Stage 1D-C）', () => {
     expect(sha256Hex).not.toHaveBeenCalled();
     expect(screen.queryByText('再試行')).not.toBeInTheDocument();
   });
+
+  it('iOS Photo Picker Fix: 写真inputはaccept="image/*"のみで、capture属性を持たない（写真ライブラリからの選択を強制カメラ起動でブロックしない）', async () => {
+    render(<RecordScreen noteId={null} go={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('📷 写真を追加')).toBeInTheDocument());
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).toHaveAttribute('accept', 'image/*');
+    expect(input).not.toHaveAttribute('capture');
+  });
 });
 
 describe('resolvePhotoMimeType（HEIC-B、MIME判定）', () => {
