@@ -232,7 +232,6 @@ export default function RecordScreen({ noteId, go }: Props) {
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               className={styles.fileInput}
               onChange={handlePhotoChange}
             />
