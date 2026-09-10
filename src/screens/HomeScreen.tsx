@@ -149,9 +149,15 @@ export default function HomeScreen({ go }: Props) {
               </div>
               <ul className={styles.miniList}>
                 {recentProcessing.map(item => (
-                  <li key={item.workId} className={styles.miniItem}>
-                    <span className={styles.miniName}>{item.processingName}</span>
-                    <span className={styles.miniDate}>{item.datetime.slice(5, 10)}</span>
+                  <li key={item.workId} className={styles.miniItemRow}>
+                    <button
+                      type="button"
+                      className={styles.miniItem}
+                      onClick={() => go({ name: 'workDetail', workId: item.workId })}
+                    >
+                      <span className={styles.miniName}>{item.processingName}</span>
+                      <span className={styles.miniDate}>{item.datetime.slice(5, 10)}</span>
+                    </button>
                   </li>
                 ))}
               </ul>
