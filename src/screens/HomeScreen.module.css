@@ -166,16 +166,23 @@
   background: var(--color-surface);
 }
 
+.miniItemRow + .miniItemRow {
+  border-top: 1px solid var(--color-border);
+}
+
 .miniItem {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
+  width: 100%;
+  text-align: left;
+  color: inherit;
 }
 
-.miniItem + .miniItem {
-  border-top: 1px solid var(--color-border);
+.miniItem:active {
+  background: var(--color-bg);
 }
 
 .miniName {

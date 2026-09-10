@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import HomeScreen from '../src/screens/HomeScreen';
 import { mockUseAuth } from './testAuth';
 import type { FieldObservation, WorkLogItem } from '../src/types/fieldLog';
@@ -103,5 +104,66 @@ describe('HomeScreen: 最近の観察/最近の作業 認証経路', () => {
 
     expect(await screen.findByText('フィールドログを記録')).toBeInTheDocument();
     expect(screen.queryByText('最近の観察')).not.toBeInTheDocument();
+  });
+});
+
+// 「最近の作業」ミニリストのタップ可能化（Work Log Staff UX Completion Audit、Home→追記導線の短縮）。
+// 既存デザイン（miniList内のflex行）を崩さず、行全体をnative <button>のタップ領域にした
+describe('HomeScreen: 最近の作業ミニリストのタップ可能化', () => {
+  beforeEach(() => {
+    requestSilentIdToken.mockReset();
+    fetchRecentFieldObservations.mockReset().mockResolvedValue([]);
+    fetchRecentWorkLogs.mockReset().mockResolvedValue([]);
+    authMock.current = mockUseAuth();
+  });
+
+  it('7. 最近の作業1件をタップすると正しいworkIdでWorkDetailへ遷移する', async () => {
+    fetchRecentWorkLogs.mockResolvedValue([workLog({ workId: 'work-42', processingName: '梅干し仕込み' })]);
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+
+    const item = await screen.findByRole('button', { name: /梅干し仕込み/ });
+    await userEvent.click(item);
+    expect(go).toHaveBeenCalledWith({ name: 'workDetail', workId: 'work-42' });
+  });
+
+  it('8. 「もっと見る」は従来通り一覧（processing）へ遷移する', async () => {
+    fetchRecentWorkLogs.mockResolvedValue([workLog()]);
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+
+    await screen.findByText('塩漬け');
+    await userEvent.click(screen.getByRole('button', { name: 'もっと見る' }));
+    expect(go).toHaveBeenCalledWith({ name: 'processing' });
+  });
+
+  it('9. 最近の作業が0件でもセクション自体が表示されず、崩れない', async () => {
+    fetchRecentWorkLogs.mockResolvedValue([]);
+    render(<HomeScreen go={vi.fn()} />);
+
+    expect(await screen.findByText('フィールドログを記録')).toBeInTheDocument();
+    expect(screen.queryByText('最近の作業')).not.toBeInTheDocument();
+  });
+
+  it('10. photoUrlを持つ項目でも行のタップは正しく動く', async () => {
+    fetchRecentWorkLogs.mockResolvedValue([
+      workLog({ workId: 'work-99', processingName: '写真付き作業', photoUrl: 'https://example.com/a.jpg' }),
+    ]);
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+
+    const item = await screen.findByRole('button', { name: /写真付き作業/ });
+    await userEvent.click(item);
+    expect(go).toHaveBeenCalledWith({ name: 'workDetail', workId: 'work-99' });
+  });
+
+  it('11. 行はネイティブbutton要素で、フォーカス可能（キーボード操作可能）', async () => {
+    fetchRecentWorkLogs.mockResolvedValue([workLog({ workId: 'work-7', processingName: 'キーボードテスト' })]);
+    render(<HomeScreen go={vi.fn()} />);
+
+    const item = await screen.findByRole('button', { name: /キーボードテスト/ });
+    expect(item.tagName).toBe('BUTTON');
+    item.focus();
+    expect(item).toHaveFocus();
   });
 });
