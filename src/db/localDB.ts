@@ -191,6 +191,15 @@ export async function loadWorkLogDraft(requestId: string): Promise<WorkLogDraft 
   return db.get(WORK_LOG_DRAFT_STORE, workLogDraftKey(requestId));
 }
 
+// 「未送信の下書き」一覧表示用（ProcessingScreen）。まだSubmission Queueを持たないため、
+// ここでは送信そのものを一度も試みていない/失敗した下書きを区別せず、work_log_draftに
+// 残っている全件を新しい順に返すだけに留める
+export async function listWorkLogDrafts(): Promise<WorkLogDraft[]> {
+  const db = await getDB();
+  const all: WorkLogDraft[] = await db.getAll(WORK_LOG_DRAFT_STORE);
+  return all.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
 export async function clearWorkLogDraft(requestId: string): Promise<void> {
   const db = await getDB();
   await db.delete(WORK_LOG_DRAFT_STORE, workLogDraftKey(requestId));

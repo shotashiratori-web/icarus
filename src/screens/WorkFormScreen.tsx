@@ -3,7 +3,7 @@ import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
 import { submitWork, WorkProcessingError, NetworkUnknownError } from '../api/workApi';
 import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
-import { saveWorkLogDraft, clearWorkLogDraft } from '../db/localDB';
+import { saveWorkLogDraft, loadWorkLogDraft, clearWorkLogDraft } from '../db/localDB';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import styles from './WorkFormScreen.module.css';
@@ -19,13 +19,16 @@ type Props = {
   mode: WorkFormMode;
   workId?: string;
   workTitle?: string;
+  // 指定時は新規requestIdを発行せず、このrequestIdの下書きを明示的に再開する
+  // （「未送信の下書き」一覧からの「続きを編集」導線専用。指定が無ければ常に完全な新規draft）
+  draftRequestId?: string;
 };
 
-export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
+export default function WorkFormScreen({ go, mode, workId, workTitle, draftRequestId }: Props) {
   const { idToken, userEmail, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const [phase, setPhase] = useState<Phase>('form');
 
-  const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState<string>(() => draftRequestId ?? crypto.randomUUID());
   const [title, setTitle] = useState('');
   const [type, setType] = useState('');
   const [content, setContent] = useState('');
@@ -37,16 +40,36 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
 
   const [outcome, setOutcome] = useState<SendOutcome | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftLoadedRef = useRef(false);
 
   const backTarget: Screen = mode === 'append' && workId
     ? { name: 'workDetail', workId }
     : { name: 'processing' };
 
+  // ── 下書きの明示的再開（draftRequestId指定時のみ・mount時に1回）──────────
+  // 「未送信の下書き」一覧からの「続きを編集」経由でしか発火しない。mode/workId等からの
+  // 自動判定は行わない——同一mode/workIdで複数のdraftが同時に存在しうる（Draft Identity Fix）ため、
+  // どれを再開したいかはrequestIdでしか一意に決まらない
+  useEffect(() => {
+    if (!draftRequestId || draftLoadedRef.current) return;
+    draftLoadedRef.current = true;
+    void loadWorkLogDraft(draftRequestId).then((draft) => {
+      if (!draft) return;
+      setTitle(draft.title ?? '');
+      setType(draft.type ?? '');
+      setContent(draft.content);
+      setDatetime(draft.datetime);
+      setCaption(draft.caption ?? '');
+      if (draft.photoBase64) {
+        setPhotoBase64(draft.photoBase64);
+        setPreviewUrl(`data:${draft.photoMimeType ?? 'image/jpeg'};base64,${draft.photoBase64}`);
+      }
+    });
+  }, [draftRequestId]);
+
   // ── 下書き保存（UX-009: 未保存入力の消失を防ぐ。Field Logの下書き機構と同じ思想）────
-  // Work Log Draft Identity Fix: keyはrequestId由来（`work:${requestId}`）。requestIdはmount時に
-  // 毎回新規発行するため、このスクリーンが自動で他のattemptのdraftを読みに行くことはない
-  // （＝新規作成/追記を開くたびに常にまっさらな状態から始まる。過去の保留中attemptの再編集は
-  // Pending List等、requestIdを明示的に指定できる導線からのみ行う——現時点ではその導線は未実装）。
+  // Work Log Draft Identity Fix: keyはrequestId由来（`work:${requestId}`）。draftRequestId未指定なら
+  // mount時に新規requestIdを発行するため、新規作成/追記を開くたびに常にまっさらな状態から始まる。
   // sending/complete中は保存しない（送信結果の確定待ち・完了画面のUI状態を上書きしないため）
   useEffect(() => {
     if (phase === 'sending' || phase === 'complete') return;

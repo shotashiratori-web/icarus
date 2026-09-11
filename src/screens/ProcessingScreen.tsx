@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import {
   useWorkSearchStore, isFiltered, type HasPhotoOption, type WorkSearchConditions,
 } from '../store/workSearchStore';
+import { listWorkLogDrafts, type WorkLogDraft } from '../db/localDB';
 import type { Screen } from '../App';
 import styles from './ProcessingScreen.module.css';
 
@@ -21,9 +22,24 @@ function resultCountText(applied: WorkSearchConditions, totalCount: number, show
   return `${label}${totalCount}件中${shown}件を表示`;
 }
 
+// Draft Identity Fix + 明示的Draft Resume。まだSubmission Queueを持たないため、失敗/未送信を
+// 区別せず「送信が完了していないdraft」として一律に表示する（Completion BでSubmission Queueと
+// 統合後はPending Listへ寄せる想定、詳細はproject memory参照）
+function draftLabel(draft: WorkLogDraft): string {
+  if (draft.mode === 'create') return draft.title || '（無題の作業）';
+  return `記録を追加: ${draft.workId ?? ''}`;
+}
+
+function draftSavedAtLabel(savedAt: string): string {
+  const d = new Date(savedAt);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 export default function ProcessingScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const store = useWorkSearchStore();
+  const [drafts, setDrafts] = useState<WorkLogDraft[]>([]);
 
   useEffect(() => {
     if (authState === 'ready' && idToken) {
@@ -33,6 +49,18 @@ export default function ProcessingScreen({ go }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, idToken]);
+
+  useEffect(() => {
+    void listWorkLogDrafts().then(setDrafts);
+  }, []);
+
+  const openDraft = (draft: WorkLogDraft) => {
+    if (draft.mode === 'append' && draft.workId) {
+      go({ name: 'workForm', mode: 'append', workId: draft.workId, draftRequestId: draft.requestId });
+      return;
+    }
+    go({ name: 'workForm', mode: 'create', draftRequestId: draft.requestId });
+  };
 
   const submit = () => {
     if (!idToken) return;
@@ -82,6 +110,23 @@ export default function ProcessingScreen({ go }: Props) {
         <button className={styles.newWorkBtn} onClick={() => go({ name: 'workForm', mode: 'create' })}>
           ＋ 新しい作業を始める
         </button>
+
+        {drafts.length > 0 && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>未送信の下書き　{drafts.length}件</h2>
+            <div className={styles.draftList}>
+              {drafts.map((draft) => (
+                <button key={draft.requestId} className={styles.draftItem} onClick={() => openDraft(draft)}>
+                  <div className={styles.draftInfo}>
+                    <p className={styles.draftTitle}>{draftLabel(draft)}</p>
+                    <p className={styles.draftMeta}>{draftSavedAtLabel(draft.savedAt)}</p>
+                  </div>
+                  <span className={styles.draftEditLink}>続きを編集</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>最近の作業</h2>
