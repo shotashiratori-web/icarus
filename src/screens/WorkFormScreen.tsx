@@ -3,7 +3,7 @@ import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
 import { submitWork, WorkProcessingError, NetworkUnknownError } from '../api/workApi';
 import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
-import { workLogDraftKey, saveWorkLogDraft, loadWorkLogDraft, clearWorkLogDraft } from '../db/localDB';
+import { saveWorkLogDraft, clearWorkLogDraft } from '../db/localDB';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import styles from './WorkFormScreen.module.css';
@@ -36,59 +36,29 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
   const [photoProcessing, setPhotoProcessing] = useState(false);
 
   const [outcome, setOutcome] = useState<SendOutcome | null>(null);
-  const [draftRestored, setDraftRestored] = useState(false);
-  const draftInitializedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const draftKey = workLogDraftKey(mode, workId);
 
   const backTarget: Screen = mode === 'append' && workId
     ? { name: 'workDetail', workId }
     : { name: 'processing' };
 
   // ── 下書き保存（UX-009: 未保存入力の消失を防ぐ。Field Logの下書き機構と同じ思想）────
+  // Work Log Draft Identity Fix: keyはrequestId由来（`work:${requestId}`）。requestIdはmount時に
+  // 毎回新規発行するため、このスクリーンが自動で他のattemptのdraftを読みに行くことはない
+  // （＝新規作成/追記を開くたびに常にまっさらな状態から始まる。過去の保留中attemptの再編集は
+  // Pending List等、requestIdを明示的に指定できる導線からのみ行う——現時点ではその導線は未実装）。
   // sending/complete中は保存しない（送信結果の確定待ち・完了画面のUI状態を上書きしないため）
   useEffect(() => {
     if (phase === 'sending' || phase === 'complete') return;
     if (!title && !content && !photoBase64 && !caption && type === '') return; // 空のまま保存しない
     void saveWorkLogDraft({
-      key: draftKey, mode, workId, workTitle,
-      requestId, title, type, content, datetime,
-      photoBase64, photoCaption: caption,
+      requestId, mode, workId, title, type, content, datetime,
+      photoBase64, photoMimeType: photoBase64 ? 'image/jpeg' : undefined, caption,
     }).catch(() => {
       // quota超過等でも無視（送信前に再入力できる）
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftKey, mode, workId, workTitle, requestId, title, type, content, datetime, photoBase64, caption, phase]);
-
-  // ── 下書き復元：mount時に1回だけ ─────────────────────────────
-  useEffect(() => {
-    if (authState !== 'ready' || draftInitializedRef.current) return;
-    draftInitializedRef.current = true;
-    loadWorkLogDraft(draftKey).then((draft) => {
-      if (!draft) return;
-      setRequestId(draft.requestId);
-      setTitle(draft.title);
-      setType(draft.type);
-      setContent(draft.content);
-      setDatetime(draft.datetime);
-      setCaption(draft.photoCaption);
-      if (draft.photoBase64) {
-        setPhotoBase64(draft.photoBase64);
-        setPreviewUrl(`data:image/jpeg;base64,${draft.photoBase64}`);
-      }
-      setDraftRestored(true);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authState, draftKey]);
-
-  const discardDraft = () => {
-    void clearWorkLogDraft(draftKey);
-    setTitle(''); setType(''); setContent('');
-    setDatetime(nowLocalDatetimeString());
-    setPhotoBase64(undefined); setPreviewUrl(''); setCaption('');
-    setDraftRestored(false);
-  };
+  }, [mode, workId, requestId, title, type, content, datetime, photoBase64, caption, phase]);
 
   // ── 写真選択 ─────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,7 +112,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
         caption: caption || undefined,
       }, idToken);
       setOutcome({ kind: 'success', result });
-      void clearWorkLogDraft(draftKey);
+      void clearWorkLogDraft(requestId);
     } catch (err) {
       if (err instanceof TokenExpiredError) {
         handleTokenExpired();
@@ -209,13 +179,6 @@ export default function WorkFormScreen({ go, mode, workId, workTitle }: Props) {
         </header>
 
         <main className={styles.formMain}>
-          {draftRestored && (
-            <div className={styles.draftBanner}>
-              下書きを復元しました
-              <button className={styles.draftClearBtn} onClick={discardDraft}>破棄</button>
-            </div>
-          )}
-
           {mode === 'create' && (
             <label className={styles.fieldLabel}>
               タイトル <span className={styles.required}>*</span>
