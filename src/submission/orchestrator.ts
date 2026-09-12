@@ -15,9 +15,11 @@ type SubmitParams<T> = {
 };
 
 // 一度だけ送信を試み、失敗したらqueueへ保留として永続化する。呼び出し元はneverthrow — 失敗はqueueへの格納として表現される。
-export async function submitWithFallback<T>(
+// R: adapter成功時の戻り値。既存呼び出し元は無視すればよいだけなのでbehavior変更は無い（デフォルトunknown）。
+// Work Logのように送信直後のレスポンス内容（workId等）が必要な場合のみ型引数で指定する
+export async function submitWithFallback<T, R = unknown>(
   params: SubmitParams<T>,
-): Promise<{ ok: true } | { ok: false; item: SubmissionItem<T> }> {
+): Promise<{ ok: true; result: R } | { ok: false; item: SubmissionItem<T> }> {
   const { entity, itemId, payload, title, photoThumbnail, displayDate, idToken } = params;
   const now = new Date().toISOString();
 
@@ -50,9 +52,9 @@ export async function submitWithFallback<T>(
 
   const adapter = getAdapter(entity);
   try {
-    await adapter.submit(payload, idToken);
+    const result = (await adapter.submit(payload, idToken)) as R;
     if (existing) await persistRemove(itemId);
-    return { ok: true };
+    return { ok: true, result };
   } catch (err) {
     const item: SubmissionItem<T> = {
       id: itemId,
@@ -75,9 +77,9 @@ export async function submitWithFallback<T>(
 export async function resendItem(
   id: string,
   idToken: string | null,
-): Promise<{ ok: true } | { ok: false; item: SubmissionItem }> {
+): Promise<{ ok: true; result: unknown } | { ok: false; item: SubmissionItem }> {
   const item = await queueDB.get(id);
-  if (!item) return { ok: true }; // 既に削除/再送済み
+  if (!item) return { ok: true, result: undefined }; // 既に削除/再送済み
   return submitWithFallback({
     entity: item.entity,
     itemId: item.id,

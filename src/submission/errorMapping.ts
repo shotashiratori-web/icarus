@@ -1,5 +1,6 @@
 import { TokenExpiredError } from '../api/icarusApi';
 import { PhotoUploadFailedError } from '../api/fieldLogD1Api';
+import { NetworkUnknownError, WorkProcessingError } from '../api/workApi';
 import type { ErrorCode, SubmissionEntity, SubmissionError } from './types';
 
 const TITLES: Record<ErrorCode, string> = {
@@ -83,4 +84,38 @@ export function mapFieldLogD1Error(
     return buildError('NETWORK_ERROR', ctx, true, err.message);
   }
   return buildError('SERVER_ERROR', ctx, true, String(err));
+}
+
+const WORK_LOG_PROCESSING_DESCRIPTION = '処理中です。しばらくすると自動で再送されます。';
+const WORK_LOG_VALIDATION_DESCRIPTION = '内容を確認してから再送してください。自動では再送されません。';
+
+// Work Log Submission Framework Final Design ①。GAS側（handleIcarusWorkRequest_）は
+// REQUEST_PROCESSING以外のエラーをすべて{status:'error', message}という同一shapeで返し、
+// codeを持たない——つまり「workId不存在」も「Sheetsの一時的な書き込み失敗」もクライアントからは
+// 区別できない。GASの変更・pushは禁止のためcode付与では解決できない。
+// そのため、確実に判別できる範囲（通信断・応答不正・処理中・認証切れ）だけをretryable:trueとし、
+// それ以外（GASが明示的にロジックエラーとして返した汎用message）はデフォルトでretryable:falseとする
+// （「retryしても直らない前提」を安全側に倒す。誤ってretryable:falseにしても、resendAll()の一括対象から
+// 外れるだけでPending Listからの個別「再送」までは禁止されないため、ユーザーは詰まない）
+export function mapWorkLogError(
+  err: unknown,
+  ctx: { entity: SubmissionEntity; payloadId: string },
+): SubmissionError {
+  if (err instanceof TokenExpiredError) {
+    return buildError('AUTH_EXPIRED', ctx, true, err.message);
+  }
+  if (err instanceof NetworkUnknownError) {
+    return buildError('NETWORK_ERROR', ctx, true, err.message);
+  }
+  if (err instanceof WorkProcessingError) {
+    return buildError('SERVER_ERROR', ctx, true, err.message, WORK_LOG_PROCESSING_DESCRIPTION);
+  }
+  // res.json()失敗・非JSON応答等、GAS Web App自体が不安定な場合（既知のGAS Web App間欠的不安定性と同種）
+  if (err instanceof Error && /^サーバーエラー \(HTTP/.test(err.message)) {
+    return buildError('SERVER_ERROR', ctx, true, err.message);
+  }
+  if (err instanceof Error) {
+    return buildError('SERVER_ERROR', ctx, false, err.message, WORK_LOG_VALIDATION_DESCRIPTION);
+  }
+  return buildError('SERVER_ERROR', ctx, false, String(err));
 }

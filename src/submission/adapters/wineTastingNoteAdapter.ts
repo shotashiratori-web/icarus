@@ -1,4 +1,4 @@
-import { createWineTastingNote, updateWineTastingNote, type WineTastingNoteFieldsInput } from '../../api/wineTastingNoteApi';
+import { createWineTastingNote, updateWineTastingNote, type WineTastingNoteFieldsInput, type WineTastingNoteItem } from '../../api/wineTastingNoteApi';
 import { getNote, saveNote } from '../../db/localDB';
 import { registerAdapter } from '../registry';
 import { mapIcarusApiError } from '../errorMapping';
@@ -37,7 +37,7 @@ function toFieldsInput(payload: WineTastingNoteSubmissionPayload): WineTastingNo
   };
 }
 
-registerAdapter<WineTastingNoteSubmissionPayload>({
+registerAdapter<WineTastingNoteSubmissionPayload, WineTastingNoteItem>({
   entity: 'wineTastingNote',
   submit: async (payload, idToken) => {
     const fields = toFieldsInput(payload);

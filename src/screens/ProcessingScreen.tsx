@@ -5,6 +5,8 @@ import {
   useWorkSearchStore, isFiltered, type HasPhotoOption, type WorkSearchConditions,
 } from '../store/workSearchStore';
 import { listWorkLogDrafts, type WorkLogDraft } from '../db/localDB';
+import { useSubmissionQueue } from '../submission/queueStore';
+import type { WorkLogSubmissionPayload } from '../submission/adapters/workLogAdapter';
 import type { Screen } from '../App';
 import styles from './ProcessingScreen.module.css';
 
@@ -22,9 +24,15 @@ function resultCountText(applied: WorkSearchConditions, totalCount: number, show
   return `${label}${totalCount}件中${shown}件を表示`;
 }
 
-// Draft Identity Fix + 明示的Draft Resume。まだSubmission Queueを持たないため、失敗/未送信を
-// 区別せず「送信が完了していないdraft」として一律に表示する（Completion BでSubmission Queueと
-// 統合後はPending Listへ寄せる想定、詳細はproject memory参照）
+// Work Log Submission Framework。「未送信の下書き」（ここ）と「保留中」（Pending List）は
+// 責務を分ける——一度でもsend()が呼ばれてsubmission_queueに載ったrequestIdは、以後Pending List側
+// だけが扱う（同じ内容が2画面に別の意味で二重掲載されるのを防ぐ）。比較はitemId形式に依存せず
+// entity==='workLog' && payload.requestId===draft.requestIdで判定する
+function isQueued(draft: WorkLogDraft, queueItems: { entity: string; payload: unknown }[]): boolean {
+  return queueItems.some((item) => item.entity === 'workLog'
+    && (item.payload as WorkLogSubmissionPayload).requestId === draft.requestId);
+}
+
 function draftLabel(draft: WorkLogDraft): string {
   if (draft.mode === 'create') return draft.title || '（無題の作業）';
   return `記録を追加: ${draft.workId ?? ''}`;
@@ -40,6 +48,7 @@ export default function ProcessingScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const store = useWorkSearchStore();
   const [drafts, setDrafts] = useState<WorkLogDraft[]>([]);
+  const queueItems = useSubmissionQueue((s) => s.items);
 
   useEffect(() => {
     if (authState === 'ready' && idToken) {
@@ -52,7 +61,10 @@ export default function ProcessingScreen({ go }: Props) {
 
   useEffect(() => {
     void listWorkLogDrafts().then(setDrafts);
+    void useSubmissionQueue.getState().refresh();
   }, []);
+
+  const unsentDrafts = drafts.filter((d) => !isQueued(d, queueItems));
 
   const openDraft = (draft: WorkLogDraft) => {
     if (draft.mode === 'append' && draft.workId) {
@@ -111,11 +123,11 @@ export default function ProcessingScreen({ go }: Props) {
           ＋ 新しい作業を始める
         </button>
 
-        {drafts.length > 0 && (
+        {unsentDrafts.length > 0 && (
           <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>未送信の下書き　{drafts.length}件</h2>
+            <h2 className={styles.sectionTitle}>未送信の下書き　{unsentDrafts.length}件</h2>
             <div className={styles.draftList}>
-              {drafts.map((draft) => (
+              {unsentDrafts.map((draft) => (
                 <button key={draft.requestId} className={styles.draftItem} onClick={() => openDraft(draft)}>
                   <div className={styles.draftInfo}>
                     <p className={styles.draftTitle}>{draftLabel(draft)}</p>
