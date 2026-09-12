@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { resizeToJpeg, TokenExpiredError } from '../api/icarusApi';
-import { submitWork, WorkProcessingError, NetworkUnknownError } from '../api/workApi';
+import { resizeToJpeg } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
-import { saveWorkLogDraft, loadWorkLogDraft, clearWorkLogDraft } from '../db/localDB';
+import { saveWorkLogDraft, loadWorkLogDraft } from '../db/localDB';
+import { submitWithFallback } from '../submission/orchestrator';
+import type { WorkLogSubmissionPayload } from '../submission/adapters/workLogAdapter';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import styles from './WorkFormScreen.module.css';
 
 type Phase = 'form' | 'confirm' | 'sending' | 'complete';
 type SendOutcome =
-  | { kind: 'success'; result: WorkSubmitSuccess }
-  | { kind: 'processing'; message: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'success'; result: WorkSubmitSuccess | undefined }
+  // retryable失敗。draft/queueは端末に残り、App起動時・online復帰時に自動再送される
+  | { kind: 'queued' }
+  // non-retryable失敗（validation・append先workId不存在等）。queueには載る（Pending Listからの
+  // 個別再送は可能）が、自動では再送されない——内容を直さない限り結果は変わらないため、
+  // 「保存して先へ進める」ではなくその場で対処を促す（既存のerror画面と同じ体験）
+  | { kind: 'blocked'; message: string };
 
 type Props = {
   go: (s: Screen) => void;
@@ -120,36 +125,28 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
       return;
     }
     setPhase('sending');
-    try {
-      const isoDatetime = new Date(datetime).toISOString();
-      const result = await submitWork({
-        requestId,
-        action: mode,
-        workId: mode === 'append' ? workId : undefined,
-        title: mode === 'create' ? title : undefined,
-        type: mode === 'create' ? type : undefined,
-        content,
-        datetime: isoDatetime,
-        photoBase64,
-        photoMimeType: photoBase64 ? 'image/jpeg' : undefined,
-        caption: caption || undefined,
-      }, idToken);
-      setOutcome({ kind: 'success', result });
-      void clearWorkLogDraft(requestId);
-    } catch (err) {
-      if (err instanceof TokenExpiredError) {
-        handleTokenExpired();
-        setPhase('form');
-        return;
-      }
-      if (err instanceof WorkProcessingError) {
-        setOutcome({ kind: 'processing', message: err.message });
-      } else {
-        setOutcome({
-          kind: 'error',
-          message: err instanceof NetworkUnknownError ? err.message : err instanceof Error ? err.message : '送信に失敗しました',
-        });
-      }
+
+    // adapterが読むdraftを、送信直前の最新値で確実に確定させる（autosave effectとの競合を避ける保険）
+    await saveWorkLogDraft({
+      requestId, mode, workId, title, type, content, datetime,
+      photoBase64, photoMimeType: photoBase64 ? 'image/jpeg' : undefined, caption,
+    }).catch(() => {});
+
+    const outcome = await submitWithFallback<WorkLogSubmissionPayload, WorkSubmitSuccess | undefined>({
+      entity: 'workLog',
+      itemId: requestId,
+      payload: { requestId },
+      title: mode === 'create' ? (title || '新しい作業') : `記録を追加: ${workId ?? ''}`,
+      displayDate: datetime,
+      idToken,
+    });
+
+    if (outcome.ok) {
+      setOutcome({ kind: 'success', result: outcome.result });
+    } else if (outcome.item.lastError?.retryable === false) {
+      setOutcome({ kind: 'blocked', message: outcome.item.lastError.technicalDetail || outcome.item.lastError.description });
+    } else {
+      setOutcome({ kind: 'queued' });
     }
     setPhase('complete');
   };
@@ -336,7 +333,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
   // ── 完了 ──────────────────────────────────────────────────
   if (phase === 'complete' && outcome) {
     if (outcome.kind === 'success') {
-      const replayed = outcome.result.code === 'ALREADY_PROCESSED';
+      const replayed = outcome.result?.code === 'ALREADY_PROCESSED';
       return (
         <div className={styles.root}>
           <header className={styles.header}>
@@ -350,27 +347,34 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
               {replayed && '（再送・重複なし）'}
             </p>
             <button className={styles.primaryBtn} onClick={startAnother}>続けて記録する</button>
-            <button
-              className={styles.secondaryBtn}
-              onClick={() => go({ name: 'workDetail', workId: outcome.result.workId })}
-            >
-              作業詳細を見る
-            </button>
+            {outcome.result && (
+              <button
+                className={styles.secondaryBtn}
+                onClick={() => go({ name: 'workDetail', workId: outcome.result!.workId })}
+              >
+                作業詳細を見る
+              </button>
+            )}
             <button className={styles.secondaryBtn} onClick={() => go({ name: 'processing' })}>一覧へ戻る</button>
           </main>
         </div>
       );
     }
 
-    if (outcome.kind === 'processing') {
+    if (outcome.kind === 'queued') {
       return (
         <div className={styles.root}>
-          <header className={styles.header}><span className={styles.headerTitle}>処理中です</span><HomeButton go={go} /></header>
+          <header className={styles.header}><span className={styles.headerTitle}>保存しました</span><HomeButton go={go} /></header>
           <main className={styles.completeMain}>
             <div className={styles.warnIcon}>…</div>
-            <p className={styles.successText}>{outcome.message}</p>
-            <button className={styles.primaryBtn} onClick={() => setPhase('confirm')}>戻ってしばらくしてから再送する</button>
-            <button className={styles.secondaryBtn} onClick={() => go(backTarget)}>一覧へ戻る</button>
+            <p className={styles.successText}>
+              この端末に保存しました<br />
+              送信を待っています
+            </p>
+            <p className={styles.footerHint}>通信が戻ると自動で再送します。</p>
+            <button className={styles.primaryBtn} onClick={startAnother}>新しい作業を記録する</button>
+            <button className={styles.secondaryBtn} onClick={() => go({ name: 'pendingList' })}>保留中一覧へ</button>
+            <button className={styles.secondaryBtn} onClick={() => go({ name: 'processing' })}>一覧へ戻る</button>
           </main>
         </div>
       );
@@ -378,7 +382,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
 
     return (
       <div className={styles.root}>
-        <header className={styles.header}><span className={styles.headerTitle}>送信失敗</span><HomeButton go={go} /></header>
+        <header className={styles.header}><span className={styles.headerTitle}>送信できませんでした</span><HomeButton go={go} /></header>
         <main className={styles.completeMain}>
           <div className={styles.warnIcon}>!</div>
           <p className={styles.successText}>{outcome.message}</p>

@@ -1,4 +1,4 @@
-import { uploadFieldLogPhoto, submitFieldLogD1 } from '../../api/fieldLogD1Api';
+import { uploadFieldLogPhoto, submitFieldLogD1, type FieldLogD1SubmitResult } from '../../api/fieldLogD1Api';
 import { createUploadAndFinalizeAsset } from '../../api/photoAssetApi';
 import { registerAdapter } from '../registry';
 import { mapFieldLogD1Error } from '../errorMapping';
@@ -37,7 +37,7 @@ export interface FieldLogD1SubmissionPayload {
   assetId?: string;
 }
 
-registerAdapter<FieldLogD1SubmissionPayload>({
+registerAdapter<FieldLogD1SubmissionPayload, FieldLogD1SubmitResult>({
   entity: 'fieldLogD1',
   submit: async (payload, idToken) => {
     // payload自身をmutateする。submitWithFallback側は同じオブジェクト参照を保留queueへ書き戻すため、

@@ -19,6 +19,17 @@ vi.mock('../src/api/workApi', async (importOriginal) => {
   return { ...actual, searchWorkLogs };
 });
 
+// queueStore.refresh()は内部でqueueDB(→localDBのgetDB)を叩く。ここでは「未送信の下書き」一覧の
+// 重複除外ロジック（entity==='workLog' && payload.requestId===draft.requestId）だけを検証したいので、
+// 実IndexedDBには触れずqueueDB.listAllをmockする
+const { queueListAll } = vi.hoisted(() => ({ queueListAll: vi.fn() }));
+vi.mock('../src/submission/queueDB', () => ({
+  listAll: queueListAll,
+  get: vi.fn(),
+  put: vi.fn(),
+  remove: vi.fn(),
+}));
+
 function draft(overrides: Partial<WorkLogDraft> = {}): WorkLogDraft {
   return {
     key: 'work:req-a', requestId: 'req-a', mode: 'create',
@@ -32,6 +43,7 @@ function draft(overrides: Partial<WorkLogDraft> = {}): WorkLogDraft {
 describe('ProcessingScreen: 未送信の下書き', () => {
   beforeEach(() => {
     listWorkLogDrafts.mockReset();
+    queueListAll.mockReset().mockResolvedValue([]);
     searchWorkLogs.mockReset().mockResolvedValue({
       status: 'success', items: [], totalCount: 0, limit: 20, offset: 0, hasMore: false,
     });
@@ -69,5 +81,35 @@ describe('ProcessingScreen: 未送信の下書き', () => {
     expect(go).toHaveBeenCalledWith({
       name: 'workForm', mode: 'append', workId: '20260912-001', draftRequestId: 'req-append-1',
     });
+  });
+
+  it('submission_queueに同じrequestIdのworkLog itemが既にある下書きは一覧から除外する（Pending List側だけに表示するため）', async () => {
+    listWorkLogDrafts.mockResolvedValue([draft(), draft({ requestId: 'req-b', title: '別の下書きB' })]);
+    queueListAll.mockResolvedValue([
+      {
+        id: 'req-a', entity: 'workLog', state: 'pending',
+        payload: { requestId: 'req-a' }, title: 'x',
+        createdAt: '2026-09-12T05:30:00.000Z', updatedAt: '2026-09-12T05:30:00.000Z', attempts: 1,
+      },
+    ]);
+    render(<ProcessingScreen go={vi.fn()} />);
+
+    await screen.findByText('別の下書きB');
+    expect(screen.queryByText('青唐辛子の乳酸発酵')).not.toBeInTheDocument();
+    expect(screen.getByText(/未送信の下書き\s*1件/)).toBeInTheDocument();
+  });
+
+  it('queueに載っているのが他entityのitemなら除外しない', async () => {
+    listWorkLogDrafts.mockResolvedValue([draft()]);
+    queueListAll.mockResolvedValue([
+      {
+        id: 'req-a', entity: 'foodLog', state: 'pending',
+        payload: { requestId: 'req-a' }, title: 'x',
+        createdAt: '2026-09-12T05:30:00.000Z', updatedAt: '2026-09-12T05:30:00.000Z', attempts: 1,
+      },
+    ]);
+    render(<ProcessingScreen go={vi.fn()} />);
+
+    await screen.findByText('青唐辛子の乳酸発酵');
   });
 });

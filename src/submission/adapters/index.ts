@@ -4,3 +4,4 @@ import './foodLogAdapter';
 import './fieldLogD1Adapter';
 import './wineTastingNoteAdapter';
 import './wineTastingNotePhotoAdapter';
+import './workLogAdapter';
