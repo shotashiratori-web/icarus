@@ -59,8 +59,8 @@ export type Screen =
   | { name: 'field' }
   | { name: 'processing' }
   | { name: 'workDetail'; workId: string }
-  | { name: 'workForm'; mode: 'create' }
-  | { name: 'workForm'; mode: 'append'; workId: string; workTitle?: string }
+  | { name: 'workForm'; mode: 'create'; draftRequestId?: string }
+  | { name: 'workForm'; mode: 'append'; workId: string; workTitle?: string; draftRequestId?: string }
   | { name: 'staffApproval' }
   | { name: 'daily' }
   | { name: 'dailyAdmin' }
@@ -171,6 +171,7 @@ function AppRoutes() {
       mode={screen.mode}
       workId={screen.mode === 'append' ? screen.workId : undefined}
       workTitle={screen.mode === 'append' ? screen.workTitle : undefined}
+      draftRequestId={screen.draftRequestId}
     />
   );
   if (screen.name === 'staffApproval') return <StaffApprovalScreen go={go} />;

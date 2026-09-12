@@ -9,8 +9,12 @@ const DRAFT_STORE = 'food_log_draft';
 export const QUEUE_STORE = 'submission_queue';
 // PC一括写真送信のバッチ永続化。送信開始前にqueued状態で全件保存し、タブを閉じても再開できるようにする
 export const PHOTO_BATCH_STORE = 'photo_batch_items';
-// Work Log専用のdraft保護（UX-009）。food_log_draftとは別ストア。keyは'create'または`append:${workId}`で、
-// 新規作成と各Workへの追記が互いに上書きしないようにする（food_log_draftの単一スロット方式とは異なる）
+// Work Log専用のdraft保護（UX-009）。food_log_draftとは別ストア。
+// keyはrequestIdから導出する`work:${requestId}` 1本（Work Log Draft Identity Fix）。
+// modeやworkIdはキーの一部ではなく、レコード内のmetadataとして持つ——これによりcreate A/B、
+// 同一workへのappend A/Bのように「同時に複数のpending attemptが存在する」場合でも
+// 互いのdraftを上書きしない（旧key方式'create'/`append:${workId}`は単一スロットのため、
+// pending中に別のattemptを開始すると内容が混線する問題があった）
 const WORK_LOG_DRAFT_STORE = 'work_log_draft';
 
 export interface FoodLogDraft {
@@ -23,17 +27,17 @@ export interface FoodLogDraft {
 }
 
 export interface WorkLogDraft {
-  key: string; // 'create' | `append:${workId}`
+  key: string; // `work:${requestId}`（IDBのkeyPath用。中身はrequestIdの導出値でしかない）
+  requestId: string;
   mode: 'create' | 'append';
   workId?: string;
-  workTitle?: string;
-  requestId: string;
-  title: string;
-  type: string;
+  title?: string;
+  type?: string;
   content: string;
   datetime: string;
   photoBase64?: string;
-  photoCaption: string;
+  photoMimeType?: 'image/jpeg';
+  caption?: string;
   savedAt: string;
 }
 
@@ -99,6 +103,7 @@ export async function getDB() {
         reject(err instanceof Error ? err : new Error(String(err)));
       });
     });
+    await migrateLegacyWorkLogDrafts_(_db);
   }
   return _db;
 }
@@ -168,21 +173,53 @@ export async function clearFoodLogDraft(): Promise<void> {
   await db.delete(DRAFT_STORE, 'current');
 }
 
-export function workLogDraftKey(mode: 'create' | 'append', workId?: string): string {
-  return mode === 'append' && workId ? `append:${workId}` : 'create';
+export function workLogDraftKey(requestId: string): string {
+  return `work:${requestId}`;
 }
 
-export async function saveWorkLogDraft(draft: Omit<WorkLogDraft, 'savedAt'>): Promise<void> {
+export async function saveWorkLogDraft(draft: Omit<WorkLogDraft, 'key' | 'savedAt'>): Promise<void> {
   const db = await getDB();
-  await db.put(WORK_LOG_DRAFT_STORE, { ...draft, savedAt: new Date().toISOString() });
+  await db.put(WORK_LOG_DRAFT_STORE, {
+    ...draft,
+    key: workLogDraftKey(draft.requestId),
+    savedAt: new Date().toISOString(),
+  });
 }
 
-export async function loadWorkLogDraft(key: string): Promise<WorkLogDraft | undefined> {
+export async function loadWorkLogDraft(requestId: string): Promise<WorkLogDraft | undefined> {
   const db = await getDB();
-  return db.get(WORK_LOG_DRAFT_STORE, key);
+  return db.get(WORK_LOG_DRAFT_STORE, workLogDraftKey(requestId));
 }
 
-export async function clearWorkLogDraft(key: string): Promise<void> {
+// 「未送信の下書き」一覧表示用（ProcessingScreen）。まだSubmission Queueを持たないため、
+// ここでは送信そのものを一度も試みていない/失敗した下書きを区別せず、work_log_draftに
+// 残っている全件を新しい順に返すだけに留める
+export async function listWorkLogDrafts(): Promise<WorkLogDraft[]> {
   const db = await getDB();
-  await db.delete(WORK_LOG_DRAFT_STORE, key);
+  const all: WorkLogDraft[] = await db.getAll(WORK_LOG_DRAFT_STORE);
+  return all.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
+export async function clearWorkLogDraft(requestId: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(WORK_LOG_DRAFT_STORE, workLogDraftKey(requestId));
+}
+
+// Work Log Draft Identity Fix: 旧key方式（'create' 固定 / `append:${workId}`）で保存された既存端末の
+// draftを、新key方式（`work:${requestId}`）へ一度だけ移行する。レコード自体は保持し、keyだけ付け替える
+// ——移行しないとアップデート後に既存下書きが「消えたように」見える（読み出しキーが変わるため）。
+// 既に新形式のレコードやrequestIdを持たない壊れたレコードはスキップする（read-time migrationではなく
+// 起動時に一度だけ整理する方式。getDB()はDB接続を使い回すため、実質アプリ起動ごとに1回だけ走る）
+async function migrateLegacyWorkLogDrafts_(db: IDBPDatabase): Promise<void> {
+  const tx = db.transaction(WORK_LOG_DRAFT_STORE, 'readwrite');
+  const store = tx.objectStore(WORK_LOG_DRAFT_STORE);
+  const all: WorkLogDraft[] = await store.getAll();
+  for (const record of all) {
+    if (!record.requestId) continue;
+    const newKey = workLogDraftKey(record.requestId);
+    if (record.key === newKey) continue;
+    await store.delete(record.key);
+    await store.put({ ...record, key: newKey });
+  }
+  await tx.done;
 }
