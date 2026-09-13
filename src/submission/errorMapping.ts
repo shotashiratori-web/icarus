@@ -1,6 +1,6 @@
 import { TokenExpiredError } from '../api/icarusApi';
 import { PhotoUploadFailedError } from '../api/fieldLogD1Api';
-import { NetworkUnknownError, WorkProcessingError } from '../api/workApi';
+import { NetworkUnknownError, WorkProcessingError, WorkServerError } from '../api/workApi';
 import type { ErrorCode, SubmissionEntity, SubmissionError } from './types';
 
 const TITLES: Record<ErrorCode, string> = {
@@ -110,9 +110,18 @@ export function mapWorkLogError(
   if (err instanceof WorkProcessingError) {
     return buildError('SERVER_ERROR', ctx, true, err.message, WORK_LOG_PROCESSING_DESCRIPTION);
   }
-  // res.json()失敗・非JSON応答等、GAS Web App自体が不安定な場合（既知のGAS Web App間欠的不安定性と同種）
-  if (err instanceof Error && /^サーバーエラー \(HTTP/.test(err.message)) {
-    return buildError('SERVER_ERROR', ctx, true, err.message);
+  if (err instanceof WorkServerError) {
+    // icarus-api（/work）は、Worker⇔GAS間の通信/応答不良（GAS fetch failed・GAS returned
+    // non-JSON等、既知のGAS Web App間欠的不安定性と同種）を502で、GAS自身が返した
+    // {status:'error'}（validation・workId不存在等、GASのロジックエラー。GASはcodeを返さず
+    // 区別できないため安全側に倒す）を500で中継する。ちょうど500はGASのロジックエラー、
+    // それより大きい5xx（502/503/504等）だけがWorker/エッジ自体の一時的な不調——メッセージ
+    // 文字列のパターンマッチではなく実際のHTTP statusで判定する（2026-09-13実機確認で発見:
+    // Worker側の文言が変わるとパターンマッチでは検出漏れが起きるため）
+    if (err.status > 500) {
+      return buildError('SERVER_ERROR', ctx, true, err.message);
+    }
+    return buildError('SERVER_ERROR', ctx, false, err.message, WORK_LOG_VALIDATION_DESCRIPTION);
   }
   if (err instanceof Error) {
     return buildError('SERVER_ERROR', ctx, false, err.message, WORK_LOG_VALIDATION_DESCRIPTION);

@@ -26,6 +26,20 @@ export class WorkNotFoundError extends Error {
   }
 }
 
+// Work Log Submission Framework: mapWorkLogErrorがretryable/non-retryableを実際のHTTP statusで
+// 判定できるよう、statusを保持する。icarus-api（/work）は、Worker⇔GAS間の通信/応答不良
+// （GAS fetch failed・GAS returned non-JSON等、既知のGAS Web App間欠的不安定性と同種）を502で、
+// GAS自身が返した{status:'error'}（validation・workId不存在等、GASのロジックエラー）を500で
+// 返す——この違いをメッセージ文字列のパターンマッチではなくstatusで区別する
+export class WorkServerError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'WorkServerError';
+    this.status = status;
+  }
+}
+
 export async function submitWork(payload: WorkSubmitPayload, idToken: string): Promise<WorkSubmitSuccess> {
   let res: Response;
   try {
@@ -49,14 +63,14 @@ export async function submitWork(payload: WorkSubmitPayload, idToken: string): P
   try {
     json = (await res.json()) as WorkSubmitSuccess | WorkSubmitError;
   } catch {
-    throw new Error(`サーバーエラー (HTTP ${res.status})`);
+    throw new WorkServerError(`非JSON応答 (HTTP ${res.status})`, res.status);
   }
 
   if (json.status !== 'success') {
     if (json.code === 'REQUEST_PROCESSING') {
       throw new WorkProcessingError(json.message);
     }
-    throw new Error(json.message || '送信に失敗しました');
+    throw new WorkServerError(json.message || '送信に失敗しました', res.status);
   }
 
   return json;
