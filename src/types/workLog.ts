@@ -9,6 +9,9 @@ export interface WorkEntry {
   content: string;
   photoUrl: string;
   caption: string;
+  // Work Log Void v1。無効化操作専用の内部キー（POST /work/:workId/entries/:sheetRow/void）。
+  // ユーザー向けの表示identityとしては使わない
+  sheetRow: number;
 }
 
 export interface WorkPhoto {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchWorkDetail, WorkNotFoundError, NetworkUnknownError } from '../api/workApi';
+import { fetchWorkDetail, voidWorkEntry, WorkNotFoundError, NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import type { WorkDetail } from '../types/workLog';
@@ -12,11 +12,18 @@ type Props = { go: (s: Screen) => void; workId: string };
 type LoadState = 'loading' | 'ready' | 'error' | 'notFound';
 
 export default function WorkDetailScreen({ go, workId }: Props) {
-  const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
+  const { idToken, authState, staffMe, signInContainerRef, handleTokenExpired } = useAuth();
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
+
+  // Work Log Void v1。成功後は該当entryを即座にローカルから隠す（楽観的非表示、Cron待ちのUXギャップを埋める）。
+  // 失敗時はvoidingSheetRowByで押していたentryだけ元に戻し、その場でエラーを表示する
+  const [hiddenSheetRows, setHiddenSheetRows] = useState<Set<number>>(new Set());
+  const [voidingSheetRow, setVoidingSheetRow] = useState<number | null>(null);
+  const [voidError, setVoidError] = useState<{ sheetRow: number; message: string } | null>(null);
+  const isAdmin = staffMe?.role === 'admin';
 
   const photos = detail?.photos ?? [];
   const lightboxPhotos = photos.map((p) => ({ url: p.photoUrl, caption: p.caption || undefined }));
@@ -45,6 +52,29 @@ export default function WorkDetailScreen({ go, workId }: Props) {
 
   const retry = () => {
     if (idToken) void load(idToken);
+  };
+
+  const handleVoid = async (sheetRow: number) => {
+    if (!idToken || !detail) return;
+    if (!confirm('この記録を無効化します。一覧から見えなくなります。よろしいですか？')) return;
+
+    setVoidingSheetRow(sheetRow);
+    setVoidError(null);
+    try {
+      await voidWorkEntry(detail.workId, sheetRow, '', idToken);
+      setHiddenSheetRows((prev) => new Set(prev).add(sheetRow));
+    } catch (e) {
+      if (e instanceof TokenExpiredError) {
+        handleTokenExpired();
+        return;
+      }
+      setVoidError({
+        sheetRow,
+        message: e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '無効化に失敗しました',
+      });
+    } finally {
+      setVoidingSheetRow(null);
+    }
   };
 
   useEffect(() => {
@@ -124,26 +154,45 @@ export default function WorkDetailScreen({ go, workId }: Props) {
             )}
 
             <section className={styles.section}>
-              <h2 className={styles.sectionTitle}>記録 ({detail.entries.length})</h2>
-              {detail.entries.length === 0 && (
-                <p className={styles.empty}>まだ記録がありません。</p>
-              )}
-              <div className={styles.list}>
-                {detail.entries.map((entry, i) => (
-                  <div key={i} className={styles.entry}>
-                    {entry.photoUrl ? (
-                      <img src={entry.photoUrl} alt="" className={styles.entryPhoto} loading="lazy" />
-                    ) : (
-                      <div className={styles.entryPhotoPlaceholder}>🧂</div>
+              {(() => {
+                const visibleEntries = detail.entries.filter((e) => !hiddenSheetRows.has(e.sheetRow));
+                return (
+                  <>
+                    <h2 className={styles.sectionTitle}>記録 ({visibleEntries.length})</h2>
+                    {visibleEntries.length === 0 && (
+                      <p className={styles.empty}>まだ記録がありません。</p>
                     )}
-                    <div className={styles.entryInfo}>
-                      <p className={styles.entryDate}>{entry.datetime.slice(0, 16).replace('T', ' ')}</p>
-                      {entry.content && <p className={styles.entryContent}>{entry.content}</p>}
-                      {entry.caption && <p className={styles.entryCaption}>{entry.caption}</p>}
+                    <div className={styles.list}>
+                      {visibleEntries.map((entry) => (
+                        <div key={entry.sheetRow} className={styles.entry}>
+                          {entry.photoUrl ? (
+                            <img src={entry.photoUrl} alt="" className={styles.entryPhoto} loading="lazy" />
+                          ) : (
+                            <div className={styles.entryPhotoPlaceholder}>🧂</div>
+                          )}
+                          <div className={styles.entryInfo}>
+                            <p className={styles.entryDate}>{entry.datetime.slice(0, 16).replace('T', ' ')}</p>
+                            {entry.content && <p className={styles.entryContent}>{entry.content}</p>}
+                            {entry.caption && <p className={styles.entryCaption}>{entry.caption}</p>}
+                            {isAdmin && (
+                              <button
+                                className={styles.voidBtn}
+                                disabled={voidingSheetRow === entry.sheetRow}
+                                onClick={() => void handleVoid(entry.sheetRow)}
+                              >
+                                {voidingSheetRow === entry.sheetRow ? '無効化中…' : 'この記録を無効化'}
+                              </button>
+                            )}
+                            {voidError?.sheetRow === entry.sheetRow && (
+                              <p className={styles.voidErrorText}>{voidError.message}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
-              </div>
+                  </>
+                );
+              })()}
             </section>
           </>
         )}

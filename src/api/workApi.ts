@@ -1,4 +1,4 @@
-import { WORK_SUBMIT_URL, WORK_DETAIL_URL, WORK_SEARCH_URL } from '../config';
+import { WORK_SUBMIT_URL, WORK_DETAIL_URL, WORK_SEARCH_URL, workEntryVoidUrl } from '../config';
 import type {
   WorkDetail, WorkDetailSuccess, WorkSubmitPayload, WorkSubmitSuccess, WorkSubmitError,
   WorkSearchParams, WorkSearchSuccess,
@@ -71,6 +71,46 @@ export async function submitWork(payload: WorkSubmitPayload, idToken: string): P
       throw new WorkProcessingError(json.message);
     }
     throw new WorkServerError(json.message || '送信に失敗しました', res.status);
+  }
+
+  return json;
+}
+
+export interface WorkVoidSuccess {
+  status: 'success';
+  alreadyVoided: boolean;
+}
+
+// Work Log Void v1（admin限定）。sheetRowはWorkDetailEntry.sheetRow（void操作専用の内部キー、
+// ユーザー向け表示には使わない）をそのまま渡す
+export async function voidWorkEntry(workId: string, sheetRow: number, reason: string, idToken: string): Promise<WorkVoidSuccess> {
+  let res: Response;
+  try {
+    res = await fetch(workEntryVoidUrl(workId, sheetRow), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ reason: reason || undefined }),
+    });
+  } catch {
+    throw new NetworkUnknownError();
+  }
+
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
+  }
+
+  let json: WorkVoidSuccess | WorkSubmitError;
+  try {
+    json = (await res.json()) as WorkVoidSuccess | WorkSubmitError;
+  } catch {
+    throw new Error(`サーバーエラー (HTTP ${res.status})`);
+  }
+
+  if (json.status !== 'success') {
+    throw new Error(json.message || '無効化に失敗しました');
   }
 
   return json;
