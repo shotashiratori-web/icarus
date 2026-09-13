@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { mapWorkLogError } from '../src/submission/errorMapping';
-import { WorkProcessingError, NetworkUnknownError } from '../src/api/workApi';
+import { WorkProcessingError, NetworkUnknownError, WorkServerError } from '../src/api/workApi';
 import { TokenExpiredError } from '../src/api/icarusApi';
 
-// Work Log Submission Framework Final Design ①。GAS（handleIcarusWorkRequest_）は
-// REQUEST_PROCESSING以外のエラーをすべて{status:'error', message}という同一shapeで返し、
-// codeで区別できない。確実に判別できる範囲（通信断・応答不正・処理中・認証切れ）だけを
-// retryable:trueとし、それ以外（GASのロジックエラー全般）はデフォルトでretryable:falseとする
-// （安全側に倒す。誤判定してもPending Listからの個別「再送」までは禁止されない）
+// Work Log Submission Framework Final Design ①、および2026-09-13の本番golden path実機確認で
+// 発見した実バグの修正。当初はメッセージ文字列のパターンマッチでretryableを判定していたが、
+// icarus-api（/work）のWorker⇔GAS間通信失敗（502、"GAS returned non-JSON"等）が実際の本番では
+// 想定と異なる文言で返ってきて誤ってnon-retryableに分類された。
+// 以後はWorkServerError.status（Workerが返す実際のHTTP status）で判定する：
+// - 502等5xx: Worker⇔GAS間、またはCloudflareエッジ自体の一時的な不調 → retryable:true
+// - 500未満（Workerのrequest validation等）: 安全側でretryable:false
+// GAS自身が返す{status:'error'}（validation・workId不存在等）はWorker側で500として中継されるため、
+// codeを持たないGASのロジックエラー全般もretryable:falseのまま——「retryしても直らない前提」を
+// 安全側に倒す方針そのものは変えていない
 
 const CTX = { entity: 'workLog' as const, payloadId: 'req-1' };
 
@@ -29,20 +34,32 @@ describe('mapWorkLogError: retryable分類', () => {
     expect(result.code).toBe('AUTH_EXPIRED');
   });
 
-  it('GAS Web App自体の不安定性（res.json()失敗相当のHTTPエラー）: retryable=true', () => {
-    const err = new Error('サーバーエラー (HTTP 502)');
+  it('WorkServerError status=502（Worker⇔GAS間の通信/応答不良）: retryable=true', () => {
+    const err = new WorkServerError('GAS returned non-JSON (HTTP ok): <!DOCTYPE html>...', 502);
     const result = mapWorkLogError(err, CTX);
     expect(result.retryable).toBe(true);
   });
 
-  it('append先workId不存在（GASのロジックエラー、codeなし）: retryable=false', () => {
-    const err = new Error('作業IDが見つかりません: 20260101-999');
+  it('WorkServerError status=500（GAS自身のロジックエラー、append先workId不存在等）: retryable=false', () => {
+    const err = new WorkServerError('作業IDが見つかりません: 20260101-999', 500);
     const result = mapWorkLogError(err, CTX);
     expect(result.retryable).toBe(false);
   });
 
-  it('validationエラー（タイトル未入力等、codeなし）: retryable=false', () => {
-    const err = new Error('タイトルは必須です');
+  it('WorkServerError status=400（Workerのrequest validation）: retryable=false', () => {
+    const err = new WorkServerError('title is required', 400);
+    const result = mapWorkLogError(err, CTX);
+    expect(result.retryable).toBe(false);
+  });
+
+  it('非JSON応答（Cloudflareエッジ自体の不調相当）でもstatusが5xxならretryable=true', () => {
+    const err = new WorkServerError('非JSON応答 (HTTP 524)', 524);
+    const result = mapWorkLogError(err, CTX);
+    expect(result.retryable).toBe(true);
+  });
+
+  it('WorkServerError以外のError（想定外の例外）: retryable=false（安全側）', () => {
+    const err = new Error('予期しないエラー');
     const result = mapWorkLogError(err, CTX);
     expect(result.retryable).toBe(false);
   });
