@@ -91,8 +91,24 @@ export async function resendItem(
   });
 }
 
+type ResendAllResult = { succeeded: number; stillPending: number };
+
+// App起動時／online復帰時／手動「すべて再送」がほぼ同時に発火しても、実際の処理は1回だけ走る
+// ようにするための相乗りguard（Wine Tasting Noteのinflight Setと同種の事故を、resendAll単位で
+// フレームワーク側に1箇所だけ実装する）。完了後（resolve/reject問わず）は必ずnullへ戻し、
+// 次回呼び出しでは新しい実行が始まる
+let resendAllInFlight: Promise<ResendAllResult> | null = null;
+
+export function resendAll(idToken: string | null): Promise<ResendAllResult> {
+  if (resendAllInFlight) return resendAllInFlight;
+  resendAllInFlight = doResendAll(idToken).finally(() => {
+    resendAllInFlight = null;
+  });
+  return resendAllInFlight;
+}
+
 // GASバックエンドへの負荷を抑えるため、既存の食材ログ送信ループと同様に逐次実行する。
-export async function resendAll(idToken: string | null): Promise<{ succeeded: number; stillPending: number }> {
+async function doResendAll(idToken: string | null): Promise<ResendAllResult> {
   const items = await queueDB.listAll();
   let succeeded = 0;
   let stillPending = 0;

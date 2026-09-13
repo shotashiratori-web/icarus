@@ -35,6 +35,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import { retryPendingWineTastingNotes } from './submission/wineTastingNoteSync';
 import { retryPendingWineTastingNotePhotos } from './submission/wineTastingNotePhotoSync';
+import { resendAll } from './submission/orchestrator';
 import './submission/adapters';
 import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
@@ -142,6 +143,22 @@ function AppRoutes() {
         await retryPendingWineTastingNotePhotos(idToken);
       })();
     };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [authState, idToken]);
+
+  // Work Log Submission Framework Final Design（PR2）: Submission Queue（Food Log/Field Log D1/
+  // Work Log）の汎用自動再送。今まではPending Listの「すべて再送」を手動で押すまで動かなかった。
+  // resendAll()自身がin-flightをguardするため（orchestrator.ts）、起動時・online復帰・手動ボタンが
+  // 同時に発火しても実際の処理は1回だけになる
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
+    void resendAll(idToken);
+  }, [authState, idToken]);
+
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
+    const onOnline = () => { void resendAll(idToken); };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, [authState, idToken]);
