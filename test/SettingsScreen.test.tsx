@@ -29,8 +29,9 @@ describe('SettingsScreen: role gating', () => {
 
     expect(screen.getByText('ツール')).toBeInTheDocument();
     expect(screen.getByText('Lift Up Daily')).toBeInTheDocument();
-    expect(screen.getByText('図鑑（試作版）')).toBeInTheDocument();
     expect(screen.getByText('PC一括写真送信')).toBeInTheDocument();
+    // 図鑑（試作版）はHome IA整理 v1-1でHomeの「見る・探す」（図鑑）へ統合済み、Settingsからは削除
+    expect(screen.queryByText('図鑑（試作版）')).not.toBeInTheDocument();
 
     expect(screen.queryByText('管理・メンテナンス')).not.toBeInTheDocument();
     expect(screen.queryByText('加工知識を登録')).not.toBeInTheDocument();

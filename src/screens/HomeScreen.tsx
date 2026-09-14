@@ -108,9 +108,9 @@ export default function HomeScreen({ go }: Props) {
             <h2 className={styles.sectionTitle}>見る・探す</h2>
           </div>
           <div className={styles.navRow}>
-            <button className={styles.navBtn} onClick={() => go({ name: 'foodEncyclopediaList' })}>
+            <button className={styles.navBtn} onClick={() => go({ name: 'zukan' })}>
               <span className={styles.navIcon}>📚</span>
-              <span>食材図鑑</span>
+              <span>図鑑</span>
             </button>
             <button className={styles.navBtn} onClick={() => go({ name: 'zukanFieldMap', from: { name: 'home' } })}>
               <span className={styles.navIcon}>📍</span>

@@ -195,13 +195,15 @@ describe('HomeScreen: Home IA整理 v1', () => {
     expect(go).toHaveBeenCalledWith({ name: 'record', noteId: null });
   });
 
-  it('14. 見る・探すセクションに食材図鑑/フィールドマップ/加工・作業/ワインが表示され、正しく遷移する', async () => {
+  it('14. 見る・探すセクションに図鑑/フィールドマップ/加工・作業/ワインが表示され、正しく遷移する', async () => {
     const go = vi.fn();
     render(<HomeScreen go={go} />);
 
     expect(await screen.findByText('見る・探す')).toBeInTheDocument();
-    expect(screen.getByText('食材図鑑')).toBeInTheDocument();
     expect(screen.getByText('フィールドマップ')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('図鑑'));
+    expect(go).toHaveBeenCalledWith({ name: 'zukan' });
 
     await userEvent.click(screen.getByText('加工・作業'));
     expect(go).toHaveBeenCalledWith({ name: 'processing' });

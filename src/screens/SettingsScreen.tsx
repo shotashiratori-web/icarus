@@ -32,12 +32,6 @@ export default function SettingsScreen({ go }: Props) {
                 <span className={styles.navIcon}>📝</span>
                 <span>Lift Up Daily</span>
               </button>
-              <button className={styles.navBtn} onClick={() => go({ name: 'zukan' })}>
-                <span className={styles.navIcon}>📚</span>
-                <span>図鑑（試作版）</span>
-              </button>
-            </div>
-            <div className={styles.navRow}>
               <button className={styles.navBtn} onClick={() => go({ name: 'photoBulkUpload' })}>
                 <span className={styles.navIcon}>🗂️</span>
                 <span>PC一括写真送信</span>
