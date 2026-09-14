@@ -15,6 +15,9 @@ export const WORK_SUBMIT_URL = `${WORKER_URL}/work`;
 export function workEntryVoidUrl(workId: string, sheetRow: number): string {
   return `${WORKER_URL}/work/${encodeURIComponent(workId)}/entries/${sheetRow}/void`;
 }
+export function workEntryCorrectUrl(workId: string, sheetRow: number): string {
+  return `${WORKER_URL}/work/${encodeURIComponent(workId)}/entries/${sheetRow}/correct`;
+}
 export const STAFF_ME_URL = `${WORKER_URL}/staff/me`;
 export const STAFF_ROSTER_URL = `${WORKER_URL}/admin/staff`;
 export const STAFF_APPROVE_URL = `${WORKER_URL}/admin/staff/approve`;
