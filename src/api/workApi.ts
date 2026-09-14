@@ -1,4 +1,4 @@
-import { WORK_SUBMIT_URL, WORK_DETAIL_URL, WORK_SEARCH_URL, workEntryVoidUrl } from '../config';
+import { WORK_SUBMIT_URL, WORK_DETAIL_URL, WORK_SEARCH_URL, workEntryVoidUrl, workEntryCorrectUrl } from '../config';
 import type {
   WorkDetail, WorkDetailSuccess, WorkSubmitPayload, WorkSubmitSuccess, WorkSubmitError,
   WorkSearchParams, WorkSearchSuccess,
@@ -111,6 +111,85 @@ export async function voidWorkEntry(workId: string, sheetRow: number, reason: st
 
   if (json.status !== 'success') {
     throw new Error(json.message || '無効化に失敗しました');
+  }
+
+  return json;
+}
+
+export interface WorkCorrectSuccess {
+  status: 'success';
+  // 通信断でレスポンスが失われた場合の再送を、サーバー側がこのフラグで安全に吸収する
+  // （2026-09-14 Correction Final Design修正）。クライアント側で特別な再送ロジックは持たない
+  alreadyCorrected?: boolean;
+  content: string;
+  caption: string;
+}
+
+interface WorkCorrectError {
+  status: 'error';
+  message: string;
+  code?: 'NOT_FOUND' | 'CORRECTION_CONFLICT' | 'ENTRY_VOIDED';
+  currentContent?: string;
+  currentCaption?: string;
+}
+
+// 同時編集での楽観的排他制御の衝突（409 CORRECTION_CONFLICT）専用のエラー型。
+// サーバーが返したライブのSheets値（currentContent/currentCaption）を保持し、
+// 呼び出し側がその場でフォームへ取り込んで再編集できるようにする
+export class WorkCorrectionConflictError extends Error {
+  currentContent: string;
+  currentCaption: string;
+  constructor(message: string, currentContent: string, currentCaption: string) {
+    super(message);
+    this.name = 'WorkCorrectionConflictError';
+    this.currentContent = currentContent;
+    this.currentCaption = currentCaption;
+  }
+}
+
+// Work Log Correction v1（admin限定）。sheetRowはWorkDetailEntry.sheetRow（訂正操作専用の内部キー、
+// void同様ユーザー向け表示には使わない）をそのまま渡す。expectedContent/expectedCaptionは
+// 楽観的排他制御用——呼び出し側は画面に表示中の現在値をそのまま渡す
+export async function correctWorkEntry(
+  workId: string, sheetRow: number,
+  content: string, caption: string,
+  expectedContent: string, expectedCaption: string,
+  note: string, idToken: string,
+): Promise<WorkCorrectSuccess> {
+  let res: Response;
+  try {
+    res = await fetch(workEntryCorrectUrl(workId, sheetRow), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ content, caption, expectedContent, expectedCaption, note: note || undefined }),
+    });
+  } catch {
+    throw new NetworkUnknownError();
+  }
+
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
+  }
+
+  let json: WorkCorrectSuccess | WorkCorrectError;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`サーバーエラー (HTTP ${res.status})`);
+  }
+
+  if (json.status !== 'success') {
+    if (json.code === 'CORRECTION_CONFLICT') {
+      throw new WorkCorrectionConflictError(
+        json.message || '他の変更と競合しました。最新の内容を確認してください。',
+        json.currentContent ?? '',
+        json.currentCaption ?? '',
+      );
+    }
+    throw new Error(json.message || '訂正に失敗しました');
   }
 
   return json;

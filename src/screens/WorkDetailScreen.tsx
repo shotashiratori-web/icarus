@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import { fetchWorkDetail, voidWorkEntry, WorkNotFoundError, NetworkUnknownError } from '../api/workApi';
+import {
+  fetchWorkDetail, voidWorkEntry, correctWorkEntry, WorkNotFoundError, NetworkUnknownError,
+  WorkCorrectionConflictError,
+} from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
-import type { WorkDetail } from '../types/workLog';
+import type { WorkDetail, WorkEntry } from '../types/workLog';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import Lightbox from '../components/Lightbox';
@@ -24,6 +27,20 @@ export default function WorkDetailScreen({ go, workId }: Props) {
   const [voidingSheetRow, setVoidingSheetRow] = useState<number | null>(null);
   const [voidError, setVoidError] = useState<{ sheetRow: number; message: string } | null>(null);
   const isAdmin = staffMe?.role === 'admin';
+
+  // Work Log Correction v1。成功後はcontent/captionをローカルへ即時反映（楽観的更新、Cron待ちの
+  // UXギャップを埋める——Voidのhiddenと同じ考え方）。編集フォームは1entryずつ、インライン表示
+  const [correctedEntries, setCorrectedEntries] = useState<Map<number, { content: string; caption: string }>>(new Map());
+  const [editingSheetRow, setEditingSheetRow] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editCaption, setEditCaption] = useState('');
+  const [savingSheetRow, setSavingSheetRow] = useState<number | null>(null);
+  const [correctError, setCorrectError] = useState<{ sheetRow: number; message: string } | null>(null);
+
+  const effectiveEntry = (entry: WorkEntry): WorkEntry => {
+    const override = correctedEntries.get(entry.sheetRow);
+    return override ? { ...entry, content: override.content, caption: override.caption } : entry;
+  };
 
   const photos = detail?.photos ?? [];
   const lightboxPhotos = photos.map((p) => ({ url: p.photoUrl, caption: p.caption || undefined }));
@@ -74,6 +91,61 @@ export default function WorkDetailScreen({ go, workId }: Props) {
       });
     } finally {
       setVoidingSheetRow(null);
+    }
+  };
+
+  const startEdit = (entry: WorkEntry) => {
+    const eff = effectiveEntry(entry);
+    setEditingSheetRow(entry.sheetRow);
+    setEditContent(eff.content);
+    setEditCaption(eff.caption);
+    setCorrectError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingSheetRow(null);
+    setCorrectError(null);
+  };
+
+  const handleCorrect = async (entry: WorkEntry) => {
+    if (!idToken || !detail) return;
+    const eff = effectiveEntry(entry);
+
+    setSavingSheetRow(entry.sheetRow);
+    setCorrectError(null);
+    try {
+      const result = await correctWorkEntry(
+        detail.workId, entry.sheetRow, editContent, editCaption, eff.content, eff.caption, '', idToken,
+      );
+      setCorrectedEntries((prev) => {
+        const next = new Map(prev);
+        next.set(entry.sheetRow, { content: result.content, caption: result.caption });
+        return next;
+      });
+      setEditingSheetRow(null);
+    } catch (e) {
+      if (e instanceof TokenExpiredError) {
+        handleTokenExpired();
+        return;
+      }
+      if (e instanceof WorkCorrectionConflictError) {
+        // 競合時はサーバー側の最新値をそのまま取り込み、その場で見比べながら再編集できるようにする
+        setCorrectedEntries((prev) => {
+          const next = new Map(prev);
+          next.set(entry.sheetRow, { content: e.currentContent, caption: e.currentCaption });
+          return next;
+        });
+        setEditContent(e.currentContent);
+        setEditCaption(e.currentCaption);
+        setCorrectError({ sheetRow: entry.sheetRow, message: `${e.message}（内容を最新に更新しました。確認のうえ再度保存してください）` });
+        return;
+      }
+      setCorrectError({
+        sheetRow: entry.sheetRow,
+        message: e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '訂正に失敗しました',
+      });
+    } finally {
+      setSavingSheetRow(null);
     }
   };
 
@@ -163,32 +235,88 @@ export default function WorkDetailScreen({ go, workId }: Props) {
                       <p className={styles.empty}>まだ記録がありません。</p>
                     )}
                     <div className={styles.list}>
-                      {visibleEntries.map((entry) => (
-                        <div key={entry.sheetRow} className={styles.entry}>
-                          {entry.photoUrl ? (
-                            <img src={entry.photoUrl} alt="" className={styles.entryPhoto} loading="lazy" />
-                          ) : (
-                            <div className={styles.entryPhotoPlaceholder}>🧂</div>
-                          )}
-                          <div className={styles.entryInfo}>
-                            <p className={styles.entryDate}>{entry.datetime.slice(0, 16).replace('T', ' ')}</p>
-                            {entry.content && <p className={styles.entryContent}>{entry.content}</p>}
-                            {entry.caption && <p className={styles.entryCaption}>{entry.caption}</p>}
-                            {isAdmin && (
-                              <button
-                                className={styles.voidBtn}
-                                disabled={voidingSheetRow === entry.sheetRow}
-                                onClick={() => void handleVoid(entry.sheetRow)}
-                              >
-                                {voidingSheetRow === entry.sheetRow ? '無効化中…' : 'この記録を無効化'}
-                              </button>
+                      {visibleEntries.map((entry) => {
+                        const eff = effectiveEntry(entry);
+                        const isEditing = editingSheetRow === entry.sheetRow;
+                        const isSaving = savingSheetRow === entry.sheetRow;
+                        return (
+                          <div key={entry.sheetRow} className={styles.entry}>
+                            {eff.photoUrl ? (
+                              <img src={eff.photoUrl} alt="" className={styles.entryPhoto} loading="lazy" />
+                            ) : (
+                              <div className={styles.entryPhotoPlaceholder}>🧂</div>
                             )}
-                            {voidError?.sheetRow === entry.sheetRow && (
-                              <p className={styles.voidErrorText}>{voidError.message}</p>
-                            )}
+                            <div className={styles.entryInfo}>
+                              <p className={styles.entryDate}>{entry.datetime.slice(0, 16).replace('T', ' ')}</p>
+
+                              {isEditing ? (
+                                <div className={styles.correctForm}>
+                                  <textarea
+                                    className={styles.correctTextarea}
+                                    value={editContent}
+                                    onChange={(e) => setEditContent(e.target.value)}
+                                    rows={3}
+                                    disabled={isSaving}
+                                  />
+                                  <input
+                                    className={styles.correctInput}
+                                    value={editCaption}
+                                    onChange={(e) => setEditCaption(e.target.value)}
+                                    placeholder="キャプション（任意）"
+                                    disabled={isSaving}
+                                  />
+                                  <div className={styles.correctActions}>
+                                    <button
+                                      className={styles.correctSaveBtn}
+                                      disabled={isSaving || !editContent.trim()}
+                                      onClick={() => void handleCorrect(entry)}
+                                    >
+                                      {isSaving ? '保存中…' : '保存'}
+                                    </button>
+                                    <button
+                                      className={styles.correctCancelBtn}
+                                      disabled={isSaving}
+                                      onClick={cancelEdit}
+                                    >
+                                      キャンセル
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  {eff.content && <p className={styles.entryContent}>{eff.content}</p>}
+                                  {eff.caption && <p className={styles.entryCaption}>{eff.caption}</p>}
+                                </>
+                              )}
+
+                              {correctError?.sheetRow === entry.sheetRow && (
+                                <p className={styles.correctErrorText}>{correctError.message}</p>
+                              )}
+
+                              {isAdmin && !isEditing && (
+                                <div className={styles.adminActions}>
+                                  <button
+                                    className={styles.correctBtn}
+                                    onClick={() => startEdit(entry)}
+                                  >
+                                    訂正
+                                  </button>
+                                  <button
+                                    className={styles.voidBtn}
+                                    disabled={voidingSheetRow === entry.sheetRow}
+                                    onClick={() => void handleVoid(entry.sheetRow)}
+                                  >
+                                    {voidingSheetRow === entry.sheetRow ? '無効化中…' : 'この記録を無効化'}
+                                  </button>
+                                </div>
+                              )}
+                              {voidError?.sheetRow === entry.sheetRow && (
+                                <p className={styles.voidErrorText}>{voidError.message}</p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 );

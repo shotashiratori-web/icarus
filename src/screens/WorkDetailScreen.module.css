@@ -24,13 +24,42 @@
 .entryDate { font-size:var(--font-size-xs); color:var(--color-text-sub); margin:0 0 4px; }
 .entryContent { font-size:var(--font-size-sm); margin:0 0 4px; white-space:pre-wrap; }
 .entryCaption { font-size:var(--font-size-xs); color:var(--color-text-sub); margin:0; }
+.adminActions { display:flex; gap:var(--space-2); margin-top:var(--space-2); }
 .voidBtn {
-  margin-top:var(--space-2); font-size:var(--font-size-xs); color:var(--color-failed);
+  font-size:var(--font-size-xs); color:var(--color-failed);
   background:none; border:1px solid var(--color-failed); border-radius:var(--radius-sm);
   padding:var(--space-1) var(--space-2); cursor:pointer;
 }
 .voidBtn:disabled { opacity:0.6; cursor:default; }
 .voidErrorText { font-size:var(--font-size-xs); color:var(--color-failed); margin:var(--space-1) 0 0; }
+
+.correctBtn {
+  font-size:var(--font-size-xs); color:var(--color-primary);
+  background:none; border:1px solid var(--color-primary); border-radius:var(--radius-sm);
+  padding:var(--space-1) var(--space-2); cursor:pointer;
+}
+.correctBtn:disabled { opacity:0.6; cursor:default; }
+.correctErrorText { font-size:var(--font-size-xs); color:var(--color-failed); margin:var(--space-1) 0; }
+
+.correctForm { display:flex; flex-direction:column; gap:var(--space-2); }
+.correctTextarea, .correctInput {
+  font-size:var(--font-size-sm); font-family:inherit; padding:var(--space-2);
+  border:1px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-bg);
+  width:100%; box-sizing:border-box; resize:vertical;
+}
+.correctActions { display:flex; gap:var(--space-2); }
+.correctSaveBtn {
+  font-size:var(--font-size-xs); font-weight:600; color:var(--color-primary-fg);
+  background:var(--color-primary); border:none; border-radius:var(--radius-sm);
+  padding:var(--space-1) var(--space-3); cursor:pointer;
+}
+.correctSaveBtn:disabled { opacity:0.6; cursor:default; }
+.correctCancelBtn {
+  font-size:var(--font-size-xs); color:var(--color-text-sub);
+  background:none; border:1px solid var(--color-border); border-radius:var(--radius-sm);
+  padding:var(--space-1) var(--space-3); cursor:pointer;
+}
+.correctCancelBtn:disabled { opacity:0.6; cursor:default; }
 
 .skeletonList { display:flex; flex-direction:column; gap:var(--space-3); }
 .skeletonItem { height:64px; border-radius:var(--radius-md); background:linear-gradient(90deg, var(--color-border) 25%, var(--color-bg) 50%, var(--color-border) 75%); background-size:200% 100%; animation:shimmer 1.4s ease-in-out infinite; }
