@@ -102,8 +102,8 @@ describe('HomeScreen: 最近の観察/最近の作業 認証経路', () => {
     fetchRecentWorkLogs.mockRejectedValue(new Error('network error'));
     render(<HomeScreen go={vi.fn()} />);
 
-    expect(await screen.findByText('フィールドログを記録')).toBeInTheDocument();
-    expect(screen.queryByText('最近の観察')).not.toBeInTheDocument();
+    expect(await screen.findByText('フィールドを記録')).toBeInTheDocument();
+    expect(screen.queryByText('最近のフィールド')).not.toBeInTheDocument();
   });
 });
 
@@ -141,8 +141,8 @@ describe('HomeScreen: 最近の作業ミニリストのタップ可能化', () =
     fetchRecentWorkLogs.mockResolvedValue([]);
     render(<HomeScreen go={vi.fn()} />);
 
-    expect(await screen.findByText('フィールドログを記録')).toBeInTheDocument();
-    expect(screen.queryByText('最近の作業')).not.toBeInTheDocument();
+    expect(await screen.findByText('フィールドを記録')).toBeInTheDocument();
+    expect(screen.queryByText('最近の加工・作業')).not.toBeInTheDocument();
   });
 
   it('10. photoUrlを持つ項目でも行のタップは正しく動く', async () => {
@@ -165,5 +165,89 @@ describe('HomeScreen: 最近の作業ミニリストのタップ可能化', () =
     expect(item.tagName).toBe('BUTTON');
     item.focus();
     expect(item).toHaveFocus();
+  });
+});
+
+// Home IA整理 v1（2026-09-14）。記録する/見る・探す/最近の記録への再編、管理・開発系ボタンの
+// 設定画面への移動、ワインを記録の一次アクション化を検証する
+describe('HomeScreen: Home IA整理 v1', () => {
+  beforeEach(() => {
+    requestSilentIdToken.mockReset();
+    fetchRecentFieldObservations.mockReset().mockResolvedValue([]);
+    fetchRecentWorkLogs.mockReset().mockResolvedValue([]);
+    authMock.current = mockUseAuth();
+  });
+
+  it('12. 記録するセクションに3つのCTA（フィールド/加工・作業/ワイン）が表示される', async () => {
+    render(<HomeScreen go={vi.fn()} />);
+
+    expect(await screen.findByText('記録する')).toBeInTheDocument();
+    expect(screen.getByText('フィールドを記録')).toBeInTheDocument();
+    expect(screen.getByText('加工・作業を記録')).toBeInTheDocument();
+    expect(screen.getByText('ワインを記録')).toBeInTheDocument();
+  });
+
+  it('13. 「ワインを記録」クリックで新規ワインノート作成画面へ遷移する', async () => {
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+
+    await userEvent.click(await screen.findByText('ワインを記録'));
+    expect(go).toHaveBeenCalledWith({ name: 'record', noteId: null });
+  });
+
+  it('14. 見る・探すセクションに食材図鑑/フィールドマップ/加工・作業/ワインが表示され、正しく遷移する', async () => {
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+
+    expect(await screen.findByText('見る・探す')).toBeInTheDocument();
+    expect(screen.getByText('食材図鑑')).toBeInTheDocument();
+    expect(screen.getByText('フィールドマップ')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('加工・作業'));
+    expect(go).toHaveBeenCalledWith({ name: 'processing' });
+
+    await userEvent.click(screen.getByText('ワイン'));
+    expect(go).toHaveBeenCalledWith({ name: 'list' });
+  });
+
+  it('15. 旧「管理・編集」セクションおよび管理・開発系ボタンはHomeにもう表示されない（adminでも）', async () => {
+    authMock.current = mockUseAuth({
+      staffMe: { email: 'admin@test.invalid', displayName: 'Test Admin', role: 'admin', staffStatus: 'active' },
+    });
+    render(<HomeScreen go={vi.fn()} />);
+
+    await screen.findByText('記録する');
+    expect(screen.queryByText('管理・編集')).not.toBeInTheDocument();
+    expect(screen.queryByText('加工知識を登録')).not.toBeInTheDocument();
+    expect(screen.queryByText('スタッフ管理')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lift Up Daily')).not.toBeInTheDocument();
+    expect(screen.queryByText('PC一括写真送信')).not.toBeInTheDocument();
+  });
+
+  it('16. staffMeがある場合のみヘッダーに「設定」ボタンが表示され、クリックで設定画面へ遷移する', async () => {
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+
+    const settingsBtn = await screen.findByText('設定');
+    await userEvent.click(settingsBtn);
+    expect(go).toHaveBeenCalledWith({ name: 'settings' });
+  });
+
+  it('17. staffMeがnullの場合、ヘッダーに「設定」ボタンは表示されない', async () => {
+    authMock.current = mockUseAuth({ staffMe: null });
+    render(<HomeScreen go={vi.fn()} />);
+
+    await screen.findByText('記録する');
+    expect(screen.queryByText('設定')).not.toBeInTheDocument();
+  });
+
+  it('18. 最近のフィールド/最近の加工・作業/最近のワインが「最近の記録」の下に同じ階層で並ぶ', async () => {
+    fetchRecentFieldObservations.mockResolvedValue([observation({ food: 'セリ' })]);
+    fetchRecentWorkLogs.mockResolvedValue([workLog({ processingName: '塩漬け' })]);
+    render(<HomeScreen go={vi.fn()} />);
+
+    expect(await screen.findByText('最近の記録')).toBeInTheDocument();
+    expect(screen.getByText('最近のフィールド')).toBeInTheDocument();
+    expect(screen.getByText('最近の加工・作業')).toBeInTheDocument();
   });
 });

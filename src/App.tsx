@@ -31,6 +31,7 @@ import FoodEncyclopediaDetailScreen from './screens/FoodEncyclopediaDetailScreen
 import ProcessEditorScreen from './screens/ProcessEditorScreen';
 import FoodEditorListScreen from './screens/FoodEditorListScreen';
 import FoodEditorFormScreen from './screens/FoodEditorFormScreen';
+import SettingsScreen from './screens/SettingsScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { saveCurrentScreen, loadStoredScreen } from './utils/screenPersistence';
 import { retryPendingWineTastingNotes } from './submission/wineTastingNoteSync';
@@ -101,7 +102,10 @@ export type Screen =
   // Food Editor MVP: Food Identity（canonical_name/aliases/usableParts/description）をAdminが登録・編集する
   | { name: 'foodEditorList' }
   | { name: 'foodEditorForm'; mode: 'create' }
-  | { name: 'foodEditorForm'; mode: 'edit'; food: FoodEntity };
+  | { name: 'foodEditorForm'; mode: 'edit'; food: FoodEntity }
+  // Home IA整理 v1（2026-09-14）。開発・管理系機能をHomeから分離した専用画面。入口はHomeScreenの
+  // ヘッダー「設定」ボタンのみ。表示条件（role gating）はHomeScreenから移動しただけで変更しない
+  | { name: 'settings' };
 
 function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
@@ -222,6 +226,7 @@ function AppRoutes() {
   if (screen.name === 'foodEditorForm') return screen.mode === 'edit'
     ? <FoodEditorFormScreen go={go} mode="edit" food={screen.food} />
     : <FoodEditorFormScreen go={go} mode="create" />;
+  if (screen.name === 'settings') return <SettingsScreen go={go} />;
 
   return null;
 }
