@@ -101,6 +101,10 @@ export async function renderSignInButton(
   googleId.initialize({
     client_id: GOOGLE_CLIENT_ID,
     callback: (res) => onToken(res.credential),
+    // requestSilentIdToken()と同様にitp_support: trueを渡す。これが無いと、Safari等の
+    // ITP（サードパーティCookieブロック）環境でボタンをタップした際にGoogle側の状態確立が
+    // 崩れ、accounts.google.comへ丸ごと遷移した末に白紙表示になる不具合を確認したため。
+    itp_support: true,
   });
   googleId.renderButton(el, {
     type: 'standard', text: 'signin_with', size: 'large', locale: 'ja', width: 240,
