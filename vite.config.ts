@@ -7,14 +7,12 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig({
   plugins: [react(), cloudflare()],
   base: './',
-  // 2026-09-15: 白画面インシデント対応。build.target未指定だとデフォルトのモダンな出力になり、
-  // ?.（optional chaining）・??（nullish coalescing）等のES2020構文がそのまま出力される。
-  // これはES2020未満のエンジン（iOS 12以下のSafari等、古い端末）では構文解析自体に失敗し、
-  // JSが1行も実行されない＝React起動前のため既存のErrorBoundaryでも救えない「本物の白紙」になる。
-  // target を広げ、対応構文へ変換させることで古い端末でも最低限起動できるようにする
-  build: {
-    target: ['es2017', 'safari12', 'ios12'],
-  },
+  // 2026-09-16: 2026-09-15に追加したbuild.target（es2017/safari12/ios12への拡張）をrevert。
+  // 当時は「新規スタッフの白紙は古いSafariの構文非対応が原因」という仮説だったが、実機がiPhone 16
+  // （最新機種）と判明し前提が崩れた。加えて、構文変換だけでは互換性の裏付けとして不十分
+  // （アプリが使うWeb APIがSafari 12で動く保証はしていない）。確証のない古ブラウザ対応を
+  // 中途半端に残すより、デフォルトのtargetへ戻す。古いSafari対応が必要になったら、実機情報
+  // またはPR #36系の起動時エラー表示で実際のエラーを見てから改めて判断する
   server: {
     host: true,
     port: 5173,
