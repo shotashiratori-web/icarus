@@ -3,12 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      2026-09-15: 白画面インシデント対応。デプロイ直後、キャッシュされた古いindex.htmlが既に
+      2026-09-15/16: 白画面インシデント対応。デプロイ直後、キャッシュされた古いindex.htmlが既に
       削除されたエントリJSファイルを参照して読み込みに失敗すると、React自体が起動しないため
       src/components/ErrorBoundary.tsxでは救えず、<div id="root">が空のまま何も表示されない。
       vite buildは<script type="module">を<head>の末尾へ自動的に移動するため、この検知スクリプトは
-      それより確実に前で登録されるようheadの先頭に置く。load失敗をcapture phaseで検知し、
-      一度だけ自動リロードする（無限ループ防止にsessionStorageでguardする）。
+      それより確実に前で登録されるようheadの先頭に置く。
+      エントリスクリプトの読み込み失敗はload失敗をcapture phaseで検知し、一度だけ自動リロードする
+      （無限ループ防止にsessionStorageでguardする）。それ以外の実行時エラー（構文エラー含む）・
+      未処理のPromise rejectionは、Reactに一切依存できないため#boot-status（bodyの静的HTML、
+      Reactが起動すれば即座に置き換わる）へ直接メッセージを書き出す。これにより次回発生時、
+      白紙ではなく実際のエラー内容がスクリーンショットに写るようになる
     -->
     <script>
       (function () {
@@ -16,18 +20,44 @@
         function isEntryScript(target) {
           return target && target.tagName === 'SCRIPT' && target.type === 'module';
         }
+        function showBootError(label, detail) {
+          var el = document.getElementById('boot-status');
+          if (!el || !el.isConnected) return; // Reactが既に起動していれば何もしない
+          var box = document.createElement('div');
+          box.className = 'extra';
+          box.textContent = detail ? (label + '： ' + detail) : label;
+          el.appendChild(box);
+        }
+
         window.addEventListener('error', function (event) {
-          if (!isEntryScript(event.target)) return;
-          try {
-            if (sessionStorage.getItem(GUARD_KEY)) return;
-            sessionStorage.setItem(GUARD_KEY, '1');
-            location.reload();
-          } catch (_e) { /* sessionStorageが使えなくても致命的ではない */ }
+          if (isEntryScript(event.target)) {
+            try {
+              if (sessionStorage.getItem(GUARD_KEY)) {
+                // 既に一度自動リロード済みで再発 → これ以上は諦めて内容を表示する
+                showBootError('スクリプトの読み込みに失敗', event.target && event.target.src);
+                return;
+              }
+              sessionStorage.setItem(GUARD_KEY, '1');
+              location.reload();
+            } catch (_e) { /* sessionStorageが使えなくても致命的ではない */ }
+            return;
+          }
+          // スクリプトの読み込み失敗ではない＝実行時エラー（構文エラーもここに含まれうる）
+          var detail = event.message || (event.error && event.error.message) || '';
+          var where = event.filename ? (event.filename + ':' + event.lineno) : '';
+          showBootError('起動時エラー', [detail, where].filter(Boolean).join(' @ ') || '詳細不明');
         }, true);
+
         window.addEventListener('load', function (event) {
           if (!isEntryScript(event.target)) return;
           try { sessionStorage.removeItem(GUARD_KEY); } catch (_e) { /* ignore */ }
         }, true);
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          var detail = (reason && reason.message) ? reason.message : String(reason);
+          showBootError('未処理のエラー', detail);
+        });
       })();
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -59,7 +89,7 @@
       }
       #boot-status .logo { font-size: 20px; font-weight: 700; }
       #boot-status .msg { font-size: 14px; color: #666660; }
-      #boot-status .extra { font-size: 13px; color: #666660; max-width: 280px; line-height: 1.6; }
+      #boot-status .extra { font-size: 13px; color: #666660; max-width: 280px; line-height: 1.6; word-break: break-word; }
     </style>
   </head>
   <body>
