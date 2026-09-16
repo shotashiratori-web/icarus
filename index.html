@@ -33,9 +33,54 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>web</title>
+    <!--
+      2026-09-16: 白画面インシデント調査用。新規スタッフから「初回起動時に必ず白紙になる」報告が
+      あったが、原因の切り分けに必要な実機情報（スクリーンショット等）が得られず、コード側の
+      調査だけでは特定できなかった。#root の中身はReactが起動した瞬間に丸ごと置き換わるため、
+      ここに素のHTML/CSSだけの起動中表示を仕込んでおけば、Reactが最後まで起動できなかった場合に
+      「本物の白紙」ではなく「読み込み中…」の文字が残り続けるようになる。これにより次回発生時、
+      本当に何も起きていないのか・単に読み込みが遅いだけなのかが、スクリーンショット1枚で
+      判別できるようになる（Reactに一切依存しないので、Reactが起動できない原因そのものが
+      何であっても表示され続ける）
+    -->
+    <style>
+      #boot-status {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+        color: #1a1a1a;
+        background: #f5f4f0;
+        text-align: center;
+        padding: 24px;
+      }
+      #boot-status .logo { font-size: 20px; font-weight: 700; }
+      #boot-status .msg { font-size: 14px; color: #666660; }
+      #boot-status .extra { font-size: 13px; color: #666660; max-width: 280px; line-height: 1.6; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="boot-status">
+      <div class="logo">Icarus</div>
+      <div class="msg">読み込み中…</div>
+    </div></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      (function () {
+        // Reactが起動していれば#boot-statusごと#rootの中身が置き換わっているはず。
+        // 8秒経ってもまだ残っている＝起動に失敗している可能性が高いので、追加の案内を表示する
+        setTimeout(function () {
+          var el = document.getElementById('boot-status');
+          if (!el || !el.isConnected) return;
+          var extra = document.createElement('div');
+          extra.className = 'extra';
+          extra.textContent = 'このまま変わらない場合は、この画面のスクリーンショットを管理者に送ってください。';
+          el.appendChild(extra);
+        }, 8000);
+      })();
+    </script>
   </body>
 </html>
