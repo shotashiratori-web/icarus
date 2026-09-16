@@ -1,0 +1,44 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 100vh;
+  text-align: center;
+  padding: var(--space-8) var(--space-6);
+  gap: var(--space-3);
+  background: var(--color-bg);
+}
+
+.icon {
+  font-size: 48px;
+  margin-bottom: var(--space-2);
+}
+
+.title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.body {
+  font-size: var(--font-size-base);
+  color: var(--color-text-sub);
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.reloadBtn {
+  margin-top: var(--space-6);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-primary-fg);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--color-primary);
+}
+
+.reloadBtn:active {
+  opacity: 0.8;
+}

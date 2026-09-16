@@ -2,6 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      2026-09-15: 白画面インシデント対応。デプロイ直後、キャッシュされた古いindex.htmlが既に
+      削除されたエントリJSファイルを参照して読み込みに失敗すると、React自体が起動しないため
+      src/components/ErrorBoundary.tsxでは救えず、<div id="root">が空のまま何も表示されない。
+      vite buildは<script type="module">を<head>の末尾へ自動的に移動するため、この検知スクリプトは
+      それより確実に前で登録されるようheadの先頭に置く。load失敗をcapture phaseで検知し、
+      一度だけ自動リロードする（無限ループ防止にsessionStorageでguardする）。
+    -->
+    <script>
+      (function () {
+        var GUARD_KEY = 'icarus:entry-script-reloaded';
+        function isEntryScript(target) {
+          return target && target.tagName === 'SCRIPT' && target.type === 'module';
+        }
+        window.addEventListener('error', function (event) {
+          if (!isEntryScript(event.target)) return;
+          try {
+            if (sessionStorage.getItem(GUARD_KEY)) return;
+            sessionStorage.setItem(GUARD_KEY, '1');
+            location.reload();
+          } catch (_e) { /* sessionStorageが使えなくても致命的ではない */ }
+        }, true);
+        window.addEventListener('load', function (event) {
+          if (!isEntryScript(event.target)) return;
+          try { sessionStorage.removeItem(GUARD_KEY); } catch (_e) { /* ignore */ }
+        }, true);
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>web</title>
