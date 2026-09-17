@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gate検証（OAuth2 popup、本番機能ではありません）</title>
+</head>
+<body style="font-family:-apple-system,sans-serif;padding:24px;line-height:1.8">
+<!--
+  2026-09-17: OAuth2 popup Gate検証専用ページ（icarus_oauth2_popup_login_audit.md参照）。
+  Reactアプリとは無関係の独立した静的ページで、どの画面からもリンクしない。
+  目的は「OAuth2 popupを採用するための実装開始」ではなく、問題が起きている本人のiOS Safariで
+  google.accounts.oauth2.initTokenClient()のpopup自体が正常に完走する（callbackまで戻る）かだけを
+  確認する実験。Workerへの送信・userinfo問い合わせ・Icarus session発行・既存google.accounts.idの
+  変更は一切行わない。access tokenの値そのものは画面にもログにも出さない（受信有無だけ判定する）。
+  Gate検証が終わったらこのファイルは削除する。
+-->
+<h1>Gate検証用ページ（本番機能ではありません）</h1>
+<p>下のボタンを押してGoogleでサインインしてください。access tokenの値は表示されません。</p>
+<button id="btn" style="font-size:16px;padding:12px 24px" disabled>読み込み中…</button>
+<p id="result" style="font-weight:bold;margin-top:16px"></p>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+  var CLIENT_ID = '1022257413413-1lvs3k00jv357ho9rfjqnjtruake985l.apps.googleusercontent.com';
+  var client = null;
+  var timeoutId = null;
+
+  function setResult(text) {
+    document.getElementById('result').textContent = text;
+  }
+
+  function clearPendingTimeout() {
+    if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+  }
+
+  function initClient() {
+    client = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: 'openid email profile',
+      callback: function (tokenResponse) {
+        clearPendingTimeout();
+        var ok = !!(tokenResponse && tokenResponse.access_token);
+        setResult(ok ? 'PASS: callbackまで戻りました（access_token受信）' : 'FAIL: callbackは戻りましたが access_token がありません');
+      },
+      error_callback: function (err) {
+        clearPendingTimeout();
+        var detail = (err && err.type) ? err.type : String(err);
+        setResult('FAIL: error_callback発火 - ' + detail);
+      },
+    });
+    var btn = document.getElementById('btn');
+    btn.disabled = false;
+    btn.textContent = 'サインインしてテスト';
+    btn.addEventListener('click', function () {
+      setResult('実行中…（popupを確認してください）');
+      clearPendingTimeout();
+      timeoutId = setTimeout(function () {
+        setResult('FAIL: 15秒経ってもcallback/error_callbackどちらも発火しませんでした（popup停止・無応答の可能性）');
+      }, 15000);
+      client.requestAccessToken();
+    });
+  }
+
+  window.onload = initClient;
+</script>
+</body>
+</html>
