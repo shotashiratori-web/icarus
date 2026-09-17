@@ -16,9 +16,27 @@ interface GoogleIdApi {
   disableAutoSelect: () => void;
 }
 
+interface GoogleOAuth2TokenClient {
+  requestAccessToken: () => void;
+}
+
+interface GoogleOAuth2Api {
+  initTokenClient: (config: {
+    client_id: string;
+    scope: string;
+    callback: (res: { access_token?: string }) => void;
+    error_callback?: (err: { type?: string }) => void;
+  }) => GoogleOAuth2TokenClient;
+}
+
 function getGoogleId(): GoogleIdApi | undefined {
   const w = window as unknown as { google?: { accounts: { id: GoogleIdApi } } };
   return w.google?.accounts.id;
+}
+
+function getGoogleOAuth2(): GoogleOAuth2Api | undefined {
+  const w = window as unknown as { google?: { accounts: { oauth2: GoogleOAuth2Api } } };
+  return w.google?.accounts.oauth2;
 }
 
 let scriptLoadPromise: Promise<void> | null = null;
@@ -109,4 +127,57 @@ export async function renderSignInButton(
   googleId.renderButton(el, {
     type: 'standard', text: 'signin_with', size: 'large', locale: 'ja', width: 240,
   });
+}
+
+// iOS（WebKitのITP制限）専用経路。google.accounts.idのボタン方式（renderSignInButton）は
+// itp_support有無に関わらずこの環境で壊れることを実機Gateで確認済みのため、別のGoogleライブラリ
+// （google.accounts.oauth2）によるpopup方式へ切り替える。詳細: icarus_oauth2_popup_login_audit.md
+//
+// scopeはemail取得に必要な最小限（openid email profile）のみ。Google APIをユーザーに代わって
+// 呼び出す用途では使わない
+const OAUTH2_SCOPE = 'openid email profile';
+
+/** iOS専用のGoogleサインインボタンを描画する。access tokenをonAccessTokenへ渡す（値の保存はしない）。 */
+export async function renderOAuth2SignInButton(
+  el: HTMLElement,
+  onAccessToken: (accessToken: string) => void,
+): Promise<void> {
+  await loadGsiScript();
+  const oauth2 = getGoogleOAuth2();
+  if (!oauth2) return;
+
+  el.innerHTML = '';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Googleでサインイン';
+  Object.assign(button.style, {
+    width: '240px',
+    height: '40px',
+    fontSize: '14px',
+    fontFamily: 'Roboto, arial, sans-serif',
+    color: '#3c4043',
+    background: '#fff',
+    border: '1px solid #dadce0',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  });
+
+  const client = oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: OAUTH2_SCOPE,
+    callback: (res) => {
+      button.disabled = false;
+      if (res.access_token) onAccessToken(res.access_token);
+    },
+    error_callback: () => {
+      button.disabled = false;
+    },
+  });
+
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    client.requestAccessToken();
+  });
+
+  el.appendChild(button);
 }

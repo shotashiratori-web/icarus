@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { requestSilentIdToken, renderSignInButton, disableAutoSelect } from '../api/googleAuth';
-import { exchangeForSession } from '../api/sessionApi';
+import { requestSilentIdToken, renderSignInButton, renderOAuth2SignInButton, disableAutoSelect } from '../api/googleAuth';
+import { exchangeForSession, exchangeAccessTokenForSession } from '../api/sessionApi';
 import { fetchMyStaffStatus } from '../api/staffApi';
 import { TokenExpiredError } from '../api/icarusApi';
+import { isIOSDevice } from '../utils/platform';
 import type { StaffMe } from '../types/staff';
 
 export type AuthState = 'checking' | 'ready' | 'signedOut';
@@ -118,8 +119,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // iOS（WebKitのITP制限）では、通常のgoogle.accounts.idボタン方式が実機で機能しないことを
+  // 確認済みのため、OAuth2 popup方式（別経路）へ分岐する。判定は"Safari"文字列ではなくiOS
+  // デバイスかどうかで行う（詳細: icarus_oauth2_popup_login_audit.md）。
+  // サイレント再ログイン（上の useEffect）は無変更、この分岐は手動サインインボタンのみに影響する
   useEffect(() => {
     if (authState !== 'signedOut' || !signInEl) return;
+    if (isIOSDevice()) {
+      void renderOAuth2SignInButton(signInEl, (accessToken) => {
+        void exchangeAccessTokenForSession(accessToken).then((session) => {
+          if (session) applySession(session.sessionToken);
+          // 交換に失敗した場合（未承認スタッフ等）はsignedOut画面のままになる
+        });
+      });
+      return;
+    }
     void renderSignInButton(signInEl, (googleToken) => {
       void exchangeForSession(googleToken).then((session) => {
         if (session) applySession(session.sessionToken);
