@@ -44,6 +44,8 @@ export const KNOWLEDGE_RELATIONS_URL = `${WORKER_URL}/knowledge-relations`;
 // Composite API（migration不要、既存Food/Process/ProcessedProduct/KnowledgeRelationとは別ルート）。Admin限定
 export const KNOWLEDGE_PROCESSES_URL = `${WORKER_URL}/knowledge/processes`;
 export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
+// iOS専用のOAuth2 access token経路（icarus_oauth2_popup_login_audit.md参照）
+export const AUTH_SESSION_OAUTH2_URL = `${WORKER_URL}/auth/session-oauth2`;
 export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;
 export const PHOTO_HASH_REGISTER_URL = `${WORKER_URL}/photo-hashes/register`;
 export const FIELD_DELETE_ENTRIES_URL = `${WORKER_URL}/field/delete-entries`;
