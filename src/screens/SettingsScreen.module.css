@@ -18,3 +18,11 @@
 .navIcon { font-size:20px; }
 
 .empty { text-align:center; color:var(--color-text-sub); font-size:var(--font-size-sm); margin-top:var(--space-10); }
+
+.accountEmail { font-size:var(--font-size-sm); color:var(--color-text-sub); }
+.signOutBtn {
+  align-self:flex-start; font-size:var(--font-size-sm); color:var(--color-text-sub);
+  padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm);
+  border:1px solid var(--color-border); background:var(--color-surface);
+}
+.signOutBtn:active { background:var(--color-bg); }

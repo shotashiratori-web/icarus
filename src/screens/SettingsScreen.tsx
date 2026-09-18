@@ -9,7 +9,7 @@ type Props = { go: (s: Screen) => void };
 // 最近の記録）と管理・メンテナンス業務を画面単位で完全に分ける。表示条件（role gating）は
 // HomeScreenから移動しただけで一切変更しない——一般staffには従来どおりadmin限定機能を表示しない
 export default function SettingsScreen({ go }: Props) {
-  const { staffMe } = useAuth();
+  const { staffMe, userEmail, signOut } = useAuth();
 
   return (
     <div className={styles.root}>
@@ -22,6 +22,17 @@ export default function SettingsScreen({ go }: Props) {
       <main className={styles.main}>
         {!staffMe && (
           <p className={styles.empty}>ログイン後にご利用いただけます。</p>
+        )}
+
+        {staffMe && (
+          // 別のGoogleアカウントで試す・端末を共用する等のために、通常のログイン状態からも
+          // サインアウトできる入口が無かった（既存はFoodLogScreen・PendingApprovalScreen限定）。
+          // 2026-09-19追加
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>アカウント</h2>
+            {userEmail && <p className={styles.accountEmail}>{userEmail}</p>}
+            <button className={styles.signOutBtn} onClick={signOut}>サインアウト</button>
+          </section>
         )}
 
         {staffMe && (

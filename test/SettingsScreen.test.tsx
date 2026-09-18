@@ -88,3 +88,26 @@ describe('SettingsScreen: 遷移', () => {
     expect(go).toHaveBeenCalledWith({ name: 'daily' });
   });
 });
+
+// 別のGoogleアカウントで試す・端末を共用する等のために、通常のログイン状態からも
+// サインアウトできる入口を2026-09-19追加。role非依存（一般staffでも表示される）ことを確認する
+describe('SettingsScreen: アカウント', () => {
+  it('7. 一般staffにも自分のメールアドレスとサインアウトボタンが表示される', () => {
+    useAuthMock.mockReturnValue(mockUseAuth({
+      staffMe: { email: 'staff@test.invalid', displayName: 'Test Staff', role: 'staff', staffStatus: 'active' },
+    }));
+    render(<SettingsScreen go={vi.fn()} />);
+
+    expect(screen.getByText('admin@test.invalid')).toBeInTheDocument(); // mockUseAuthのuserEmail固定値
+    expect(screen.getByText('サインアウト')).toBeInTheDocument();
+  });
+
+  it('8. サインアウトボタンクリックでsignOutが呼ばれる', async () => {
+    const signOut = vi.fn();
+    useAuthMock.mockReturnValue(mockUseAuth({ signOut }));
+    render(<SettingsScreen go={vi.fn()} />);
+
+    await userEvent.click(screen.getByText('サインアウト'));
+    expect(signOut).toHaveBeenCalled();
+  });
+});

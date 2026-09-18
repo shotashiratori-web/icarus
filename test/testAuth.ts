@@ -1,10 +1,21 @@
 import { vi } from 'vitest';
 import type { StaffMe } from '../src/types/staff';
 
+type MockAuthOverrides = Partial<{
+  idToken: string | null;
+  userEmail: string;
+  authState: 'checking' | 'ready' | 'signedOut';
+  staffMe: StaffMe | null;
+  signInContainerRef: (el: HTMLDivElement | null) => void;
+  handleTokenExpired: () => void;
+  signOut: () => void;
+}>;
+
 // component testでは実際のGoogle OAuthフローを通さない。
 // authState='ready'固定のuseAuthモックを各テストファイルで共有する。
-// overridesでstaffMe等を差し替えられる（例: Work Log Voidのadmin/staff表示分岐テスト）
-export function mockUseAuth(overrides: { staffMe?: StaffMe | null } = {}) {
+// overridesでstaffMe・signOut等を差し替えられる（例: Work Log Voidのadmin/staff表示分岐テスト、
+// SettingsScreenのサインアウトボタンテスト）
+export function mockUseAuth(overrides: MockAuthOverrides = {}) {
   return {
     idToken: 'test-token',
     userEmail: 'admin@test.invalid',
