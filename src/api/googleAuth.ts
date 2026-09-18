@@ -25,7 +25,7 @@ interface GoogleOAuth2Api {
     client_id: string;
     scope: string;
     callback: (res: { access_token?: string }) => void;
-    error_callback?: (err: { type?: string }) => void;
+    error_callback?: (err: { type?: string; message?: string }) => void;
   }) => GoogleOAuth2TokenClient;
 }
 
@@ -137,6 +137,15 @@ export async function renderSignInButton(
 // 呼び出す用途では使わない
 const OAUTH2_SCOPE = 'openid email profile';
 
+// 2026-09-18: 別スタッフ（Gate検証を行った本人とは別端末）から「ボタンを押すと真っ白になる」報告。
+// Google公式によれば、requestAccessToken()のポップアップが開けない/閉じられた場合は
+// error_callbackが type: 'popup_failed_to_open' | 'popup_closed' | 'unknown' 付きで呼ばれる契約
+// だが、この情報を画面に一切出していなかったため、何が起きているか一切分からなかった。
+// 原因を断定できるまでは推測で直さず、次に同じ事象が起きた際にGoogle側が何を報告しているかが
+// スクリーンショット1枚で分かるよう、ボタン直下に状態・エラー内容を表示するようにする
+// （PR #36の起動時エラー表示と同じ考え方）。8秒経っても応答が無い場合もその旨を表示する
+const OAUTH2_STATUS_TIMEOUT_MS = 8000;
+
 /** iOS専用のGoogleサインインボタンを描画する。access tokenをonAccessTokenへ渡す（値の保存はしない）。 */
 export async function renderOAuth2SignInButton(
   el: HTMLElement,
@@ -162,22 +171,48 @@ export async function renderOAuth2SignInButton(
     cursor: 'pointer',
   });
 
+  const status = document.createElement('p');
+  Object.assign(status.style, {
+    fontSize: '12px',
+    color: '#c0392b',
+    marginTop: '8px',
+    maxWidth: '280px',
+  });
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const clearPendingTimeout = () => {
+    if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+  };
+
   const client = oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: OAUTH2_SCOPE,
     callback: (res) => {
+      clearPendingTimeout();
       button.disabled = false;
-      if (res.access_token) onAccessToken(res.access_token);
+      if (res.access_token) {
+        onAccessToken(res.access_token);
+      } else {
+        status.textContent = 'サインインに失敗しました（access_tokenを受信できませんでした）';
+      }
     },
-    error_callback: () => {
+    error_callback: (err) => {
+      clearPendingTimeout();
       button.disabled = false;
+      status.textContent = `サインインに失敗しました（${err?.type ?? '不明なエラー'}）`;
     },
   });
 
   button.addEventListener('click', () => {
     button.disabled = true;
+    status.textContent = '';
+    clearPendingTimeout();
+    timeoutId = setTimeout(() => {
+      status.textContent = `${OAUTH2_STATUS_TIMEOUT_MS / 1000}秒経っても応答がありません（ポップアップがブロックされている可能性があります）`;
+    }, OAUTH2_STATUS_TIMEOUT_MS);
     client.requestAccessToken();
   });
 
   el.appendChild(button);
+  el.appendChild(status);
 }
