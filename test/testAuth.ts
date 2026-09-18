@@ -9,6 +9,7 @@ type MockAuthOverrides = Partial<{
   signInContainerRef: (el: HTMLDivElement | null) => void;
   handleTokenExpired: () => void;
   signOut: () => void;
+  authDiagnostic: string;
 }>;
 
 // component testでは実際のGoogle OAuthフローを通さない。
@@ -24,6 +25,7 @@ export function mockUseAuth(overrides: MockAuthOverrides = {}) {
     signInContainerRef: () => {},
     handleTokenExpired: vi.fn(),
     signOut: vi.fn(),
+    authDiagnostic: '',
     ...overrides,
   };
 }

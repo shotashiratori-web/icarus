@@ -12,7 +12,7 @@ import styles from './HomeScreen.module.css';
 type Props = { go: (s: Screen) => void };
 
 export default function HomeScreen({ go }: Props) {
-  const { authState, staffMe, signInContainerRef, idToken } = useAuth();
+  const { authState, staffMe, signInContainerRef, idToken, authDiagnostic } = useAuth();
   const [recent, setRecent] = useState<WineNote[]>([]);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
@@ -53,6 +53,8 @@ export default function HomeScreen({ go }: Props) {
           <div className={styles.signInBox}>
             <p className={styles.signInText}>ログインが切れています。再度ログインしてください。</p>
             <div ref={signInContainerRef} />
+            {/* 2026-09-19診断用: PR #44後の追加症状切り分け。token/session値は含まない */}
+            {authDiagnostic && <p className={styles.signInText}>診断情報: {authDiagnostic}</p>}
           </div>
         )}
 

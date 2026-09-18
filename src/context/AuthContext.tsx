@@ -16,6 +16,10 @@ export interface AuthContextValue {
   signInContainerRef: (el: HTMLDivElement | null) => void;
   handleTokenExpired: () => void;
   signOut: () => void;
+  // 2026-09-19診断用: PR #44後の追加症状（Googleログインは完了するが直後に「ログインが切れて
+  // います」へ戻る）の切り分け。/staff/meの失敗理由（HTTPステータス相当）だけを保持する
+  // （token/session値は含めない）。icarus_oauth2_popup_login_audit.md参照
+  authDiagnostic: string;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -76,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authState, setAuthState] = useState<AuthState>('checking');
   const [signInEl, setSignInEl] = useState<HTMLDivElement | null>(null);
   const [staffMe, setStaffMe] = useState<StaffMe | null>(null);
+  const [authDiagnostic, setAuthDiagnostic] = useState('');
 
   const applySession = (token: string) => {
     saveSession(token);
@@ -134,11 +139,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authState !== 'signedOut' || !signInEl) return;
     if (isIOSDevice()) {
-      void renderOAuth2SignInButton(signInEl, (accessToken) => {
-        void exchangeAccessTokenForSession(accessToken).then((session) => {
-          if (session) applySession(session.sessionToken);
-          // 交換に失敗した場合（未承認スタッフ等）はsignedOut画面のままになる
-        });
+      void renderOAuth2SignInButton(signInEl, async (accessToken) => {
+        setAuthDiagnostic('');
+        const result = await exchangeAccessTokenForSession(accessToken);
+        if (result.ok && result.session) {
+          applySession(result.session.sessionToken);
+        } else {
+          // 交換に失敗した場合（未承認スタッフ等）はsignedOut画面のままになる。
+          // detailはボタン直下にも表示されるが、Home画面側でも確認できるようcontextへ残す
+          setAuthDiagnostic(`/auth/session-oauth2: ${result.detail ?? '不明なエラー'}`);
+        }
+        return { ok: result.ok, detail: result.detail };
       });
       return;
     }
@@ -166,9 +177,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     fetchMyStaffStatus(idToken).then((item) => {
-      if (!cancelled) setStaffMe(item);
+      if (!cancelled) { setStaffMe(item); setAuthDiagnostic(''); }
     }).catch((e) => {
       if (cancelled) return;
+      // 2026-09-19診断用: session発行は成功したのに直後に signedOut へ戻る症状の切り分け
+      // （token値は含めない、エラーメッセージのみ）
+      setAuthDiagnostic(`/staff/me: ${e instanceof Error ? e.message : String(e)}`);
       if (e instanceof TokenExpiredError) {
         handleTokenExpired();
       }
@@ -186,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ idToken, userEmail, authState, staffMe, signInContainerRef: setSignInEl, handleTokenExpired, signOut }}
+      value={{ idToken, userEmail, authState, staffMe, signInContainerRef: setSignInEl, handleTokenExpired, signOut, authDiagnostic }}
     >
       {children}
     </AuthContext.Provider>

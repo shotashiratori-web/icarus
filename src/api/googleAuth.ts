@@ -146,10 +146,14 @@ const OAUTH2_SCOPE = 'openid email profile';
 // （PR #36の起動時エラー表示と同じ考え方）。8秒経っても応答が無い場合もその旨を表示する
 const OAUTH2_STATUS_TIMEOUT_MS = 8000;
 
-/** iOS専用のGoogleサインインボタンを描画する。access tokenをonAccessTokenへ渡す（値の保存はしない）。 */
+/**
+ * iOS専用のGoogleサインインボタンを描画する。access tokenをonAccessTokenへ渡す（値の保存はしない）。
+ * onAccessTokenはWorkerとのsession交換結果を { ok, detail? } で返す契約にし（2026-09-19、
+ * icarus_oauth2_popup_login_audit.md参照）、失敗時はHTTPステータス等の診断情報をボタン直下へ表示する。
+ */
 export async function renderOAuth2SignInButton(
   el: HTMLElement,
-  onAccessToken: (accessToken: string) => void,
+  onAccessToken: (accessToken: string) => Promise<{ ok: boolean; detail?: string }>,
 ): Promise<void> {
   await loadGsiScript();
   const oauth2 = getGoogleOAuth2();
@@ -189,10 +193,16 @@ export async function renderOAuth2SignInButton(
     scope: OAUTH2_SCOPE,
     callback: (res) => {
       clearPendingTimeout();
-      button.disabled = false;
       if (res.access_token) {
-        onAccessToken(res.access_token);
+        status.textContent = 'サインイン処理中…';
+        void onAccessToken(res.access_token).then((result) => {
+          button.disabled = false;
+          status.textContent = result.ok
+            ? ''
+            : `セッション取得に失敗しました${result.detail ? `（${result.detail}）` : ''}`;
+        });
       } else {
+        button.disabled = false;
         status.textContent = 'サインインに失敗しました（access_tokenを受信できませんでした）';
       }
     },
