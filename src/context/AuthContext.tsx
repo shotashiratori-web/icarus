@@ -93,7 +93,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Googleのセッションが生きていれば、無言でIDトークンを取り直し、Workerの長期セッションへ交換する。
+  //
+  // 2026-09-19 Gate実験: 本番でOAuth2 popupボタンを押した別アカウントが400エラーになる件の
+  // 切り分け。scratch Gate（accounts.oauth2単体の孤立ページ）ではPASSしたのに対し、本番は
+  // 同一ページでaccounts.id.initialize()+prompt()（このサイレント再ログイン）が先に走っている
+  // という唯一の差分を検証する。iOSだけこの関数をno-op化し、OAuth2 popup経路・非iOSは
+  // 一切変更しない（詳細: icarus_oauth2_popup_login_audit.md）。
+  // 結果が出るまでの一時的な検証コードであり、恒久実装ではない。
   const trySilentSessionRenewal = async (): Promise<boolean> => {
+    if (isIOSDevice()) return false;
     const googleToken = await requestSilentIdToken();
     if (!googleToken) return false;
     const session = await exchangeForSession(googleToken);
