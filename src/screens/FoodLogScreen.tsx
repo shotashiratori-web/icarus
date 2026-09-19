@@ -190,11 +190,22 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
         }),
       );
 
-      if (newEntries.some((entry) => !entry.gps)) {
-        const liveGps = await fetchGps();
-        if (liveGps) {
-          for (const entry of newEntries) {
-            if (!entry.gps) entry.gps = liveGps;
+      // 2026-09-20: 以前はEXIFにGPSが無い写真へ無言で現在地を補っていたため、現場で撮った写真を
+      // 別の場所（店等）でまとめてアップロードすると、実際の撮影場所ではなくアップロード場所が
+      // 記録されてしまう事故があった。無言で補うのをやめ、必ず確認を挟む
+      const missingGpsCount = newEntries.filter((entry) => !entry.gps).length;
+      if (missingGpsCount > 0) {
+        const useLiveGps = confirm(
+          `${missingGpsCount}件の写真に位置情報がありません（撮影時に位置情報が記録されていない可能性があります）。\n今いる場所の位置情報で補いますか？\n\n「今いる場所」＝写真の撮影場所とは限りません。現場と違う場所でアップロードしている場合はキャンセルしてください。`,
+        );
+        if (useLiveGps) {
+          const liveGps = await fetchGps();
+          if (liveGps) {
+            for (const entry of newEntries) {
+              if (!entry.gps) entry.gps = liveGps;
+            }
+          } else {
+            alert('位置情報を取得できませんでした（位置情報を許可してください）。GPSなしのまま追加します。あとから📍ボタンで個別に入力できます。');
           }
         }
       }
