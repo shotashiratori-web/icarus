@@ -717,6 +717,22 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
             </div>
           </label>
 
+          {/* 一件ずつ送信のときだけ、この写真専用の大分類。フェーズより先に選ばせる
+              （フェーズの選択肢は大分類ごとに変わるため、大分類が先の方が自然） */}
+          {submitMode === 'individual' && (
+            <label className={styles.fieldLabel}>
+              大分類 <span className={styles.required}>*</span>
+              <select
+                className={styles.selectInput}
+                value={photo.largeCategory ?? ''}
+                onChange={e => updatePhoto(photo.localId, 'largeCategory', e.target.value)}
+              >
+                <option value="">選択してください</option>
+                {LARGE_CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+          )}
+
           {/* フェーズ */}
           <label className={styles.fieldLabel}>
             フェーズ <span className={styles.required}>*</span>
@@ -726,21 +742,9 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
             </select>
           </label>
 
-          {/* 一件ずつ送信のときだけ、この写真専用の大分類・場所・採取有無 */}
+          {/* 一件ずつ送信のときだけ、この写真専用の場所・採取有無 */}
           {submitMode === 'individual' && (
             <>
-              <label className={styles.fieldLabel}>
-                大分類 <span className={styles.required}>*</span>
-                <select
-                  className={styles.selectInput}
-                  value={photo.largeCategory ?? ''}
-                  onChange={e => updatePhoto(photo.localId, 'largeCategory', e.target.value)}
-                >
-                  <option value="">選択してください</option>
-                  {LARGE_CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              </label>
-
               <label className={styles.fieldLabel}>
                 場所 <span className={styles.required}>*</span>
                 <input
