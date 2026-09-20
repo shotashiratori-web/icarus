@@ -109,6 +109,10 @@ export interface FieldLogD1SubmitInput {
   longitude?: number;
   takenAt?: string;
   largeCategory?: string;
+  // Field Log D1 Data Parity Audit（2026-09-21）P0対応。以前はここに無く、Webフォームで
+  // 選択した値がWorkerへ一切届いていなかった
+  phase?: string;
+  harvested?: string;
   // Photo Asset Architecture v1（Stage 1）。指定時、写真の実体はR2 Asset側にあり
   // photoUrlは''のまま送る（asset_linksが正本、Phase4原則）
   assetId?: string;
@@ -150,6 +154,8 @@ export async function submitFieldLogD1(input: FieldLogD1SubmitInput, idToken: st
         longitude: input.longitude,
         takenAt: input.takenAt,
         largeCategory: input.largeCategory,
+        phase: input.phase,
+        harvested: input.harvested,
         assetId: input.assetId,
         clientVersion: 'icarus-web-unit-d',
       }),

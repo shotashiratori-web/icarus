@@ -338,6 +338,11 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
           place: cf.place,
           memo: photos[i].memo,
           largeCategory: cf.largeCategory,
+          // Field Log D1 Data Parity Audit（2026-09-21）P0対応。phaseは常にこの写真自身の値
+          // （まとめて送信でも共通項目ではなく写真ごと）。harvestedはcommonFieldsForに揃える
+          // （まとめて送信＝共通設定の値、一件ずつ送信＝この写真自身の値）
+          phase: photos[i].phase,
+          harvested: cf.harvested,
           latitude: photos[i].gps?.lat,
           longitude: photos[i].gps?.lng,
           takenAt: photos[i].takenAt,

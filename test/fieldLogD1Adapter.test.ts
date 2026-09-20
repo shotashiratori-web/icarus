@@ -31,6 +31,8 @@ const BASE_PAYLOAD = {
   place: '畑',
   memo: '',
   largeCategory: '植物',
+  phase: '若葉',
+  harvested: 'あり',
   latitude: 43.1,
   longitude: 140.8,
   takenAt: '2026-08-01T00:00:00.000Z',
@@ -180,5 +182,27 @@ describe('fieldLogD1Adapter.submit', () => {
     // 呼び出し元がpayload.assetOriginalBase64を失敗後に別のJPEGへ差し替えていないこと（変換していないことの確認）
     expect(payload.assetOriginalBase64).toBe('BASE64ORIGINAL_HEIC_BYTES');
     expect(payload.assetMimeType).toBe('image/heic');
+  });
+
+  // Field Log D1 Data Parity Audit（2026-09-21）P0回帰確認: phase・harvestedが
+  // submitFieldLogD1まで届くこと（以前はここで握りつぶされ、Workerへ一切送られていなかった）
+  it('phase・harvestedがsubmitFieldLogD1へそのまま渡る', async () => {
+    uploadFieldLogPhoto.mockResolvedValue('https://res.cloudinary.com/dpawe0o5p/image/upload/v1/icarus-field-log/x.jpg');
+    const adapter = await getAdapter();
+
+    const payload: Record<string, unknown> = {
+      ...BASE_PAYLOAD,
+      hasPhoto: true,
+      useR2Asset: false,
+      photoBase64: 'RESIZEDJPEGBASE64',
+      photoFileName: 'photo.jpg',
+    };
+
+    await adapter.submit(payload, 'token');
+
+    expect(submitFieldLogD1).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: '若葉', harvested: 'あり' }),
+      'token',
+    );
   });
 });
