@@ -669,6 +669,73 @@
   flex-shrink: 0;
 }
 
+/* ── Batch photo edit cards（まとめて送信の写真一覧編集） ── */
+.batchCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--color-surface);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.batchCardError {
+  border-color: var(--color-accent);
+}
+
+.batchCardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.batchCardThumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.batchCardHeadInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.batchCardNum {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+  font-weight: 600;
+}
+
+.batchCardDate {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.applyRestBtn {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
 /* ── Shared ── */
 .formMain {
   flex: 1;
