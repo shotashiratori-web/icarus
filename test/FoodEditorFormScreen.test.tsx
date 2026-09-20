@@ -111,4 +111,29 @@ describe('FoodEditorFormScreen', () => {
     // 確認画面のまま、入力していた正式名称が消えていないこと
     expect(screen.getByRole('heading', { name: 'トマト' })).toBeInTheDocument();
   });
+
+  it('9. edit mode・from未指定: 戻るボタンは「← Food一覧」でfoodEditorListへ遷移する（既存動作を維持）', async () => {
+    const user = userEvent.setup();
+    fetchAllFoods.mockResolvedValue([]);
+    const go = vi.fn();
+    render(<FoodEditorFormScreen go={go} mode="edit" food={food({ id: 'f-1', canonicalName: 'トマト' })} />);
+
+    const back = screen.getByRole('button', { name: '← Food一覧' });
+    await user.click(back);
+    expect(go).toHaveBeenCalledWith({ name: 'foodEditorList' });
+  });
+
+  it('10. edit mode・from指定（食材図鑑から）: 戻るボタンは「← 食材図鑑」でfromへ遷移する', async () => {
+    const user = userEvent.setup();
+    fetchAllFoods.mockResolvedValue([]);
+    const go = vi.fn();
+    const from = { name: 'foodEncyclopediaDetail' as const, foodName: 'トマト' };
+    render(
+      <FoodEditorFormScreen go={go} mode="edit" food={food({ id: 'f-1', canonicalName: 'トマト' })} from={from} />,
+    );
+
+    const back = screen.getByRole('button', { name: '← 食材図鑑' });
+    await user.click(back);
+    expect(go).toHaveBeenCalledWith(from);
+  });
 });

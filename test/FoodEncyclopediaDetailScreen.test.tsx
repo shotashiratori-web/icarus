@@ -6,7 +6,13 @@ import type { FieldFoodDetailSuccess, FieldFoodListItem, FieldFoodObservation } 
 import type { ProcessEntity, ProcessedProductEntity, FoodEntity } from '../src/types/knowledge';
 import type { RelatedProcessGroup, RelatedProcessGroupUse } from '../src/api/knowledgeApi';
 
-vi.mock('../src/context/AuthContext', () => ({ useAuth: () => mockUseAuth() }));
+// テストごとにstaffMe（role）を上書きできるよう、他テストファイル（SettingsScreen等）と
+// 同じuseAuthMockパターンに揃える（Food Encyclopedia ↔ Food Editor Integration、2026-09-20）。
+// 既存test（このファイルのほぼ全て）は上書きしないため、下のbeforeEachで設定する
+// mockUseAuth()のデフォルト（admin/active）のまま、挙動は変わらない
+const { useAuthMock } = vi.hoisted(() => ({ useAuthMock: vi.fn() }));
+vi.mock('../src/context/AuthContext', () => ({ useAuth: () => useAuthMock() }));
+beforeEach(() => { useAuthMock.mockReturnValue(mockUseAuth()); });
 
 const {
   fetchFieldFoodDetail, resolveFoodByName, fetchRelatedProcesses, fetchAllFoods, fetchFieldFoods,
@@ -594,6 +600,71 @@ describe('Food Input Cross Navigation（Stage C）', () => {
     const chip = await screen.findByRole('button', { name: /杏/ });
     fireEvent.click(chip);
     expect(go).toHaveBeenCalledWith({ name: 'foodEncyclopediaDetail', foodName: 'アンズ' });
+  });
+});
+
+describe('Food Encyclopedia ↔ Food Editor Integration（2026-09-20）', () => {
+  beforeEach(() => {
+    fetchFieldFoodDetail.mockReset();
+    resolveFoodByName.mockReset();
+    fetchRelatedProcesses.mockReset();
+    fetchAllFoods.mockReset();
+    fetchFieldFoods.mockReset();
+    fetchRelatedProcesses.mockResolvedValue([]);
+    fetchFieldFoods.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('1. Food Entity解決済み・admin: 別名・使用部位・説明が表示され、「食材情報を編集」ボタンが出る', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナラタケ'));
+    resolveFoodByName.mockResolvedValue(foodEntity({
+      id: 'f-naratake', canonicalName: 'ナラタケ',
+      aliases: ['ボリボリ'], usableParts: ['傘', '柄'], description: '北海道では……',
+    }));
+    await renderReady('ナラタケ');
+    await screen.findByRole('button', { name: '食材情報を編集' });
+
+    expect(screen.getByText('ボリボリ')).toBeInTheDocument();
+    expect(screen.getByText('傘')).toBeInTheDocument();
+    expect(screen.getByText('柄')).toBeInTheDocument();
+    expect(screen.getByText('北海道では……')).toBeInTheDocument();
+  });
+
+  it('2. 「食材情報を編集」クリックで、解決済みFoodEntity・fromを渡してfoodEditorFormへ遷移する', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナラタケ'));
+    const food = foodEntity({ id: 'f-naratake', canonicalName: 'ナラタケ', description: '北海道では……' });
+    resolveFoodByName.mockResolvedValue(food);
+    const go = await renderReadyCapturingGo('ナラタケ');
+    const editBtn = await screen.findByRole('button', { name: '食材情報を編集' });
+    fireEvent.click(editBtn);
+
+    expect(go).toHaveBeenCalledWith({
+      name: 'foodEditorForm', mode: 'edit', food,
+      from: { name: 'foodEncyclopediaDetail', foodName: 'ナラタケ' },
+    });
+  });
+
+  it('3. Food Entity解決済み・一般staff: 説明等は表示されるが「食材情報を編集」ボタンは出ない（閲覧のみ）', async () => {
+    useAuthMock.mockReturnValue(mockUseAuth({
+      staffMe: { email: 'staff@test.invalid', displayName: 'Staff', role: 'staff', staffStatus: 'active' },
+    }));
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナラタケ'));
+    resolveFoodByName.mockResolvedValue(foodEntity({
+      id: 'f-naratake', canonicalName: 'ナラタケ', description: '北海道では……',
+    }));
+    await renderReady('ナラタケ');
+    await screen.findByText('北海道では……');
+
+    expect(screen.queryByRole('button', { name: '食材情報を編集' })).not.toBeInTheDocument();
+  });
+
+  it('4. Food Entity未導入の食材: 「食材の知識」セクション自体が表示されない（既存の観察系表示に影響しない）', async () => {
+    fetchFieldFoodDetail.mockResolvedValue(detail('ナラタケ'));
+    resolveFoodByName.mockResolvedValue(null);
+    await renderReady('ナラタケ');
+    // Summary（既存の観察系表示）は問題なく描画される
+    findSummarySection();
+
+    expect(screen.queryByRole('button', { name: '食材情報を編集' })).not.toBeInTheDocument();
   });
 });
 
