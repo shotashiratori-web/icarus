@@ -11,6 +11,10 @@ export interface FieldLogD1SubmissionPayload {
   place: string;
   memo: string;
   largeCategory: string;
+  // Field Log D1 Data Parity Audit（2026-09-21）P0対応: 以前はFoodLogScreenで収集していても
+  // ここに無く、Workerへ届かないまま握りつぶされていた（D1にもSheetsにも残らなかった）
+  phase: string;
+  harvested: string;
   latitude?: number;
   longitude?: number;
   takenAt?: string;
@@ -87,6 +91,8 @@ registerAdapter<FieldLogD1SubmissionPayload, FieldLogD1SubmitResult>({
       longitude: payload.longitude,
       takenAt: payload.takenAt,
       largeCategory: payload.largeCategory,
+      phase: payload.phase,
+      harvested: payload.harvested,
     }, idToken);
   },
   mapError: mapFieldLogD1Error,
