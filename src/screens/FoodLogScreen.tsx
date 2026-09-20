@@ -69,6 +69,12 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
   const [photoProcessing, setPhotoProcessing] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
 
+  // ── まとめて送信：写真一覧編集用（一覧の各カードは食材名・フェーズ・メモ・日付を個別に持つ） ──
+  const [openFoodDropdownId, setOpenFoodDropdownId] = useState<string | null>(null);
+  const [expandedDateId, setExpandedDateId] = useState<string | null>(null);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const batchCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── 下書き保存 ───────────────────────────────────────────
@@ -274,6 +280,27 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
     submitMode === 'individual'
       ? { largeCategory: p.largeCategory ?? '', place: p.place ?? '', harvested: p.harvested ?? '不明' }
       : common;
+
+  // ── まとめて送信：一覧編集の補助 ─────────────────────────────
+  // 「↓ 残りにも適用」：同じ食材が複数枚続くケース向け。食材名・フェーズだけをコピーし、
+  // 写真ごとに内容が異なることが多いメモはコピー対象にしない
+  const applyToRest = (fromIndex: number) => {
+    const source = photos[fromIndex];
+    setPhotos(prev => prev.map((p, i) =>
+      i > fromIndex ? { ...p, food: source.food, foodId: source.foodId, phase: source.phase } : p
+    ));
+  };
+
+  // 未入力があっても別画面へは遷移させず、最初の未入力カードまで自動スクロールして知らせる
+  const handleBatchProceed = () => {
+    const firstInvalid = photos.find(p => photoErrors(p).length > 0);
+    if (firstInvalid) {
+      setValidationAttempted(true);
+      batchCardRefs.current.get(firstInvalid.localId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setPhase('confirm');
+  };
 
   // ── 送信 ─────────────────────────────────────────────────
   // 送信できなかった写真は「エラー」ではなく「保留」としてSubmission Frameworkのqueueへ格納する。
@@ -599,7 +626,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
           <button
             className={styles.primaryBtn}
             disabled={!canProceed}
-            onClick={() => { setCurrentIdx(0); setPhase('photoEdit'); }}
+            onClick={() => { setCurrentIdx(0); setValidationAttempted(false); setPhase('photoEdit'); }}
           >
             写真ごとの入力へ →
           </button>
@@ -611,7 +638,147 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
     );
   }
 
-  // ── 写真ごと編集 ──────────────────────────────────────────
+  // ── 写真一覧編集（まとめて送信）──────────────────────────────
+  // ページ送りをやめ、最大5枚を1画面に縦スクロールで並べる。共通設定（大分類・場所・採取有無）は
+  // 既に前の画面で設定済みのためここでは繰り返さず、写真ごとに変わりうる項目（写真・日付・食材名・
+  // フェーズ・メモ）だけに絞る
+  if (phase === 'photoEdit' && submitMode === 'batch') {
+    const phaseOptions = getPhaseOptions(common.largeCategory);
+
+    return (
+      <div className={styles.root}>
+        <header className={styles.header}>
+          <button className={styles.backBtn} onClick={() => setPhase('photoSelect')}>← 共通</button>
+          <span className={styles.headerTitle}>写真の入力（{photos.length}枚）</span>
+          <button className={styles.signOutBtn} onClick={signOut} title={userEmail}>
+            {userEmail.split('@')[0]}
+          </button>
+          <HomeButton go={go} />
+        </header>
+
+        <main className={styles.formMain}>
+          {photos.map((p, i) => {
+            const errs = photoErrors(p);
+            const showErr = validationAttempted && errs.length > 0;
+            const cardCandidates = p.food.length > 0
+              ? foodCandidates.filter(c => c.name.toLowerCase().includes(p.food.toLowerCase())).slice(0, 8)
+              : [];
+            const isLast = i === photos.length - 1;
+
+            return (
+              <div
+                key={p.localId}
+                ref={el => { if (el) batchCardRefs.current.set(p.localId, el); else batchCardRefs.current.delete(p.localId); }}
+                className={`${styles.batchCard} ${showErr ? styles.batchCardError : ''}`}
+              >
+                <div className={styles.batchCardHead}>
+                  <img src={p.previewUrl} alt={`写真${i + 1}`} className={styles.batchCardThumb} />
+                  <div className={styles.batchCardHeadInfo}>
+                    <span className={styles.batchCardNum}>写真 {i + 1}</span>
+                    {expandedDateId === p.localId ? (
+                      <div className={styles.dateRow}>
+                        <input
+                          type="date"
+                          className={styles.textInput}
+                          value={p.date}
+                          onChange={e => updatePhoto(p.localId, 'date', e.target.value)}
+                          onBlur={() => setExpandedDateId(null)}
+                          autoFocus
+                        />
+                      </div>
+                    ) : (
+                      <button type="button" className={styles.batchCardDate} onClick={() => setExpandedDateId(p.localId)}>
+                        {p.date ? `📅 ${p.date}` : '📅 日付未設定（タップで入力）'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <label className={styles.fieldLabel}>
+                  食材名 <span className={styles.required}>*</span>
+                  <div className={styles.autocompleteWrap}>
+                    <input
+                      type="text"
+                      className={styles.textInput}
+                      placeholder="例: ウド、行者ニンニク"
+                      value={p.food}
+                      onChange={e => {
+                        updatePhoto(p.localId, 'food', e.target.value);
+                        updatePhoto(p.localId, 'foodId', undefined);
+                        setOpenFoodDropdownId(p.localId);
+                      }}
+                      onFocus={() => setOpenFoodDropdownId(p.localId)}
+                      onBlur={() => setTimeout(() => {
+                        setOpenFoodDropdownId(prev => prev === p.localId ? null : prev);
+                      }, 150)}
+                    />
+                    {openFoodDropdownId === p.localId && cardCandidates.length > 0 && (
+                      <ul className={styles.dropdown}>
+                        {cardCandidates.map(c => (
+                          <li key={c.name} className={styles.dropdownItem} onMouseDown={() => {
+                            updatePhoto(p.localId, 'food', c.name);
+                            updatePhoto(p.localId, 'foodId', c.name);
+                            setOpenFoodDropdownId(null);
+                          }}>
+                            <span className={styles.dropdownName}>{c.name}</span>
+                            {c.category && <span className={styles.dropdownCat}>{c.category}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </label>
+
+                <label className={styles.fieldLabel}>
+                  フェーズ <span className={styles.required}>*</span>
+                  <select
+                    className={styles.selectInput}
+                    value={p.phase}
+                    onChange={e => updatePhoto(p.localId, 'phase', e.target.value)}
+                  >
+                    <option value="">選択してください</option>
+                    {phaseOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </label>
+
+                {!isLast && (p.food.trim() || p.phase) && (
+                  <button type="button" className={styles.applyRestBtn} onClick={() => applyToRest(i)}>
+                    ↓ 残りにも適用
+                  </button>
+                )}
+
+                <label className={styles.fieldLabel}>
+                  メモ
+                  <textarea
+                    className={styles.textarea}
+                    placeholder="気づき、状態など"
+                    value={p.memo}
+                    onChange={e => updatePhoto(p.localId, 'memo', e.target.value)}
+                    rows={2}
+                  />
+                </label>
+
+                <div className={styles.gpsRow}>
+                  <button className={styles.gpsBtn} onClick={() => handleGetGps(p.localId)} disabled={gpsLoading}>
+                    {gpsLoading ? '取得中…' : p.gps ? `📍 ${p.gps.lat.toFixed(5)}, ${p.gps.lng.toFixed(5)}` : '📍 GPS を取得'}
+                  </button>
+                  {p.gps && <button className={styles.gpsClear} onClick={() => updatePhoto(p.localId, 'gps', undefined)}>✕</button>}
+                </div>
+
+                {showErr && <p className={styles.errorBanner}>{errs.map(e => `${e}を入力してください`).join('・')}</p>}
+              </div>
+            );
+          })}
+        </main>
+
+        <footer className={styles.footer}>
+          <button className={styles.primaryBtn} onClick={handleBatchProceed}>内容を確認へ →</button>
+        </footer>
+      </div>
+    );
+  }
+
+  // ── 写真ごと編集（一件ずつ送信）─────────────────────────────
   if (phase === 'photoEdit') {
     const photo = photos[currentIdx];
     const pErrs = photoErrors(photo);
