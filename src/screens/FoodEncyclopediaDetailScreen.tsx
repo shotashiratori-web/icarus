@@ -8,6 +8,7 @@ import { NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import type { FieldFoodDetailSuccess, FieldFoodListItem } from '../types/fieldFood';
+import type { FoodEntity } from '../types/knowledge';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import Lightbox from '../components/Lightbox';
@@ -103,7 +104,7 @@ export function countProcessChain(chains: ProcessChainNode[]): number {
 }
 
 export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
-  const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
+  const { idToken, authState, staffMe, signInContainerRef, handleTokenExpired } = useAuth();
   const [detail, setDetail] = useState<FieldFoodDetailSuccess | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -112,6 +113,11 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
   const [relatedProcesses, setRelatedProcesses] = useState<RelatedProcessGroup[] | null>(null);
   // buildProcessChains()でroot Process判定に使う。resolveFoodByName()解決結果のidを保持する
   const [resolvedFoodId, setResolvedFoodId] = useState<string | null>(null);
+  // Food Encyclopedia ↔ Food Editor Integration（2026-09-20）: resolveFoodByName()は元々
+  // idだけ使っていたが、name/aliases/usableParts/description等を持つFoodEntity本体そのものを
+  // 表示・編集導線に使うため、こちらも保持する。Food Entity未導入の食材はnullのまま
+  // （既存の観察系表示には一切影響しない設計を踏襲）
+  const [resolvedFood, setResolvedFood] = useState<FoodEntity | null>(null);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   // Food Input Cross Navigation用。他Food chip（Food Entity id）→ Field Log側で実在する表示名。
   // 解決できなかった（曖昧 or 候補0件）chipはこのMapに入らず、non-clickableのまま表示される
@@ -131,20 +137,34 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
     }
   };
 
-  // 関連加工の取得は主表示とは独立させ、失敗しても食材図鑑本体の表示に影響を与えない（サイレントに諦める）。
-  // alias衝突（FoodAliasConflictError）も含め、Food解決に失敗した場合は誤ったKnowledgeへ接続するより
-  // 関連加工を非表示のままにする（食材図鑑本体は壊さない）
+  // Food Entity解決（Food Encyclopedia ↔ Food Editor Integration用の食材情報表示・編集導線、
+  // および関連加工の取得）は、主表示（観察記録）とは独立させ、失敗しても食材図鑑本体の表示に
+  // 影響を与えない（サイレントに諦める）。alias衝突（FoodAliasConflictError）も含め、Food解決に
+  // 失敗した場合は誤ったKnowledgeへ接続するより非表示のままにする（食材図鑑本体は壊さない）。
+  // 食材情報の表示は関連加工の取得結果に依存させない（関連加工のBFS取得が失敗しても、
+  // 既に解決できているFood本体の情報・編集導線までは失わない）
   const loadRelatedProcesses = async (token: string) => {
+    let food: FoodEntity | null = null;
     try {
-      const food = await resolveFoodByName(foodName, token);
-      if (!food) { setRelatedProcesses(null); setResolvedFoodId(null); setFoodChipTargets(new Map()); return; }
+      food = await resolveFoodByName(foodName, token);
+    } catch {
+      food = null;
+    }
+    if (!food) {
+      setResolvedFood(null);
+      setRelatedProcesses(null);
+      setResolvedFoodId(null);
+      setFoodChipTargets(new Map());
+      return;
+    }
+    setResolvedFood(food);
+    setResolvedFoodId(food.id);
+    try {
       const groups = await fetchRelatedProcesses(food.id, token);
       setRelatedProcesses(groups);
-      setResolvedFoodId(food.id);
       void loadFoodChipTargets(token, groups, food.id);
     } catch {
       setRelatedProcesses(null);
-      setResolvedFoodId(null);
       setFoodChipTargets(new Map());
     }
   };
@@ -277,6 +297,51 @@ export default function FoodEncyclopediaDetailScreen({ go, foodName }: Props) {
               <h1 className={styles.foodName}>{detail.food.foodName}</h1>
               <p className={styles.classification}>{classificationLabel(detail.food)}</p>
             </section>
+
+            {/* 食材の知識（Food Entity。未導入の食材では非表示。Food Encyclopedia ↔ Food Editor
+                Integration、2026-09-20）。観察記録（一次記録）とは別にFood masterとして表示する */}
+            {resolvedFood && (
+              <section className={styles.section}>
+                {resolvedFood.aliases.length > 0 && (
+                  <div className={styles.foodInfoBlock}>
+                    <h2 className={styles.sectionTitle}>別名</h2>
+                    <div className={styles.dateChips}>
+                      {resolvedFood.aliases.map((alias) => (
+                        <span key={alias} className={styles.dateChip}>{alias}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {resolvedFood.usableParts.length > 0 && (
+                  <div className={styles.foodInfoBlock}>
+                    <h2 className={styles.sectionTitle}>使用部位</h2>
+                    <div className={styles.dateChips}>
+                      {resolvedFood.usableParts.map((part) => (
+                        <span key={part} className={styles.dateChip}>{part}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {resolvedFood.description && (
+                  <div className={styles.foodInfoBlock}>
+                    <h2 className={styles.sectionTitle}>説明</h2>
+                    <p className={styles.foodDescription}>{resolvedFood.description}</p>
+                  </div>
+                )}
+                {staffMe?.role === 'admin' && (
+                  <button
+                    type="button"
+                    className={styles.editFoodBtn}
+                    onClick={() => go({
+                      name: 'foodEditorForm', mode: 'edit', food: resolvedFood,
+                      from: { name: 'foodEncyclopediaDetail', foodName },
+                    })}
+                  >
+                    食材情報を編集
+                  </button>
+                )}
+              </section>
+            )}
 
             {/* Summary */}
             <section className={styles.summaryCard}>

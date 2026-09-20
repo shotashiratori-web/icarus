@@ -9,7 +9,7 @@ import styles from './FoodEditorFormScreen.module.css';
 
 type Props = { go: (s: Screen) => void } & (
   | { mode: 'create' }
-  | { mode: 'edit'; food: FoodEntity }
+  | { mode: 'edit'; food: FoodEntity; from?: Screen }
 );
 
 type CandidateState = 'loading' | 'ready' | 'error';
@@ -27,6 +27,9 @@ function findConflictFood(name: string, allFoods: FoodEntity[], excludeId: strin
 export default function FoodEditorFormScreen(props: Props) {
   const { go, mode } = props;
   const existing = mode === 'edit' ? props.food : null;
+  // 食材図鑑詳細からの編集時はそこへ戻す。未指定時は従来どおりFood一覧（Settings経由の新規登録・
+  // 一覧管理からの遷移と同じ挙動を維持）
+  const backTarget: Screen = (mode === 'edit' && props.from) ? props.from : { name: 'foodEditorList' };
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
 
   const [candidateState, setCandidateState] = useState<CandidateState>('loading');
@@ -153,7 +156,9 @@ export default function FoodEditorFormScreen(props: Props) {
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        <button className={styles.back} onClick={() => go({ name: 'foodEditorList' })}>← Food一覧</button>
+        <button className={styles.back} onClick={() => go(backTarget)}>
+          {backTarget.name === 'foodEncyclopediaDetail' ? '← 食材図鑑' : '← Food一覧'}
+        </button>
         <span className={styles.title}>{mode === 'edit' ? 'Foodを編集' : 'Foodを登録'}</span>
       </header>
 
@@ -311,8 +316,8 @@ export default function FoodEditorFormScreen(props: Props) {
               {mode === 'create' && (
                 <button type="button" className={styles.addBtn} onClick={resetForm}>続けて登録する</button>
               )}
-              <button type="button" className={styles.confirmBtn} onClick={() => go({ name: 'foodEditorList' })}>
-                一覧へ戻る
+              <button type="button" className={styles.confirmBtn} onClick={() => go(backTarget)}>
+                {backTarget.name === 'foodEncyclopediaDetail' ? '食材図鑑へ戻る' : '一覧へ戻る'}
               </button>
             </div>
           </div>

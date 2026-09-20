@@ -102,7 +102,9 @@ export type Screen =
   // Food Editor MVP: Food Identity（canonical_name/aliases/usableParts/description）をAdminが登録・編集する
   | { name: 'foodEditorList' }
   | { name: 'foodEditorForm'; mode: 'create' }
-  | { name: 'foodEditorForm'; mode: 'edit'; food: FoodEntity }
+  // from: 食材図鑑詳細からの編集時、保存・戻る操作でそこへ戻す（未指定時は従来どおりFood一覧。
+  // Food Encyclopedia ↔ Food Editor Integration、2026-09-20）
+  | { name: 'foodEditorForm'; mode: 'edit'; food: FoodEntity; from?: Screen }
   // Home IA整理 v1（2026-09-14）。開発・管理系機能をHomeから分離した専用画面。入口はHomeScreenの
   // ヘッダー「設定」ボタンのみ。表示条件（role gating）はHomeScreenから移動しただけで変更しない
   | { name: 'settings' };
@@ -224,7 +226,7 @@ function AppRoutes() {
   if (screen.name === 'processEditor') return <ProcessEditorScreen go={go} />;
   if (screen.name === 'foodEditorList') return <FoodEditorListScreen go={go} />;
   if (screen.name === 'foodEditorForm') return screen.mode === 'edit'
-    ? <FoodEditorFormScreen go={go} mode="edit" food={screen.food} />
+    ? <FoodEditorFormScreen go={go} mode="edit" food={screen.food} from={screen.from} />
     : <FoodEditorFormScreen go={go} mode="create" />;
   if (screen.name === 'settings') return <SettingsScreen go={go} />;
 
