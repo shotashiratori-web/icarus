@@ -75,7 +75,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
       await deleteFieldLogEntries(targets.map((t) => t.eventId), idToken);
       setSelectedIds(new Set());
       setConfirming(false);
-      await reload();
+      await reload(idToken);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : '削除に失敗しました');
     } finally {
@@ -83,7 +83,12 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
     }
   };
 
-  useEffect(() => { void ensureLoaded(); }, [ensureLoaded]);
+  // Field Map D1 Read Path Stage 1: 取得先がWorker /field/map-geojson（要認証）になったため、
+  // idTokenが確定してから読み込む（旧GAS版は認証不要だったため未ログインでも読めていた）
+  useEffect(() => {
+    if (!idToken) return;
+    void ensureLoaded(idToken);
+  }, [ensureLoaded, idToken]);
 
   // 詳細画面から戻ってきたときに、ボトムシート一覧のスクロール位置を復元する
   useEffect(() => {
@@ -175,7 +180,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
         {loadState === 'error' && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>{errorMessage}</p>
-            <button className={styles.retryBtn} onClick={() => reload()}>再読み込み</button>
+            <button className={styles.retryBtn} onClick={() => idToken && reload(idToken)}>再読み込み</button>
           </div>
         )}
 

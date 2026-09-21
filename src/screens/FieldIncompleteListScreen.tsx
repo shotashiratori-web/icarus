@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { isRecordIncomplete, missingFieldsOf, type MissingField } from '../utils/fieldIncomplete';
 import type { FieldLogEntry } from '../types/zukan';
@@ -17,9 +18,13 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 export default function FieldIncompleteListScreen({ go, from }: Props) {
   const { entries, loadState, errorMessage, ensureLoaded, reload } = useZukanFieldStore();
+  const { idToken } = useAuth();
   const [filter, setFilter] = useState<FilterKey>('all');
 
-  useEffect(() => { void ensureLoaded(); }, [ensureLoaded]);
+  useEffect(() => {
+    if (!idToken) return;
+    void ensureLoaded(idToken);
+  }, [ensureLoaded, idToken]);
 
   const incompleteEntries = useMemo(
     () => entries.filter(isRecordIncomplete).sort((a, b) => a.date.localeCompare(b.date)),
@@ -65,7 +70,7 @@ export default function FieldIncompleteListScreen({ go, from }: Props) {
         {loadState === 'error' && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>{errorMessage}</p>
-            <button className={styles.retryBtn} onClick={() => reload()}>再読み込み</button>
+            <button className={styles.retryBtn} onClick={() => idToken && reload(idToken)}>再読み込み</button>
           </div>
         )}
 

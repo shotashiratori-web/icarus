@@ -5,7 +5,9 @@ export const GAS_PUBLIC_URL =
   'https://script.google.com/macros/s/AKfycbx4ezP4YYItTunIBXt9l9qbgR8wafUrJXJeU4CZbJQkfSHFT7-KGmA-WOSQQ5Zkm8kbvg/exec';
 
 // フィールドマップはIcarus版に統一（[[icarus_field_map_unification_policy]]）。GAS版の?action=mapは使わない
-export const FIELD_LOGS_GEOJSON_URL = `${GAS_PUBLIC_URL}?action=field_logs_geojson`;
+// Field Map D1 Read Path Stage 1（icarus_field_map_d1_read_path_final_design.md）:
+// 旧GAS `?action=field_logs_geojson`（Sheets直読み）からWorker `/field/map-geojson`（D1直読み）へ切替
+export const FIELD_MAP_GEOJSON_URL = `${WORKER_URL}/field/map-geojson`;
 
 export const FIELD_RECENT_URL = `${WORKER_URL}/field/recent`;
 export const WORK_RECENT_URL = `${WORKER_URL}/work/recent`;

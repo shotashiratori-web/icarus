@@ -20,7 +20,10 @@ export default function FieldScreen({ go }: Props) {
 
   // 未整理件数の表示用。詳細画面等と同じストアを再利用し、追加のAPI呼び出しは発生させない
   const { entries: fieldEntries, ensureLoaded: ensureFieldEntriesLoaded } = useZukanFieldStore();
-  useEffect(() => { void ensureFieldEntriesLoaded(); }, [ensureFieldEntriesLoaded]);
+  useEffect(() => {
+    if (!idToken) return;
+    void ensureFieldEntriesLoaded(idToken);
+  }, [ensureFieldEntriesLoaded, idToken]);
   const incompleteCounts = useMemo(() => {
     // スポットとして登録済みの写真は食材ログとしては扱わないので、未整理件数には含めない
     const excluded = loadExcludedIds();

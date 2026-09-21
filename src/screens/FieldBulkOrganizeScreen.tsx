@@ -108,7 +108,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   // 「保存できません」警告はこの画面を開いている間（複数枚をまたいで）1回だけ出す
   const draftSaveFailedShownRef = useRef(false);
 
-  useEffect(() => { void ensureLoaded(); }, [ensureLoaded]);
+  useEffect(() => {
+    if (!idToken) return;
+    void ensureLoaded(idToken);
+  }, [ensureLoaded, idToken]);
 
   useEffect(() => {
     if (snapshotIds !== null || loadState !== 'ready') return;
@@ -516,7 +519,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
         </header>
         <div className={styles.centerMessage}>
           <p className={styles.errorText}>{errorMessage}</p>
-          <button className={styles.retryBtn} onClick={() => reload()}>再読み込み</button>
+          <button className={styles.retryBtn} onClick={() => idToken && reload(idToken)}>再読み込み</button>
         </div>
       </div>
     );

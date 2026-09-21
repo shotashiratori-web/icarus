@@ -1,4 +1,4 @@
-import { FIELD_LOGS_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_UPDATE_ENTRY_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
+import { FIELD_MAP_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_UPDATE_ENTRY_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
 import { buildFieldLogId, type FieldLogEntry, type FieldLogGeoJson } from '../types/zukan';
 import { TokenExpiredError } from './icarusApi';
 
@@ -9,12 +9,23 @@ export class NetworkUnknownError extends Error {
   }
 }
 
-export async function fetchFieldLogEntries(): Promise<FieldLogEntry[]> {
+// Field Map D1 Read Path Stage 1（icarus_field_map_d1_read_path_final_design.md）。
+// 旧GAS `?action=field_logs_geojson`（Sheets直読み、認証不要）から、Worker `/field/map-geojson`
+// （D1直読み、要認証）へ切り替える。レスポンスのGeoJSON形状は旧契約を再現しているため、
+// 呼び出し側のパース処理自体は変更しない
+export async function fetchFieldLogEntries(idToken: string): Promise<FieldLogEntry[]> {
   let res: Response;
   try {
-    res = await fetch(FIELD_LOGS_GEOJSON_URL, { method: 'GET' });
+    res = await fetch(FIELD_MAP_GEOJSON_URL, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
   } catch {
     throw new NetworkUnknownError();
+  }
+
+  if (res.status === 401) {
+    throw new TokenExpiredError('ログインセッションが切れました。再度ログインしてください。');
   }
 
   let json: FieldLogGeoJson;
