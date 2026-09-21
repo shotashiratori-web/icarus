@@ -61,10 +61,12 @@ type ZukanFieldStore = {
   customDateEnd: string;
   dimMode: boolean; // true: 対象外を薄く表示 / false: 対象外を非表示
 
-  // データはフィールドマップ画面内で共有する。既に読み込み済みなら再fetchしない
-  ensureLoaded: () => Promise<void>;
-  reload: () => Promise<void>;
-  silentRefresh: () => Promise<void>;
+  // データはフィールドマップ画面内で共有する。既に読み込み済みなら再fetchしない。
+  // Field Map D1 Read Path Stage 1: 取得先がWorker /field/map-geojson（要認証）になったため、
+  // idTokenが必要になった（旧GAS版は認証不要だった）
+  ensureLoaded: (idToken: string) => Promise<void>;
+  reload: (idToken: string) => Promise<void>;
+  silentRefresh: (idToken: string) => Promise<void>;
   updateEntry: (eventId: string, patch: Partial<Pick<FieldLogEntry, 'foodName' | 'place' | 'memo'>>) => void;
   removeEntry: (eventId: string) => void;
   addEntry: (entry: FieldLogEntry) => void;
@@ -92,25 +94,25 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   customDateEnd: '',
   dimMode: true,
 
-  ensureLoaded: async () => {
+  ensureLoaded: async (idToken) => {
     const { loadState } = get();
     if (loadState === 'ready' || loadState === 'loading') return;
 
-    // GASの応答が遅い・止まる場合でも操作可能にするため、キャッシュがあれば即座に表示し、
+    // サーバーの応答が遅い・止まる場合でも操作可能にするため、キャッシュがあれば即座に表示し、
     // 裏で最新を取り直す（画面をブロックしない）。キャッシュがなければ従来どおり待つ
     const cached = loadFieldLogCache();
     if (cached) {
       set({ entries: sortFieldEntries(cached, get().sortMode), loadState: 'ready' });
-      void get().silentRefresh();
+      void get().silentRefresh(idToken);
       return;
     }
-    await get().reload();
+    await get().reload(idToken);
   },
 
-  reload: async () => {
+  reload: async (idToken) => {
     set({ loadState: 'loading', errorMessage: '' });
     try {
-      const items = await fetchFieldLogEntries();
+      const items = await fetchFieldLogEntries(idToken);
       set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
       saveFieldLogCache(items);
     } catch (e) {
@@ -120,10 +122,10 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   },
 
   // キャッシュ表示中に裏で最新を取り直す。画面はブロックせず、失敗してもキャッシュ表示のまま維持する
-  // （GASが遅い・止まっている間もユーザーの操作を妨げないための仕組み）
-  silentRefresh: async () => {
+  // （サーバーが遅い・止まっている間もユーザーの操作を妨げないための仕組み）
+  silentRefresh: async (idToken) => {
     try {
-      const items = await fetchFieldLogEntries();
+      const items = await fetchFieldLogEntries(idToken);
       set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
       saveFieldLogCache(items);
     } catch {
@@ -147,9 +149,9 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
     set((state) => ({ entries: state.entries.filter((e) => e.eventId !== eventId) }));
   },
 
-  // Unit D（Worker+D1新経路）専用。D1保存直後、画面遷移を待たずに一覧・地図へ即時反映する。
-  // ただし一覧・地図は再読み込み時にSheets由来のGeoJSONを読み直すため、Cron同期(Unit E)が終わる前に
-  // ページを再読み込みすると、ここで足したentryは一時的に見えなくなる（D1には残っており消えたわけではない）。
+  // Unit D（Worker+D1新経路）専用。D1保存直後、画面遷移を待たずに一覧・地図へ即時反映する
+  // （地図自体はField Map D1 Read Path Stage 1でD1直読みになったが、これは別。詳細画面等から
+  // 遷移せずその場で見えるようにするための、fetchし直さないローカル即時反映）。
   addEntry: (entry) => {
     set((state) => ({
       entries: sortFieldEntries([entry, ...state.entries.filter((e) => e.eventId !== entry.eventId)], state.sortMode),
