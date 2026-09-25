@@ -86,7 +86,7 @@ export default function FieldIncompleteListScreen({ go, from }: Props) {
                 <button key={entry.id} className={styles.card} onClick={() => openDetail(entry)}>
                   <div className={styles.photoWrap}>
                     {entry.photoUrl
-                      ? <img className={styles.photo} src={entry.photoUrl} alt={entry.foodName} loading="lazy" />
+                      ? <img className={styles.photo} src={entry.thumbnailUrl || entry.photoUrl} alt={entry.foodName} loading="lazy" />
                       : <div className={styles.photoPlaceholder}>写真なし</div>}
                   </div>
                   <div className={styles.cardBody}>

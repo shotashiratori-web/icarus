@@ -271,7 +271,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                         )}
                         <div className={styles.photoWrap}>
                           {entry.photoUrl
-                            ? <img className={styles.photo} src={entry.photoUrl} alt={entry.foodName} loading="lazy" />
+                            ? <img className={styles.photo} src={entry.thumbnailUrl || entry.photoUrl} alt={entry.foodName} loading="lazy" />
                             : <div className={styles.photoPlaceholder}>写真なし</div>}
                         </div>
                         <div className={styles.cardBody}>

@@ -5,6 +5,9 @@ export interface FieldLogEntry {
   date: string;
   memo: string;
   photoUrl: string;
+  // 一覧カード・ポップアップ用の縮小写真（幅500px）。APIが古い・localStorageキャッシュが古い形式の場合は
+  // undefinedになるため、表示側は必ず `thumbnailUrl || photoUrl` で使う（Field Map Image Delivery Fix Phase A-1）
+  thumbnailUrl?: string;
   notionUrl: string;
   elevation: number | null;
   kigo: string;
@@ -24,6 +27,7 @@ interface FieldLogGeoJsonFeature {
     date: string;
     memo: string;
     photoUrl: string;
+    thumbnailUrl?: string;
     notionUrl: string;
     elevation: number | null;
     kigo: string;

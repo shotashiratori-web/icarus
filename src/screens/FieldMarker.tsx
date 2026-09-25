@@ -100,7 +100,7 @@ export default function FieldMarker({
         ) : (
           <div className={styles.popup}>
             {entry.photoUrl && (
-              <img className={styles.popupPhoto} src={entry.photoUrl} alt={entry.foodName} />
+              <img className={styles.popupPhoto} src={entry.thumbnailUrl || entry.photoUrl} alt={entry.foodName} />
             )}
             <p className={styles.popupName}>{entry.foodName || '無題'}</p>
             {entry.place && <p className={styles.popupPlace}>📍 {entry.place}</p>}
