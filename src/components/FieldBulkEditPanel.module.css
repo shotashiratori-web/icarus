@@ -165,13 +165,56 @@
 }
 
 .problemList {
+  list-style: none;
   margin: 0;
-  padding-left: 1.2em;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   font-size: var(--font-size-sm);
-  line-height: 1.6;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-.problemReason {
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.identityThumb,
+.identityThumbEmpty {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--color-bg);
+}
+
+.identityThumbEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
   color: var(--color-text-sub);
+}
+
+.identityText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.identityFood {
+  font-weight: 700;
+}
+
+.identityMeta {
+  color: var(--color-text-sub);
+}
+
+.problemReason {
+  color: var(--color-accent);
 }

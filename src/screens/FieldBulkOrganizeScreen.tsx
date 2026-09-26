@@ -9,7 +9,7 @@ import {
   FieldEditConflictError,
 } from '../api/fieldEntryEditApi';
 import type { FieldEditPatch, FieldEntryDetail } from '../types/fieldEntryEdit';
-import { summarizeBulkResults } from '../utils/fieldEntryEdit';
+import { formatTakenTime, summarizeBulkResults } from '../utils/fieldEntryEdit';
 import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
@@ -38,15 +38,6 @@ type NavAction = 'prev' | 'next' | 'skip';
 type SortMode = 'date' | 'gps';
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
-
-// takenAt（撮影日時・秒単位のISO文字列）から時刻部分だけを取り出す。同じ日に複数回撮った写真の区別に使う
-function formatTakenTime(takenAt: string): string {
-  if (!takenAt) return '';
-  const d = new Date(takenAt);
-  if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();

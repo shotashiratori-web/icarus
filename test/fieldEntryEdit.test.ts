@@ -174,3 +174,14 @@ describe('まとめて編集: summarizeBulkResults / bulkPatchFromForm / bulkEdi
     ]);
   });
 });
+
+describe('formatTakenTime', () => {
+  it('撮影日時から時:分を取り出す。空・不正な値は空文字', async () => {
+    const { formatTakenTime } = await import('../src/utils/fieldEntryEdit');
+    const d = new Date('2026-09-21T02:14:33.000Z');
+    const pad = (n: number) => String(n).padStart(2, '0');
+    expect(formatTakenTime('2026-09-21T02:14:33.000Z')).toBe(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    expect(formatTakenTime('')).toBe('');
+    expect(formatTakenTime('not-a-date')).toBe('');
+  });
+});
