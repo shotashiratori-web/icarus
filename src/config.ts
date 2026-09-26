@@ -54,6 +54,10 @@ export const FIELD_DELETE_ENTRIES_URL = `${WORKER_URL}/field/delete-entries`;
 export const FIELD_UPDATE_ENTRY_URL = `${WORKER_URL}/field/update-entry`;
 export const FIELD_CLASSIFY_PHOTO_URL = `${WORKER_URL}/field/classify-photo`;
 
+// Field Log 編集API（Editing & Classification。D1が正本、active staff以上）。旧 /field/update-entry（GAS経由）の後継
+export const FIELD_ENTRIES_URL = `${WORKER_URL}/field/entries`;
+export const FIELD_EDIT_OPTIONS_URL = `${WORKER_URL}/field/edit-options`;
+
 // Unit D: Worker+D1新経路（新規フィールドログ送信のみが対象。編集・削除・一般スタッフは既存GAS経路のまま）
 export const FIELD_CLOUDINARY_SIGNATURE_URL = `${WORKER_URL}/field/cloudinary-signature`;
 export const FIELD_SUBMIT_D1_URL = `${WORKER_URL}/field/submit-d1`;
