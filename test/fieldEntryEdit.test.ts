@@ -130,3 +130,47 @@ describe('fieldEntryEditApi', () => {
     expect(d).toMatchObject({ eventId: 'e', observed_parts: ['花', '未熟果'], subject_type: '', updatedAt: 't' });
   });
 });
+
+describe('まとめて編集: summarizeBulkResults / bulkPatchFromForm / bulkEditFieldEntries', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('成功（applied・alreadyApplied・noChange）／競合／失敗に分ける', async () => {
+    const { summarizeBulkResults } = await import('../src/utils/fieldEntryEdit');
+    const s = summarizeBulkResults([
+      { eventId: 'a', ok: true, outcome: 'applied', message: '' },
+      { eventId: 'b', ok: true, outcome: 'alreadyApplied', message: '' },
+      { eventId: 'c', ok: true, outcome: 'noChange', message: '' },
+      { eventId: 'd', ok: false, code: 'EDIT_CONFLICT', message: '' },
+      { eventId: 'e', ok: false, code: 'EDIT_VALIDATION', message: 'x' },
+      { eventId: 'f', ok: false, code: 'EDIT_NOT_FOUND', message: 'y' },
+    ]);
+    expect(s.succeeded).toEqual(['a', 'b', 'c']);
+    expect(s.applied).toEqual(['a', 'b']);
+    expect(s.conflicted.map((r) => r.eventId)).toEqual(['d']);
+    expect(s.failed.map((r) => r.eventId)).toEqual(['e', 'f']);
+  });
+
+  it('「変更しない」(null)は送らない。空欄の場所・空の観察部位は送る', async () => {
+    const { bulkPatchFromForm, EMPTY_BULK_FORM } = await import('../src/utils/fieldEntryEdit');
+    expect(bulkPatchFromForm(EMPTY_BULK_FORM)).toEqual({});
+    expect(bulkPatchFromForm({ ...EMPTY_BULK_FORM, place: '', observed_parts: [], phase: '' })).toEqual({ place: '', observed_parts: [], phase: '' });
+  });
+
+  it('POST /field/entries/bulk-edit に requestId・entries・changes を送り、結果を記録ごとに返す', async () => {
+    const { bulkEditFieldEntries } = await import('../src/api/fieldEntryEditApi');
+    const fn = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'success', bulkId: 'r', summary: {},
+      results: [{ ok: true, eventId: 'a', outcome: 'applied' }, { ok: false, eventId: 'b', code: 'EDIT_CONFLICT', message: 'm' }],
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fn);
+    const res = await bulkEditFieldEntries({ requestId: 'r', entries: [{ eventId: 'a', expectedUpdatedAt: 't' }], changes: { harvested: 'あり' } }, 'tok');
+    const [url, init] = fn.mock.calls[0];
+    expect(url).toMatch(/\/field\/entries\/bulk-edit$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ requestId: 'r', entries: [{ eventId: 'a', expectedUpdatedAt: 't' }], changes: { harvested: 'あり' } });
+    expect(res.results).toEqual([
+      { eventId: 'a', ok: true, outcome: 'applied', code: undefined, message: '' },
+      { eventId: 'b', ok: false, outcome: undefined, code: 'EDIT_CONFLICT', message: 'm' },
+    ]);
+  });
+});

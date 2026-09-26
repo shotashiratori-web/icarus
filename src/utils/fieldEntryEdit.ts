@@ -1,11 +1,14 @@
-import type {
-  FieldEditOption,
-  FieldEditPatch,
-  FieldEditValues,
-  FieldEditableField,
-  FieldEntryDetail,
-  FieldEntryHistoryItem,
-  FieldOptionField,
+import {
+  BULK_EDITABLE_FIELDS,
+  type FieldBulkEditableField,
+  type FieldBulkEditResultItem,
+  type FieldEditOption,
+  type FieldEditPatch,
+  type FieldEditValues,
+  type FieldEditableField,
+  type FieldEntryDetail,
+  type FieldEntryHistoryItem,
+  type FieldOptionField,
 } from '../types/fieldEntryEdit';
 import { validateFoodName } from './foodNameValidation';
 
@@ -197,4 +200,48 @@ export function historyForDisplay(items: FieldEntryHistoryItem[]): FieldEntryHis
     .reverse()
     .map((it) => ({ ...it, changes: it.changes.filter((c) => c.field !== 'yoichi_season_id') }))
     .filter((it) => it.changes.length > 0);
+}
+
+export interface BulkEditSummary {
+  succeeded: string[]; // 成立（applied）＋すでに成立済み（alreadyApplied）＋変更なし（noChange）
+  applied: string[]; // 今回実際に値が変わった記録（画面の最新値へ反映する対象）
+  noChange: string[];
+  conflicted: FieldBulkEditResultItem[]; // 他の人が先に更新していた（409相当）。何も書かれていない
+  failed: FieldBulkEditResultItem[]; // 見つからない・選択肢の検証エラーなど
+}
+
+// まとめて編集の結果を「成功／競合／失敗」に分ける。部分成功は正常な結果として扱う
+export function summarizeBulkResults(results: FieldBulkEditResultItem[]): BulkEditSummary {
+  const s: BulkEditSummary = { succeeded: [], applied: [], noChange: [], conflicted: [], failed: [] };
+  for (const r of results) {
+    if (r.ok) {
+      s.succeeded.push(r.eventId);
+      if (r.outcome === 'noChange') s.noChange.push(r.eventId);
+      else s.applied.push(r.eventId);
+    } else if (r.code === 'EDIT_CONFLICT') {
+      s.conflicted.push(r);
+    } else {
+      s.failed.push(r);
+    }
+  }
+  return s;
+}
+
+// まとめて編集のフォーム。nullの項目は「変更しない」（送らない）
+export type BulkEditForm = { [K in FieldBulkEditableField]: FieldEditValues[K] | null };
+
+export const EMPTY_BULK_FORM: BulkEditForm = {
+  place: null, subject_type: null, large_category: null, sub_category: null, phase: null,
+  observed_parts: null, identification_status: null, harvested: null,
+};
+
+export function bulkPatchFromForm(form: BulkEditForm): FieldEditPatch {
+  const patch: FieldEditPatch = {};
+  for (const f of BULK_EDITABLE_FIELDS) {
+    const v = form[f];
+    if (v === null) continue;
+    if (f === 'observed_parts') patch.observed_parts = [...(v as string[])];
+    else (patch as Record<string, unknown>)[f] = v;
+  }
+  return patch;
 }

@@ -1,4 +1,4 @@
-import { FIELD_MAP_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_UPDATE_ENTRY_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
+import { FIELD_MAP_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
 import { buildFieldLogId, type FieldLogEntry, type FieldLogGeoJson } from '../types/zukan';
 import { TokenExpiredError } from './icarusApi';
 
@@ -83,84 +83,6 @@ export async function deleteFieldLogEntries(eventIds: string[], idToken: string)
     throw new Error(json.message || '削除に失敗しました');
   }
   return { deleted: json.deleted ?? 0, notFound: json.notFound ?? 0, results: json.results ?? [] };
-}
-
-export interface FieldUpdateEntryChanges {
-  memo?: string;
-  foodName?: string;
-  location?: string;
-}
-
-export interface FieldUpdateEntryResult {
-  entryId: string;
-  updatedFields: string[];
-  noChange: boolean;
-  sheetUpdated: boolean;
-  notionSynced: boolean;
-  historySaved: boolean;
-  warning: string;
-  // 実際に変更された項目だけが含まれる。locationはFieldLogEntryの命名に合わせてplaceとして返す
-  entry: { memo?: string; foodName?: string; place?: string };
-}
-
-// フィールドログの更新（管理者限定）。memo/foodName/locationのうち、変更した項目だけをchangesに含めて呼ぶ。
-// actorはクライアントから送らない（Worker側が認証結果から生成する）。
-export async function updateFieldLogEntry(
-  entryId: string,
-  changes: FieldUpdateEntryChanges,
-  idToken: string,
-): Promise<FieldUpdateEntryResult> {
-  let res: Response;
-  try {
-    res = await fetch(FIELD_UPDATE_ENTRY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ entryId, changes }),
-    });
-  } catch {
-    throw new Error('通信エラーが発生しました。もう一度お試しください。');
-  }
-
-  if (res.status === 401 || res.status === 403) {
-    throw new TokenExpiredError('ログインの有効期限が切れました。入力内容はこの画面に残っています。再度ログインしてください。');
-  }
-
-  let json: Record<string, unknown>;
-  try {
-    json = await res.json();
-  } catch {
-    throw new Error('通信エラーが発生しました。もう一度お試しください。');
-  }
-
-  if (json.status !== 'success') {
-    if (res.status === 404 || res.status === 409) {
-      throw new Error('この記録は更新できませんでした。画面を開き直してください。');
-    }
-    if (res.status === 400 && typeof json.message === 'string') {
-      throw new Error(json.message);
-    }
-    throw new Error('保存に失敗しました。もう一度お試しください。');
-  }
-
-  const rawEntry = (json.entry as Record<string, unknown> | undefined) ?? {};
-  const entry: FieldUpdateEntryResult['entry'] = {};
-  if (typeof rawEntry.memo === 'string') entry.memo = rawEntry.memo;
-  if (typeof rawEntry.foodName === 'string') entry.foodName = rawEntry.foodName;
-  if (typeof rawEntry.location === 'string') entry.place = rawEntry.location;
-
-  return {
-    entryId: typeof json.entryId === 'string' ? json.entryId : entryId,
-    updatedFields: Array.isArray(json.updatedFields) ? (json.updatedFields as string[]) : [],
-    noChange: json.noChange === true,
-    sheetUpdated: json.sheetUpdated === true,
-    notionSynced: json.notionSynced === true,
-    historySaved: json.historySaved === true,
-    warning: typeof json.warning === 'string' ? json.warning : '',
-    entry,
-  };
 }
 
 export interface ClassifyFieldPhotoResult {
