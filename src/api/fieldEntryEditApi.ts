@@ -1,6 +1,7 @@
-import { FIELD_ENTRIES_URL, FIELD_EDIT_OPTIONS_URL } from '../config';
+import { FIELD_ENTRIES_URL, FIELD_EDIT_OPTIONS_URL, FIELD_BULK_EDIT_URL } from '../config';
 import { TokenExpiredError } from './icarusApi';
 import type {
+  FieldBulkEditResponse,
   FieldEditOption,
   FieldEditPatch,
   FieldEntryDetail,
@@ -104,4 +105,37 @@ export async function patchFieldEntry(
 export async function fetchFieldEntryHistory(eventId: string, idToken: string): Promise<FieldEntryHistoryItem[]> {
   const json = await request(`${FIELD_ENTRIES_URL}/${encodeURIComponent(eventId)}/history`, idToken, { method: 'GET' });
   return Array.isArray(json.items) ? (json.items as FieldEntryHistoryItem[]) : [];
+}
+
+// まとめて編集（POST /field/entries/bulk-edit）。記録ごとに独立して成立する（部分成功が正常な契約）。
+// Worker側は各記録のrequestIdを `${requestId}:${eventId}` にするため、同じrequestIdで再送すると
+// 成立済みの記録はalreadyAppliedになり二重に書かれない
+export async function bulkEditFieldEntries(
+  body: { requestId: string; entries: { eventId: string; expectedUpdatedAt: string }[]; changes: FieldEditPatch },
+  idToken: string,
+): Promise<FieldBulkEditResponse> {
+  const json = await request(FIELD_BULK_EDIT_URL, idToken, { method: 'POST', body: JSON.stringify(body) });
+  const results = Array.isArray(json.results) ? (json.results as Record<string, unknown>[]) : [];
+  return {
+    bulkId: typeof json.bulkId === 'string' ? json.bulkId : body.requestId,
+    results: results.map((r) => ({
+      eventId: typeof r.eventId === 'string' ? r.eventId : '',
+      ok: r.ok === true,
+      outcome: r.ok === true && (r.outcome === 'applied' || r.outcome === 'noChange' || r.outcome === 'alreadyApplied') ? r.outcome : undefined,
+      code: typeof r.code === 'string' ? r.code : undefined,
+      message: typeof r.message === 'string' ? r.message : '',
+    })),
+  };
+}
+
+// 1件の変更を保存して、保存後のD1の値を返す（一括写真の整理用。画面側がupdated_atを持っていない場合は保存直前に読む）
+export async function saveFieldEntryChanges(
+  eventId: string,
+  changes: FieldEditPatch,
+  idToken: string,
+  opts: { expectedUpdatedAt?: string; requestId: string },
+): Promise<FieldEntryDetail> {
+  const expectedUpdatedAt = opts.expectedUpdatedAt ?? (await fetchFieldEntryDetail(eventId, idToken)).updatedAt;
+  await patchFieldEntry(eventId, { requestId: opts.requestId, expectedUpdatedAt, changes }, idToken);
+  return fetchFieldEntryDetail(eventId, idToken);
 }

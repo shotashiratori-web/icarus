@@ -52,3 +52,24 @@ export interface FieldEntryHistoryItem {
   derived: boolean;
   changes: { field: string; old: string | null; new: string | null }[];
 }
+
+// まとめて編集で変えられる項目（Worker BULK_EDITABLE_FIELDSと同じ。食材名・観察日・メモは1件ずつ編集する）
+export const BULK_EDITABLE_FIELDS = [
+  'place', 'subject_type', 'large_category', 'sub_category', 'phase', 'observed_parts', 'identification_status', 'harvested',
+] as const satisfies readonly FieldEditableField[];
+export type FieldBulkEditableField = (typeof BULK_EDITABLE_FIELDS)[number];
+
+export const BULK_EDIT_MAX_ENTRIES = 100;
+
+export interface FieldBulkEditResultItem {
+  eventId: string;
+  ok: boolean;
+  outcome?: 'applied' | 'noChange' | 'alreadyApplied';
+  code?: string; // EDIT_CONFLICT / EDIT_NOT_FOUND / EDIT_VALIDATION
+  message: string;
+}
+
+export interface FieldBulkEditResponse {
+  bulkId: string;
+  results: FieldBulkEditResultItem[];
+}

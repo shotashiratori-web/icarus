@@ -1,7 +1,15 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
-import { updateFieldLogEntry, deleteFieldLogEntries, classifyFieldPhoto, type FieldUpdateEntryChanges } from '../api/zukanApi';
+import { deleteFieldLogEntries, classifyFieldPhoto } from '../api/zukanApi';
+import {
+  bulkEditFieldEntries,
+  fetchFieldEntryDetail,
+  saveFieldEntryChanges,
+  FieldEditConflictError,
+} from '../api/fieldEntryEditApi';
+import type { FieldEditPatch, FieldEntryDetail } from '../types/fieldEntryEdit';
+import { summarizeBulkResults } from '../utils/fieldEntryEdit';
 import { TokenExpiredError } from '../api/icarusApi';
 import { validateFoodName } from '../utils/foodNameValidation';
 import { isBulkPhotoIncomplete, countFieldIncomplete } from '../utils/fieldIncomplete';
@@ -107,6 +115,10 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const draftSaveTimerRef = useRef<number | null>(null);
   // 「保存できません」警告はこの画面を開いている間（複数枚をまたいで）1回だけ出す
   const draftSaveFailedShownRef = useRef(false);
+  // Field Log 編集API（D1正本）の楽観ロック用。写真を表示した時点のupdated_at（読めていなければ保存直前に読む）
+  const expectedUpdatedAtRef = useRef<{ eventId: string; updatedAt: string } | null>(null);
+  // 通信失敗後に同じ内容で保存し直す時は同じrequestIdを使う（Workerが二重に書かない）
+  const pendingRequestRef = useRef<{ key: string; requestId: string } | null>(null);
 
   useEffect(() => {
     if (!idToken) return;
@@ -164,6 +176,19 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setPhotoLoadState('loading');
     setPhotoRetryKey(0);
     setPhotoLoadSlow(false);
+
+    expectedUpdatedAtRef.current = null;
+    pendingRequestRef.current = null;
+    if (canEdit && idToken && currentEntry.eventId) {
+      const eventId = currentEntry.eventId;
+      fetchFieldEntryDetail(eventId, idToken)
+        .then((d) => {
+          if (!expectedUpdatedAtRef.current || expectedUpdatedAtRef.current.eventId !== eventId) {
+            expectedUpdatedAtRef.current = { eventId, updatedAt: d.updatedAt };
+          }
+        })
+        .catch(() => { /* 保存直前に読み直す */ });
+    }
 
     const draft = loadFieldLogDraft(currentEntry.eventId);
     const c = draft?.changes;
@@ -245,6 +270,55 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setSaveNotice(text);
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
     noticeTimerRef.current = window.setTimeout(() => setSaveNotice(''), ms);
+  };
+
+  // 画面の入力（食材名・場所・メモ）のうち、元の値から変えたものだけを編集APIの項目名で返す
+  const currentPatch = (): FieldEditPatch => {
+    const patch: FieldEditPatch = {};
+    if (draftFoodName !== originalFoodName) patch.food = draftFoodName;
+    if (draftLocation !== originalLocation) patch.place = draftLocation;
+    if (draftMemo !== originalMemo) patch.memo = draftMemo;
+    return patch;
+  };
+
+  const applyDetailToStore = (d: FieldEntryDetail) => {
+    useZukanFieldStore.getState().updateEntry(d.eventId, { foodName: d.food, place: d.place, memo: d.memo, date: d.date, kigo: d.kigo });
+  };
+
+  // 表示中の写真を保存する。他の人が先に更新していた場合（409）は最新の値を読み込み、
+  // 自分が変えた項目だけ入力を残して、もう一度保存してもらう（自動では保存しない）
+  const saveCurrentEntry = async (patch: FieldEditPatch): Promise<boolean> => {
+    if (!idToken || !currentEntry?.eventId) return false;
+    const eventId = currentEntry.eventId;
+    const expected = expectedUpdatedAtRef.current?.eventId === eventId ? expectedUpdatedAtRef.current.updatedAt : undefined;
+    const key = JSON.stringify({ eventId, patch, expected });
+    if (pendingRequestRef.current?.key !== key) pendingRequestRef.current = { key, requestId: crypto.randomUUID() };
+    try {
+      const d = await saveFieldEntryChanges(eventId, patch, idToken, { expectedUpdatedAt: expected, requestId: pendingRequestRef.current.requestId });
+      pendingRequestRef.current = null;
+      expectedUpdatedAtRef.current = { eventId, updatedAt: d.updatedAt };
+      clearFieldLogDraft(eventId);
+      removeDeferredId(eventId);
+      applyDetailToStore(d);
+      return true;
+    } catch (e) {
+      if (e instanceof FieldEditConflictError) {
+        pendingRequestRef.current = null;
+        const latest = await fetchFieldEntryDetail(eventId, idToken).catch(() => null);
+        if (latest) {
+          expectedUpdatedAtRef.current = { eventId, updatedAt: latest.updatedAt };
+          if (draftFoodName === originalFoodName) setDraftFoodName(latest.food);
+          if (draftLocation === originalLocation) setDraftLocation(latest.place);
+          if (draftMemo === originalMemo) setDraftMemo(latest.memo);
+          setOriginalFoodName(latest.food);
+          setOriginalLocation(latest.place);
+          setOriginalMemo(latest.memo);
+          applyDetailToStore(latest);
+        }
+        throw new Error('他の人が先にこの記録を更新しました。最新の内容を読み込みました。入力を確認して、もう一度保存してください。');
+      }
+      throw e;
+    }
   };
 
   const foodNameError = validateFoodName(draftFoodName);
@@ -337,28 +411,20 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setIsSaving(true);
     setSaveError('');
 
-    const changes: FieldUpdateEntryChanges = {};
-    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
-    if (draftLocation !== originalLocation) changes.location = draftLocation;
-    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+    const draftChanges: FieldLogDraftChanges = {};
+    if (draftFoodName !== originalFoodName) draftChanges.foodName = draftFoodName;
+    if (draftLocation !== originalLocation) draftChanges.location = draftLocation;
+    if (draftMemo !== originalMemo) draftChanges.memo = draftMemo;
 
-    const draftOk = saveFieldLogDraft(currentEntry.eventId, changes);
+    const draftOk = saveFieldLogDraft(currentEntry.eventId, draftChanges);
     if (!draftOk && !draftSaveFailedShownRef.current) {
       draftSaveFailedShownRef.current = true;
       setDraftSaveFailedNotice(true);
     }
 
     try {
-      const result = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
-      clearFieldLogDraft(currentEntry.eventId);
-      removeDeferredId(currentEntry.eventId);
-      useZukanFieldStore.getState().updateEntry(currentEntry.eventId, result.entry);
-      if (!result.noChange) {
-        showNoticeThenClear(
-          result.warning ? '保存されました。外部データへの反映が一部完了していません。' : '保存しました',
-          result.warning ? 5000 : 4000,
-        );
-      }
+      await saveCurrentEntry(currentPatch());
+      showNoticeThenClear('保存しました', 4000);
       // 保存成功後は保護すべき未保存入力が残らないため、確認なしでそのまま次へ進む
       doNav('next');
     } catch (e) {
@@ -416,33 +482,36 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   }, [currentEventId]);
 
   // バースト撮影等で近くにある未入力の写真へ、今入力した食材名をまとめて適用する。
-  // 既存の1件保存フローと同じAPI(updateFieldLogEntry)を対象件数分呼び出す（一括専用APIは用意していない）
+  // 食材名は1件ずつの編集API（PATCH /field/entries/:eventId）で近くの写真へ配る
   const handleBatchApply = async () => {
     if (isBatchApplying || !idToken || !currentEntry?.eventId || foodNameError || !draftFoodName.trim()) return;
     if (nearbyEmptyEntries.length === 0) return;
     setIsBatchApplying(true);
     setBatchApplyError('');
 
-    const changes: FieldUpdateEntryChanges = {};
-    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
-    if (draftLocation !== originalLocation) changes.location = draftLocation;
-    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+    const patch = currentPatch();
 
     try {
-      // 現在の写真自体には変更がない場合（既存の食材名を近くの写真に配るだけの場合）は、
-      // 空のchangesを送るとサーバー側のバリデーションエラーになるため、その場合は呼び出さない
-      if (Object.keys(changes).length > 0) {
-        const currentResult = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
-        clearFieldLogDraft(currentEntry.eventId);
-        removeDeferredId(currentEntry.eventId);
-        useZukanFieldStore.getState().updateEntry(currentEntry.eventId, currentResult.entry);
-      }
+      // 現在の写真自体には変更がない場合（既存の食材名を近くの写真に配るだけの場合）は保存しない
+      if (Object.keys(patch).length > 0) await saveCurrentEntry(patch);
 
+      // 食材名はまとめて編集APIの対象外（1件ずつ編集する契約）のため、近くの写真へは1件ずつ保存する。
+      // 1件失敗しても残りは続け、失敗した写真を知らせる（成功した分はやり直さない）
+      const failedNames: string[] = [];
       for (const nearby of nearbyEmptyEntries) {
-        const result = await updateFieldLogEntry(nearby.eventId, { foodName: draftFoodName }, idToken);
-        clearFieldLogDraft(nearby.eventId);
-        removeDeferredId(nearby.eventId);
-        useZukanFieldStore.getState().updateEntry(nearby.eventId, result.entry);
+        try {
+          const d = await saveFieldEntryChanges(nearby.eventId, { food: draftFoodName }, idToken, { requestId: crypto.randomUUID() });
+          clearFieldLogDraft(nearby.eventId);
+          removeDeferredId(nearby.eventId);
+          applyDetailToStore(d);
+        } catch (e) {
+          if (e instanceof TokenExpiredError) throw e;
+          failedNames.push(`${nearby.date}${formatTakenTime(nearby.takenAt) ? ` ${formatTakenTime(nearby.takenAt)}` : ''}`);
+        }
+      }
+      if (failedNames.length > 0) {
+        setBatchApplyError(`近くの${nearbyEmptyEntries.length}件のうち${failedNames.length}件は保存できませんでした（${failedNames.join('、')}）。もう一度お試しください。`);
+        return;
       }
 
       showNoticeThenClear(`保存しました（近くの${nearbyEmptyEntries.length}件にも適用しました）`, 4000);
@@ -464,23 +533,25 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     setIsBatchApplyingLocation(true);
     setBatchApplyLocationError('');
 
-    const changes: FieldUpdateEntryChanges = {};
-    if (draftFoodName !== originalFoodName) changes.foodName = draftFoodName;
-    if (draftLocation !== originalLocation) changes.location = draftLocation;
-    if (draftMemo !== originalMemo) changes.memo = draftMemo;
+    const patch = currentPatch();
 
     try {
-      if (Object.keys(changes).length > 0) {
-        const currentResult = await updateFieldLogEntry(currentEntry.eventId, changes, idToken);
-        clearFieldLogDraft(currentEntry.eventId);
-        removeDeferredId(currentEntry.eventId);
-        useZukanFieldStore.getState().updateEntry(currentEntry.eventId, currentResult.entry);
-      }
+      if (Object.keys(patch).length > 0) await saveCurrentEntry(patch);
 
-      for (const nearby of nearbyEmptyLocationEntries) {
-        const result = await updateFieldLogEntry(nearby.eventId, { location: draftLocation }, idToken);
-        clearFieldLogDraft(nearby.eventId);
-        useZukanFieldStore.getState().updateEntry(nearby.eventId, result.entry);
+      // 場所はまとめて編集APIで配る（記録ごとに独立して成立。成功した記録だけ画面へ反映する）
+      const targets = await Promise.all(
+        nearbyEmptyLocationEntries.map(async (e) => ({ eventId: e.eventId, expectedUpdatedAt: (await fetchFieldEntryDetail(e.eventId, idToken)).updatedAt })),
+      );
+      const res = await bulkEditFieldEntries({ requestId: crypto.randomUUID(), entries: targets, changes: { place: draftLocation } }, idToken);
+      const summary = summarizeBulkResults(res.results);
+      for (const id of summary.applied) {
+        clearFieldLogDraft(id);
+        useZukanFieldStore.getState().updateEntry(id, { place: draftLocation });
+      }
+      const notSaved = summary.conflicted.length + summary.failed.length;
+      if (notSaved > 0) {
+        setBatchApplyLocationError(`成功${summary.succeeded.length}件／競合${summary.conflicted.length}件／失敗${summary.failed.length}件。保存できなかった写真は、もう一度お試しください。`);
+        return;
       }
 
       showNoticeThenClear(`保存しました（近くの${nearbyEmptyLocationEntries.length}件にも場所を適用しました）`, 4000);
