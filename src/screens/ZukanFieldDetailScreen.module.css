@@ -335,3 +335,193 @@
   white-space: pre-wrap;
 }
 
+
+/* ---- Editing & Classification: 観察日・分類・状態の編集、競合、編集履歴 ---- */
+
+.editMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: 0 var(--space-6);
+}
+
+.dateLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.dateInput,
+.select {
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  padding: var(--space-2);
+  border: 1.5px solid var(--color-text);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  min-height: 40px;
+}
+
+.select {
+  width: 100%;
+  min-width: 0;
+}
+
+.dateInput:disabled,
+.select:disabled {
+  opacity: 0.6;
+}
+
+.hintText {
+  width: 100%;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.classGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.classRow {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.classLabel {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-sub);
+}
+
+.classValue {
+  margin: 0;
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+.partsFieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.partsFieldset legend {
+  float: left;
+  padding: var(--space-2) 0 0;
+}
+
+.partsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.partChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+  min-height: 36px;
+}
+
+.conflictBanner {
+  margin: 0 var(--space-6);
+  border: 1.5px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.conflictTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.conflictText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.saveNoticeTop {
+  padding: 0 var(--space-6);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-synced);
+}
+
+.errorTextPad {
+  padding: 0 var(--space-6);
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+}
+
+.historyBox {
+  margin: 0 var(--space-6);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.historyEmpty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.historyItem + .historyItem {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+
+.historyMeta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.historyReason {
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-1);
+}
+
+.historyChanges {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.historyField {
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
