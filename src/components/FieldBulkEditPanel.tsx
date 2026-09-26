@@ -10,6 +10,7 @@ import {
   FIELD_LABELS,
   bulkPatchFromForm,
   choicesFor,
+  formatTakenTime,
   summarizeBulkResults,
   toggleObservedPart,
   type BulkEditForm,
@@ -40,8 +41,26 @@ const SELECT_FIELDS: Exclude<FieldBulkEditableField, 'place' | 'observed_parts'>
   'subject_type', 'large_category', 'sub_category', 'phase', 'identification_status', 'harvested',
 ];
 
-function entryLabel(e: FieldLogEntry): string {
-  return `${e.foodName || '無題'}（${e.date}${e.place ? `・${e.place}` : ''}）`;
+// 競合・失敗した記録を人が見分けるための表示。同じ日・同じ場所・同じ食材名の記録が並ぶことが多いため、
+// 写真のサムネイルと撮影時刻を出す（EventIDは人向けの識別子として見せない）
+function EntryIdentity({ entry, reason }: { entry: FieldLogEntry | undefined; reason?: string }) {
+  if (!entry) return <span className={styles.identityText}>（記録を表示できません）{reason && `：${reason}`}</span>;
+  const photo = entry.thumbnailUrl || entry.photoUrl;
+  const time = formatTakenTime(entry.takenAt);
+  return (
+    <span className={styles.identity}>
+      {photo
+        ? <img className={styles.identityThumb} src={photo} alt="" loading="lazy" />
+        : <span className={styles.identityThumbEmpty}>写真なし</span>}
+      <span className={styles.identityText}>
+        <span className={styles.identityFood}>{entry.foodName || '無題'}</span>
+        <span className={styles.identityMeta}>
+          {time ? `撮影 ${time}・` : ''}{entry.date}{entry.place ? `・${entry.place}` : ''}
+        </span>
+        {reason && <span className={styles.problemReason}>{reason}</span>}
+      </span>
+    </span>
+  );
 }
 
 export default function FieldBulkEditPanel({ entries, onClose, onSucceeded }: Props) {
@@ -162,7 +181,7 @@ export default function FieldBulkEditPanel({ entries, onClose, onSucceeded }: Pr
             <p className={styles.problemTitle}>他の人が先に更新していた記録（この記録には何も書いていません）</p>
             <ul className={styles.problemList}>
               {summary.conflicted.map((c) => (
-                <li key={c.eventId}>{byId.get(c.eventId) ? entryLabel(byId.get(c.eventId)!) : c.eventId}</li>
+                <li key={c.eventId}><EntryIdentity entry={byId.get(c.eventId)} /></li>
               ))}
             </ul>
             <button className={styles.primaryBtn} onClick={retryConflicted}>
@@ -175,10 +194,7 @@ export default function FieldBulkEditPanel({ entries, onClose, onSucceeded }: Pr
             <p className={styles.problemTitle}>保存できなかった記録</p>
             <ul className={styles.problemList}>
               {summary.failed.map((f) => (
-                <li key={f.eventId}>
-                  {byId.get(f.eventId) ? entryLabel(byId.get(f.eventId)!) : f.eventId}
-                  {f.message && <span className={styles.problemReason}>：{f.message}</span>}
-                </li>
+                <li key={f.eventId}><EntryIdentity entry={byId.get(f.eventId)} reason={f.message} /></li>
               ))}
             </ul>
           </div>
@@ -196,7 +212,7 @@ export default function FieldBulkEditPanel({ entries, onClose, onSucceeded }: Pr
         <div className={styles.problemBox}>
           <p className={styles.problemTitle}>読み込めなかったため対象から外した記録</p>
           <ul className={styles.problemList}>
-            {loadFailed.map((f) => <li key={f.entry.eventId}>{entryLabel(f.entry)}：{f.message}</li>)}
+            {loadFailed.map((f) => <li key={f.entry.eventId}><EntryIdentity entry={f.entry} reason={f.message} /></li>)}
           </ul>
         </div>
       )}

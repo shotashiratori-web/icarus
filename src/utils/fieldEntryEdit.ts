@@ -245,3 +245,13 @@ export function bulkPatchFromForm(form: BulkEditForm): FieldEditPatch {
   }
   return patch;
 }
+
+// takenAt（撮影日時・秒単位のISO文字列）から時刻部分（HH:MM）だけを取り出す。
+// 同じ日・同じ場所で何枚も撮った記録を人が見分けるのに使う（一括写真の整理・まとめて編集の結果）
+export function formatTakenTime(takenAt: string): string {
+  if (!takenAt) return '';
+  const d = new Date(takenAt);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

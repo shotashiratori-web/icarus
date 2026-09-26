@@ -25,9 +25,9 @@ vi.mock('../src/api/fieldEntryEditApi', async (importOriginal) => ({
 
 const STAFF: StaffMe = { email: 'staff@test.invalid', displayName: 'Test Staff', role: 'staff', staffStatus: 'active' };
 
-const mk = (eventId: string, foodName: string, date: string): FieldLogEntry => ({
+const mk = (eventId: string, foodName: string, date: string, over: Partial<FieldLogEntry> = {}): FieldLogEntry => ({
   id: eventId, foodName, place: '', date, memo: '', photoUrl: '', notionUrl: '', elevation: null, kigo: '',
-  lat: 43, lng: 140, recordedAt: '', eventId, takenAt: '',
+  lat: 43, lng: 140, recordedAt: '', eventId, takenAt: '', ...over,
 });
 const ENTRIES = [mk('e1', 'ナラタケ', '2026-09-01'), mk('e2', 'セリ', '2026-09-02'), mk('e3', 'サルナシ', '2026-09-03')];
 
@@ -104,7 +104,9 @@ describe('FieldIncompleteListScreen: まとめて編集', () => {
     expect(await screen.findByText('成功 2件')).toBeInTheDocument();
     expect(screen.getByText('競合 1件')).toBeInTheDocument();
     expect(screen.getByText('失敗 0件')).toBeInTheDocument();
-    expect(screen.getByText('セリ（2026-09-02）')).toBeInTheDocument();
+    const panel = screen.getByRole('region', { name: 'まとめて編集の結果' });
+    expect(within(panel).getByText('セリ')).toBeInTheDocument();
+    expect(within(panel).getByText('2026-09-02')).toBeInTheDocument();
 
     api.fetchFieldEntryDetail.mockClear();
     api.fetchFieldEntryDetail.mockImplementation(async (id: string) => ({ eventId: id, updatedAt: `t2-${id}` }));
@@ -128,7 +130,7 @@ describe('FieldIncompleteListScreen: まとめて編集', () => {
     fireEvent.click(screen.getByRole('button', { name: '3件に保存' }));
     const panel = await screen.findByRole('region', { name: 'まとめて編集の結果' });
     expect(within(panel).getByText('失敗 1件')).toBeInTheDocument();
-    expect(within(panel).getByText(/サルナシ（2026-09-03）/)).toHaveTextContent('記録が見つかりません');
+    expect(within(panel).getByText('サルナシ').parentElement).toHaveTextContent('記録が見つかりません');
     expect(within(panel).getByText(/1件は、すでに同じ値/)).toBeInTheDocument();
   });
 
@@ -145,5 +147,39 @@ describe('FieldIncompleteListScreen: まとめて編集', () => {
     await screen.findByText('成功 3件');
     await waitFor(() => expect(api.bulkEditFieldEntries).toHaveBeenCalledTimes(2));
     expect(api.bulkEditFieldEntries.mock.calls[0][0].requestId).toBe(api.bulkEditFieldEntries.mock.calls[1][0].requestId);
+  });
+
+  it('7. 同じ日・同じ場所・同じ食材名が並んでも、競合した記録を写真と撮影時刻で見分けられる（EventIDは出さない）', async () => {
+    const same = (id: string, takenAt: string, thumb: string) =>
+      mk(id, 'ナラタケ', '2026-09-21', { place: '余市', takenAt, photoUrl: `https://example.test/${id}.jpg`, thumbnailUrl: thumb });
+    useZukanFieldStore.setState({
+      entries: [
+        same('n1', '2026-09-21T11:14:33+09:00', 'https://example.test/thumb-n1.jpg'),
+        same('n2', '2026-09-21T11:18:34+09:00', 'https://example.test/thumb-n2.jpg'),
+      ],
+      loadState: 'ready', errorMessage: '',
+    });
+    render(<FieldIncompleteListScreen go={vi.fn()} from={{ name: 'field' } as never} />);
+    fireEvent.click(screen.getByRole('button', { name: '複数選択' }));
+    fireEvent.click(screen.getByRole('button', { name: '表示中をすべて選ぶ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'まとめて編集' }));
+    await screen.findByRole('button', { name: '2件に保存' });
+    fireEvent.change(screen.getByLabelText('同定状態'), { target: { value: '推定' } });
+    api.bulkEditFieldEntries.mockResolvedValue({
+      bulkId: 'b',
+      results: [
+        { eventId: 'n1', ok: true, outcome: 'applied', message: '' },
+        { eventId: 'n2', ok: false, code: 'EDIT_CONFLICT', message: '' },
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: '2件に保存' }));
+    const panel = await screen.findByRole('region', { name: 'まとめて編集の結果' });
+    const item = within(panel).getByRole('listitem');
+    expect(item).toHaveTextContent('ナラタケ');
+    const t = new Date('2026-09-21T11:18:34+09:00'); // 表示は端末の時刻（テスト環境のタイムゾーンに依存させない）
+    const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    expect(item).toHaveTextContent(`撮影 ${hhmm}・2026-09-21・余市`);
+    expect(item.querySelector('img')?.getAttribute('src')).toBe('https://example.test/thumb-n2.jpg');
+    expect(item).not.toHaveTextContent('n2');
   });
 });
