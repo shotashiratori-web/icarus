@@ -19,7 +19,9 @@ export default function SpotFormScreen(props: Props) {
   const initial = mode === 'create' ? props.initial : undefined;
   // 一括写真整理等、スポット一覧以外から来た場合はそこへ戻す（元の画面がなければ従来どおりスポット一覧へ）
   const from = mode === 'create' ? props.from : undefined;
-  const { idToken } = useAuth();
+  const { idToken, staffMe } = useAuth();
+  // 削除は admin だけ（共通原則: active staff = 編集／admin = 編集＋無効化・削除）。API 側でも admin 以外は 403
+  const canDelete = staffMe?.role === 'admin';
 
   const [photoUrl, setPhotoUrl] = useState(existing?.photos[0] ?? initial?.photoUrl ?? '');
   const [title, setTitle] = useState(existing?.title ?? '');
@@ -74,7 +76,7 @@ export default function SpotFormScreen(props: Props) {
   };
 
   const handleDelete = async () => {
-    if (!idToken || mode !== 'edit') return;
+    if (!idToken || mode !== 'edit' || !canDelete) return;
     setDeleting(true);
     setErrorMessage('');
     try {
@@ -140,12 +142,12 @@ export default function SpotFormScreen(props: Props) {
             {saving ? '保存中…' : '保存する'}
           </button>
 
-          {mode === 'edit' && !confirmingDelete && (
+          {mode === 'edit' && canDelete && !confirmingDelete && (
             <button className={styles.deleteBtn} disabled={saving || deleting} onClick={() => setConfirmingDelete(true)}>
               このスポットを削除
             </button>
           )}
-          {mode === 'edit' && confirmingDelete && (
+          {mode === 'edit' && canDelete && confirmingDelete && (
             <div className={styles.confirmRow}>
               <span className={styles.confirmText}>本当に削除しますか？</span>
               <button className={styles.deleteBtn} disabled={deleting} onClick={() => void handleDelete()}>

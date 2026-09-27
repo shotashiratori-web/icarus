@@ -16,7 +16,9 @@ type Props = { go: (s: Screen) => void } & (
 export default function WineFormScreen(props: Props) {
   const { go, mode } = props;
   const existing = mode === 'edit' ? props.wine : null;
-  const { idToken } = useAuth();
+  const { idToken, staffMe } = useAuth();
+  // 削除は admin だけ（共通原則: active staff = 編集／admin = 編集＋無効化・削除）。API 側でも admin 以外は 403
+  const canDelete = staffMe?.role === 'admin';
 
   const [photoUrl, setPhotoUrl] = useState(existing?.photos[0] ?? '');
   const [title, setTitle] = useState(existing?.title ?? '');
@@ -73,7 +75,7 @@ export default function WineFormScreen(props: Props) {
   };
 
   const handleDelete = async () => {
-    if (!idToken || mode !== 'edit') return;
+    if (!idToken || mode !== 'edit' || !canDelete) return;
     setDeleting(true);
     setErrorMessage('');
     try {
@@ -145,12 +147,12 @@ export default function WineFormScreen(props: Props) {
             {saving ? '保存中…' : '保存する'}
           </button>
 
-          {mode === 'edit' && !confirmingDelete && (
+          {mode === 'edit' && canDelete && !confirmingDelete && (
             <button className={styles.deleteBtn} disabled={saving || deleting} onClick={() => setConfirmingDelete(true)}>
               このワインを削除
             </button>
           )}
-          {mode === 'edit' && confirmingDelete && (
+          {mode === 'edit' && canDelete && confirmingDelete && (
             <div className={styles.confirmRow}>
               <span className={styles.confirmText}>本当に削除しますか？</span>
               <button className={styles.deleteBtn} disabled={deleting} onClick={() => void handleDelete()}>
