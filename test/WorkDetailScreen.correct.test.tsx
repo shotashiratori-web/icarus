@@ -5,8 +5,8 @@ import { mockUseAuth } from './testAuth';
 import { WorkCorrectionConflictError } from '../src/api/workApi';
 import type { WorkDetail } from '../src/types/workLog';
 
-// Work Log Correction v1 Stage B。デフォルトのmockUseAuth()はrole:'admin'固定
-// （非adminには「訂正」ボタン自体を出さない——WorkDetailScreen.correct.staff.test.tsxで別途検証）
+// Work Log Correction v1 Stage B。デフォルトのmockUseAuth()はrole:'admin'固定。
+// 2026-09-27 Work Log Staff Correction で active staff にも「訂正」を開放（WorkDetailScreen.correct.staff.test.tsx）
 
 vi.mock('../src/context/AuthContext', () => ({ useAuth: () => mockUseAuth() }));
 
@@ -113,9 +113,9 @@ describe('WorkDetailScreen: Work Log Correction v1（admin）', () => {
     await waitFor(() => expect(screen.getByText('内容A（訂正済み）')).toBeInTheDocument());
   });
 
-  it('7. 409競合（WorkCorrectionConflictError）時は、エラー表示・サーバー最新値をフォームへ反映・フォームは開いたまま', async () => {
-    correctWorkEntry.mockRejectedValue(
-      new WorkCorrectionConflictError('他の変更と競合しました。最新の内容を確認してください。', '他の人が変更した内容', 'caption-a'),
+  it('7. 409競合時は、最新値を取り込みつつ自分の入力を残し、競合項目を示す。自動では再保存しない。再保存の expected は最新値（Work Log Staff Correction）', async () => {
+    correctWorkEntry.mockRejectedValueOnce(
+      new WorkCorrectionConflictError('他の変更と競合しました。最新の内容を確認してください。', '他の人が変更した内容', '他の人のキャプション'),
     );
     await renderReady();
 
@@ -123,9 +123,18 @@ describe('WorkDetailScreen: Work Log Correction v1（admin）', () => {
     fireEvent.change(screen.getByDisplayValue('内容A'), { target: { value: '内容A（訂正済み）' } });
     fireEvent.click(screen.getByText('保存'));
 
-    await waitFor(() => expect(screen.getByText(/他の変更と競合しました/)).toBeInTheDocument());
-    expect(screen.getByDisplayValue('他の人が変更した内容')).toBeInTheDocument(); // フォームへ最新値が反映
-    expect(screen.getByText('保存')).toBeInTheDocument(); // フォームはまだ開いている
+    await waitFor(() => expect(screen.getByText('他の人が先にこの記録を更新しました')).toBeInTheDocument());
+    expect(screen.getByLabelText('本文')).toHaveValue('内容A（訂正済み）'); // 自分の入力は残る
+    expect(screen.getByLabelText('キャプション')).toHaveValue('他の人のキャプション'); // 自分が変えていない項目は最新値
+    expect(screen.getByRole('alert')).toHaveTextContent('本文は他の人も変更しています');
+    expect(correctWorkEntry).toHaveBeenCalledTimes(1); // 自動では再保存しない
+
+    correctWorkEntry.mockResolvedValueOnce({ status: 'success', content: '内容A（訂正済み）', caption: '他の人のキャプション' });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => expect(correctWorkEntry).toHaveBeenCalledTimes(2));
+    expect(correctWorkEntry.mock.calls[1]).toEqual(
+      ['w1', 2, '内容A（訂正済み）', '他の人のキャプション', '他の人が変更した内容', '他の人のキャプション', '', 'test-token'],
+    );
   });
 
   it('8. 一般エラー時はエラーメッセージを表示し、フォームは開いたまま・値は変わらない', async () => {
