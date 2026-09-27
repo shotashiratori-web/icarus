@@ -1,11 +1,20 @@
 import { create } from 'zustand';
 import { fetchFieldLogEntries, NetworkUnknownError } from '../api/zukanApi';
-import { loadFieldLogCache, saveFieldLogCache } from '../utils/fieldLogCache';
+import { TokenExpiredError } from '../api/icarusApi';
+import { loadFieldLogCacheWithMeta, saveFieldLogCache } from '../utils/fieldLogCache';
+import { markExpiredImages } from '../utils/signedImageUrl';
 import type { FieldLogEntry } from '../types/zukan';
 import type { TimeFilterKey } from '../utils/fieldTimeFilter';
 import type { SheetSnap } from '../types/sheet';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+
+// 表示中データの裏での取り直しの状態（Field Map Stale Cache、2026-09-27）。
+// failed / authExpired でもキャッシュの表示は続ける（消さない）。画面は「いつ時点のデータか」を出す
+export type RefreshState = 'idle' | 'refreshing' | 'failed' | 'authExpired';
+
+// 画面を開いた時・アプリへ戻った時、最後に取得してからこれ以上経っていれば裏で取り直す
+export const FIELD_DATA_STALE_MS = 60_000;
 
 // 撮影日時順（デフォルトの観察日ベース）とは別に、Icarusへ登録された順の並び替えを提供する
 export type FieldSortMode = 'takenDesc' | 'addedDesc' | 'addedAsc';
@@ -46,6 +55,9 @@ type ZukanFieldStore = {
   sortMode: FieldSortMode;
   loadState: LoadState;
   errorMessage: string;
+  // 表示中のデータを API から取得した時刻（キャッシュ表示中はキャッシュの保存時刻）。null = 未取得
+  dataAsOf: number | null;
+  refreshState: RefreshState;
 
   // 検索・タグ絞り込み（地図のピンとボトムシート一覧で共通利用）
   searchQuery: string;
@@ -67,6 +79,10 @@ type ZukanFieldStore = {
   ensureLoaded: (idToken: string) => Promise<void>;
   reload: (idToken: string) => Promise<void>;
   silentRefresh: (idToken: string) => Promise<void>;
+  // 最後の取得から maxAgeMs 以上経っていれば裏で取り直す（画面を開いた時・アプリへ戻った時）
+  refreshIfStale: (idToken: string, maxAgeMs?: number) => void;
+  // 写真の署名付きURLの期限だけを見直す（取り直しに失敗したまま時間が経った時用）
+  recheckImageExpiry: () => void;
   updateEntry: (eventId: string, patch: Partial<Pick<FieldLogEntry, 'foodName' | 'place' | 'memo' | 'date' | 'kigo'>>) => void;
   removeEntry: (eventId: string) => void;
   addEntry: (entry: FieldLogEntry) => void;
@@ -85,6 +101,8 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   sortMode: 'addedDesc',
   loadState: 'idle',
   errorMessage: '',
+  dataAsOf: null,
+  refreshState: 'idle',
   searchQuery: '',
   kigoFilter: '',
   listScrollTop: 0,
@@ -96,13 +114,23 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
 
   ensureLoaded: async (idToken) => {
     const { loadState } = get();
-    if (loadState === 'ready' || loadState === 'loading') return;
+    if (loadState === 'loading') return;
+    // 既に表示中でも、古くなっていれば裏で取り直す（タブを開いたまま古い表示が続かないように）
+    if (loadState === 'ready') {
+      get().refreshIfStale(idToken);
+      return;
+    }
 
     // サーバーの応答が遅い・止まる場合でも操作可能にするため、キャッシュがあれば即座に表示し、
-    // 裏で最新を取り直す（画面をブロックしない）。キャッシュがなければ従来どおり待つ
-    const cached = loadFieldLogCache();
+    // 裏で最新を取り直す（画面をブロックしない）。キャッシュがなければ従来どおり待つ。
+    // キャッシュの写真URLが署名期限切れなら imageExpired を付け、壊れた画像を出さない
+    const cached = loadFieldLogCacheWithMeta();
     if (cached) {
-      set({ entries: sortFieldEntries(cached, get().sortMode), loadState: 'ready' });
+      set({
+        entries: sortFieldEntries(markExpiredImages(cached.entries, Date.now()), get().sortMode),
+        loadState: 'ready',
+        dataAsOf: cached.savedAt,
+      });
       void get().silentRefresh(idToken);
       return;
     }
@@ -113,7 +141,7 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
     set({ loadState: 'loading', errorMessage: '' });
     try {
       const items = await fetchFieldLogEntries(idToken);
-      set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
+      set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready', dataAsOf: Date.now(), refreshState: 'idle' });
       saveFieldLogCache(items);
     } catch (e) {
       const message = e instanceof NetworkUnknownError ? e.message : e instanceof Error ? e.message : '取得に失敗しました';
@@ -122,15 +150,32 @@ export const useZukanFieldStore = create<ZukanFieldStore>((set, get) => ({
   },
 
   // キャッシュ表示中に裏で最新を取り直す。画面はブロックせず、失敗してもキャッシュ表示のまま維持する
-  // （サーバーが遅い・止まっている間もユーザーの操作を妨げないための仕組み）
+  // （サーバーが遅い・止まっている間もユーザーの操作を妨げないための仕組み）。
+  // ただし失敗を黙って握りつぶさず refreshState に残す（画面が「いつ時点の表示か」を知らせる）
   silentRefresh: async (idToken) => {
+    if (get().refreshState === 'refreshing') return;
+    set({ refreshState: 'refreshing' });
     try {
       const items = await fetchFieldLogEntries(idToken);
-      set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready' });
+      set({ entries: sortFieldEntries(items, get().sortMode), loadState: 'ready', dataAsOf: Date.now(), refreshState: 'idle' });
       saveFieldLogCache(items);
-    } catch {
-      // 失敗してもキャッシュの表示を維持する。エラー表示にはしない
+    } catch (e) {
+      set({
+        refreshState: e instanceof TokenExpiredError ? 'authExpired' : 'failed',
+        entries: markExpiredImages(get().entries, Date.now()),
+      });
     }
+  },
+
+  refreshIfStale: (idToken, maxAgeMs = FIELD_DATA_STALE_MS) => {
+    const { loadState, dataAsOf, refreshState } = get();
+    if (loadState !== 'ready' || refreshState === 'refreshing') return;
+    if (dataAsOf !== null && Date.now() - dataAsOf < maxAgeMs) return;
+    void get().silentRefresh(idToken);
+  },
+
+  recheckImageExpiry: () => {
+    set((state) => ({ entries: markExpiredImages(state.entries, Date.now()) }));
   },
 
   setSortMode: (mode) => set((state) => ({ sortMode: mode, entries: sortFieldEntries(state.entries, mode) })),

@@ -99,7 +99,7 @@ export default function FieldMarker({
           </div>
         ) : (
           <div className={styles.popup}>
-            {entry.photoUrl && (
+            {entry.photoUrl && !entry.imageExpired && (
               <img className={styles.popupPhoto} src={entry.thumbnailUrl || entry.photoUrl} alt={entry.foodName} />
             )}
             <p className={styles.popupName}>{entry.foodName || '無題'}</p>
@@ -109,7 +109,7 @@ export default function FieldMarker({
             {entry.kigo && <p className={styles.popupTag}>{entry.kigo}</p>}
 
             <div className={styles.popupActions}>
-              {entry.photoUrl && (
+              {entry.photoUrl && !entry.imageExpired && (
                 <a className={styles.popupAct} href={entry.photoUrl} target="_blank" rel="noreferrer" title="写真を見る">📷</a>
               )}
               <a className={styles.popupAct} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer" title="経路案内">🧭</a>
