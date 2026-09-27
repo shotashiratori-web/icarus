@@ -16,6 +16,9 @@ export interface FieldLogEntry {
   recordedAt: string; // Icarusへ登録された日時（撮影日時=dateとは別。追加順ソート用）
   eventId: string; // Sheetsの行を一意に特定するキー（重複検知・削除で使用）。古いレコードでは空の場合がある
   takenAt: string; // 撮影日時（秒単位）。dateは日付単位に丸めているため重複検知にはこちらを使う
+  // 端末キャッシュから表示している時、写真の署名付きURL（thumbnailUrl/photoUrl）の期限が切れていれば true。
+  // 画面は期限切れURLを<img>に渡さず「写真は再取得待ち」を出す。APIから取り直せば付かない（Field Map Stale Cache）
+  imageExpired?: boolean;
 }
 
 interface FieldLogGeoJsonFeature {

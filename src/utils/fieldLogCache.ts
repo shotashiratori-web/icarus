@@ -29,6 +29,25 @@ export function loadFieldLogCache(): FieldLogEntry[] | null {
   }
 }
 
+// 取得時刻（savedAt）も一緒に返す版。「いつ時点のデータか」を画面に出すために使う（Field Map Stale Cache）
+export function loadFieldLogCacheWithMeta(): { entries: FieldLogEntry[]; savedAt: number } | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' && parsed !== null &&
+      Array.isArray((parsed as FieldLogCache).entries) &&
+      typeof (parsed as FieldLogCache).savedAt === 'number'
+    ) {
+      return { entries: (parsed as FieldLogCache).entries, savedAt: (parsed as FieldLogCache).savedAt };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveFieldLogCache(entries: FieldLogEntry[]): void {
   try {
     const cache: FieldLogCache = { entries, savedAt: Date.now() };

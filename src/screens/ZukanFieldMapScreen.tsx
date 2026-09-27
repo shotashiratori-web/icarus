@@ -17,6 +17,7 @@ import BottomSheet, { SNAP_FRACTION } from './BottomSheet';
 import type { FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
+import FieldDataFreshness from '../components/FieldDataFreshness';
 import styles from './ZukanFieldMapScreen.module.css';
 
 type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen };
@@ -24,13 +25,14 @@ type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen
 export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   const {
     entries, loadState, errorMessage, ensureLoaded, reload,
+    dataAsOf, refreshState, silentRefresh, refreshIfStale, recheckImageExpiry,
     searchQuery, kigoFilter, setSearchQuery, setKigoFilter,
     listScrollTop, setListScrollTop, sheetSnap, setSheetSnap,
     timeFilter, setTimeFilter, customDateStart, customDateEnd, setCustomDateRange,
     dimMode, setDimMode,
     sortMode, setSortMode,
   } = useZukanFieldStore();
-  const { idToken, staffMe } = useAuth();
+  const { idToken, staffMe, handleTokenExpired } = useAuth();
   const isAdmin = staffMe?.role === 'admin';
 
   const [manageMode, setManageMode] = useState(false);
@@ -89,6 +91,23 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
     if (!idToken) return;
     void ensureLoaded(idToken);
   }, [ensureLoaded, idToken]);
+
+  // アプリを開いたまま別のアプリ・タブから戻ってきた時も、古ければ裏で取り直す（Field Map Stale Cache）。
+  // 取り直せない間も、期限切れになった写真URLは使わない
+  useEffect(() => {
+    if (!idToken) return;
+    const onReturn = () => {
+      if (document.visibilityState !== 'visible') return;
+      recheckImageExpiry();
+      refreshIfStale(idToken);
+    };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
+    };
+  }, [idToken, refreshIfStale, recheckImageExpiry]);
 
   // 詳細画面から戻ってきたときに、ボトムシート一覧のスクロール位置を復元する
   useEffect(() => {
@@ -250,7 +269,17 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
               onSnapChange={setSheetSnap}
               contentRef={listRef}
               onContentScroll={handleListScroll}
-              peek={<p className={styles.sheetCount}>{matchedEntries.length}件の観察記録</p>}
+              peek={
+                <>
+                  <p className={styles.sheetCount}>{matchedEntries.length}件の観察記録</p>
+                  <FieldDataFreshness
+                    refreshState={refreshState}
+                    dataAsOf={dataAsOf}
+                    onRetry={() => idToken && void silentRefresh(idToken)}
+                    onRelogin={handleTokenExpired}
+                  />
+                </>
+              }
             >
               {matchedEntries.length === 0 ? (
                 <p className={styles.empty}>該当する観察記録はありません</p>
@@ -270,9 +299,11 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
                           <span className={styles.selectMark}>{isSelected ? '☑' : '☐'}</span>
                         )}
                         <div className={styles.photoWrap}>
-                          {entry.photoUrl
-                            ? <img className={styles.photo} src={entry.thumbnailUrl || entry.photoUrl} alt={entry.foodName} loading="lazy" />
-                            : <div className={styles.photoPlaceholder}>写真なし</div>}
+                          {entry.photoUrl && entry.imageExpired
+                            ? <div className={styles.photoPlaceholder}>写真は再取得待ち</div>
+                            : entry.photoUrl
+                              ? <img className={styles.photo} src={entry.thumbnailUrl || entry.photoUrl} alt={entry.foodName} loading="lazy" />
+                              : <div className={styles.photoPlaceholder}>写真なし</div>}
                         </div>
                         <div className={styles.cardBody}>
                           <span className={styles.foodName}>{entry.foodName || '無題'}</span>

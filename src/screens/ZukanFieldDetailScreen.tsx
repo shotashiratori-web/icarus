@@ -462,9 +462,11 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
 
       <main className={styles.main}>
         <div className={styles.photoWrap}>
-          {entry.photoUrl
-            ? <img className={styles.photo} src={entry.photoUrl} alt={shown.food} />
-            : <div className={styles.photoPlaceholder}>写真なし</div>}
+          {entry.photoUrl && entry.imageExpired
+            ? <div className={styles.photoPlaceholder}>写真は再取得待ち（通信が戻ると表示されます）</div>
+            : entry.photoUrl
+              ? <img className={styles.photo} src={entry.photoUrl} alt={shown.food} />
+              : <div className={styles.photoPlaceholder}>写真なし</div>}
         </div>
 
         {isEditing && conflict && (
