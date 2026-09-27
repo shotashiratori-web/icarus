@@ -20,6 +20,11 @@ export function workEntryVoidUrl(workId: string, sheetRow: number): string {
 export function workEntryCorrectUrl(workId: string, sheetRow: number): string {
   return `${WORKER_URL}/work/${encodeURIComponent(workId)}/entries/${sheetRow}/correct`;
 }
+
+// Work Log Staff Correction（2026-09-27）: 1 件の記録の訂正履歴（読み取りのみ、Sheets「作業ログ_訂正履歴」）
+export function workEntryCorrectionsUrl(workId: string, sheetRow: number): string {
+  return `${WORKER_URL}/work/${encodeURIComponent(workId)}/entries/${sheetRow}/corrections`;
+}
 export const STAFF_ME_URL = `${WORKER_URL}/staff/me`;
 export const STAFF_ROSTER_URL = `${WORKER_URL}/admin/staff`;
 export const STAFF_APPROVE_URL = `${WORKER_URL}/admin/staff/approve`;
