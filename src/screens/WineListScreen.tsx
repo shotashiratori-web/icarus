@@ -24,7 +24,8 @@ export default function WineListScreen({ go }: Props) {
   const load = async (token: string) => {
     setState('loading');
     try {
-      const result = await fetchWines({}, token);
+      // 無効化（archive）したワインは一覧に出さない（Wine Editing、2026-09-28）
+      const result = await fetchWines({ status: 'active' }, token);
       setItems(result);
       setState('ready');
     } catch (e) {

@@ -1,11 +1,20 @@
-import { useState } from 'react';
-import { createWine, updateWine, deleteWine, WineValidationError } from '../api/wineEntityApi';
+import { useEffect, useState } from 'react';
+import { createWine, fetchWine, patchWine, WineValidationError } from '../api/wineEntityApi';
 import { NetworkUnknownError } from '../api/workApi';
 import { TokenExpiredError } from '../api/icarusApi';
+import { EditConflictError, editErrorMessage } from '../api/editErrors';
 import { useAuth } from '../context/AuthContext';
 import type { WineEntity, WineFormInput } from '../types/wineEntity';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
+import EditFooter from '../components/edit/EditFooter';
+import ConflictBanner from '../components/edit/ConflictBanner';
+import { rebaseByKeys } from '../utils/editCore';
+import { usePendingRequestId } from '../utils/usePendingRequestId';
+import {
+  WINE_EDIT_KEYS, WINE_FORM_LABELS, changedWineKeys, validateWineForm, valuesFromWine, wineChangesFromForm, wineEquals,
+  type WineEditValues,
+} from '../utils/wineEdit';
 import styles from './WineFormScreen.module.css';
 
 type Props = { go: (s: Screen) => void } & (
@@ -13,157 +22,253 @@ type Props = { go: (s: Screen) => void } & (
   | { mode: 'edit'; wine: WineEntity }
 );
 
+const EMPTY: WineEditValues = { photoUrl: '', title: '', producer: '', vintage: '', variety: '', origin: '', description: '' };
+
+// Wine Editing（2026-09-28）: 編集は共通 API 契約の PATCH（変えた項目だけ・編集開始時の updated_at・requestId）。
+// 409 は最新を読み直して自分の入力を残す（自動では再保存しない）。無効化（archive）は admin だけ。
+// 物理削除は画面に出さない（note の紐づけが外れ、履歴が残らないため）。作成は従来どおり POST
 export default function WineFormScreen(props: Props) {
   const { go, mode } = props;
-  const existing = mode === 'edit' ? props.wine : null;
-  const { idToken, staffMe } = useAuth();
-  // 削除は admin だけ（共通原則: active staff = 編集／admin = 編集＋無効化・削除）。API 側でも admin 以外は 403
-  const canDelete = staffMe?.role === 'admin';
+  const { idToken, staffMe, handleTokenExpired } = useAuth();
+  const canArchive = staffMe?.role === 'admin';
 
-  const [photoUrl, setPhotoUrl] = useState(existing?.photos[0] ?? '');
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [producer, setProducer] = useState(existing?.producer ?? '');
-  const [vintage, setVintage] = useState(existing?.vintage != null ? String(existing.vintage) : '');
-  const [variety, setVariety] = useState(existing?.variety ?? '');
-  const [origin, setOrigin] = useState(existing?.origin ?? '');
-  const [description, setDescription] = useState(existing?.description ?? '');
-
+  // 編集: サーバーの最新（updated_at の基準）。作成: null
+  const [current, setCurrent] = useState<WineEntity | null>(mode === 'edit' ? props.wine : null);
+  const [base, setBase] = useState<WineEditValues>(mode === 'edit' ? valuesFromWine(props.wine) : EMPTY);
+  const [form, setForm] = useState<WineEditValues>(mode === 'edit' ? valuesFromWine(props.wine) : EMPTY);
+  const [loadingLatest, setLoadingLatest] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [conflict, setConflict] = useState<{ mine: string[]; overlap: string[] } | null>(null);
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const pending = usePendingRequestId();
+
+  const handleError = (e: unknown, fallback: string): string => {
+    if (e instanceof TokenExpiredError) handleTokenExpired();
+    if (e instanceof WineValidationError || e instanceof NetworkUnknownError) return e.message;
+    return editErrorMessage(e, fallback);
+  };
+
+  // 一覧から渡された値は古いことがあるので、編集開始時にサーバーの最新（updated_at）を読み直す
+  const editId = mode === 'edit' ? props.wine.id : null;
+  useEffect(() => {
+    if (!editId || !idToken) return;
+    let cancelled = false;
+    fetchWine(editId, idToken)
+      .then((w) => {
+        if (cancelled) return;
+        setCurrent(w);
+        setBase(valuesFromWine(w));
+        setForm(valuesFromWine(w));
+      })
+      .catch((e) => { if (!cancelled) setErrorMessage(handleError(e, '最新の内容を読み込めませんでした')); })
+      .finally(() => { if (!cancelled) setLoadingLatest(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, idToken]);
+
+  const setField = (key: keyof WineEditValues, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const changedLabels = changedWineKeys(base, form).map((k) => WINE_FORM_LABELS[k]);
+  const validation = validateWineForm(form);
 
   const backToList = () => go({ name: 'wineList' });
+  const leave = () => {
+    if (mode === 'edit' && current) go({ name: 'wineDetail', entry: current });
+    else backToList();
+  };
+  const tryLeave = () => {
+    if (changedLabels.length > 0) setShowUnsavedConfirm(true);
+    else leave();
+  };
 
-  const handleSave = async () => {
+  const handleCreate = async () => {
     if (!idToken) return;
-    if (!title.trim()) {
-      setErrorMessage('ワイン名は必須です');
+    if (validation) {
+      setErrorMessage(validation);
       return;
     }
-
     const input: WineFormInput = {
-      title: title.trim(),
-      description: description.trim(),
-      photos: photoUrl.trim() ? [photoUrl.trim()] : [],
+      title: form.title.trim(),
+      description: form.description.trim(),
+      photos: form.photoUrl.trim() ? [form.photoUrl.trim()] : [],
       tags: [],
-      producer: producer.trim(),
-      vintage: vintage.trim() ? Number(vintage.trim()) : null,
-      variety: variety.trim(),
-      origin: origin.trim(),
+      producer: form.producer.trim(),
+      vintage: form.vintage.trim() ? Number(form.vintage.trim()) : null,
+      variety: form.variety.trim(),
+      origin: form.origin.trim(),
     };
-
     setSaving(true);
     setErrorMessage('');
     try {
-      if (mode === 'edit') {
-        await updateWine(existing!.id, input, idToken);
-      } else {
-        await createWine(input, idToken);
-      }
+      await createWine(input, idToken);
       backToList();
     } catch (e) {
-      if (e instanceof TokenExpiredError) return;
-      setErrorMessage(
-        e instanceof WineValidationError ? e.message
-          : e instanceof NetworkUnknownError ? e.message
-          : e instanceof Error ? e.message : '保存に失敗しました',
-      );
+      setErrorMessage(handleError(e, '保存に失敗しました'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!idToken || mode !== 'edit' || !canDelete) return;
-    setDeleting(true);
+  const handleSave = async () => {
+    if (!idToken || !current || validation || saving) return;
+    const changes = wineChangesFromForm(base, form, current.photos);
+    if (Object.keys(changes).length === 0) {
+      leave();
+      return;
+    }
+    const expectedUpdatedAt = current.updatedAt;
+    const requestId = pending.requestIdFor(JSON.stringify({ changes, expectedUpdatedAt }));
+    setSaving(true);
     setErrorMessage('');
     try {
-      await deleteWine(existing!.id, idToken);
-      backToList();
+      await patchWine(current.id, { requestId, expectedUpdatedAt, changes }, idToken);
+      pending.clear();
+      const latest = await fetchWine(current.id, idToken).catch(() => null);
+      go({ name: 'wineDetail', entry: latest ?? current });
     } catch (e) {
-      if (e instanceof TokenExpiredError) return;
-      setErrorMessage(e instanceof Error ? e.message : '削除に失敗しました');
-      setDeleting(false);
-      setConfirmingDelete(false);
+      if (e instanceof EditConflictError) {
+        // 他の人が先に保存した: 最新を読み、自分が変えた項目は入力のまま残す。自動では再保存しない
+        pending.clear();
+        try {
+          const latestWine = await fetchWine(current.id, idToken);
+          const latest = valuesFromWine(latestWine);
+          const rebased = rebaseByKeys(WINE_EDIT_KEYS, base, form, latest, wineEquals);
+          setCurrent(latestWine);
+          setBase(latest);
+          setForm(rebased.values);
+          setConflict({
+            mine: rebased.mine.map((k) => WINE_FORM_LABELS[k]),
+            overlap: rebased.overlap.map((k) => WINE_FORM_LABELS[k]),
+          });
+        } catch (e2) {
+          setErrorMessage(handleError(e2, '他の人が先に更新しました。画面を開き直してください。'));
+        }
+      } else {
+        setErrorMessage(handleError(e, '保存に失敗しました。もう一度お試しください。'));
+      }
+    } finally {
+      setSaving(false);
     }
   };
+
+  // admin: 無効化（archive）。一覧から見えなくなる。物理削除はしない（履歴に残る）
+  const handleArchive = async () => {
+    if (!idToken || !current || !canArchive || saving) return;
+    setSaving(true);
+    setErrorMessage('');
+    try {
+      await patchWine(current.id, { requestId: crypto.randomUUID(), expectedUpdatedAt: current.updatedAt, changes: { status: 'archived' } }, idToken);
+      backToList();
+    } catch (e) {
+      setErrorMessage(e instanceof EditConflictError
+        ? '他の人が先に更新しました。画面を開き直してから無効化してください。'
+        : handleError(e, '無効化に失敗しました'));
+      setConfirmingArchive(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const busy = saving || loadingLatest;
 
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        <button className={styles.back} onClick={backToList}>← ワイン一覧</button>
+        <button className={styles.back} onClick={mode === 'edit' ? tryLeave : backToList}>
+          {mode === 'edit' ? '← 戻る' : '← ワイン一覧'}
+        </button>
         <span className={styles.title}>{mode === 'edit' ? 'ワインを編集' : 'ワインを追加'}</span>
         <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>
+        {mode === 'edit' && conflict && <ConflictBanner mineLabels={conflict.mine} overlapLabels={conflict.overlap} />}
+
         <div className={styles.photoWrap}>
-          {photoUrl
-            ? <img className={styles.photo} src={photoUrl} alt="" />
+          {form.photoUrl
+            ? <img className={styles.photo} src={form.photoUrl} alt="" />
             : <div className={styles.photoPlaceholder}>🍷</div>}
         </div>
         <label className={styles.field}>
           <span className={styles.label}>写真URL</span>
-          <input className={styles.input} type="text" value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />
+          <input className={styles.input} type="text" value={form.photoUrl} onChange={(e) => setField('photoUrl', e.target.value)} placeholder="https://..." disabled={busy} />
         </label>
 
         <label className={styles.field}>
           <span className={styles.label}>ワイン名 *</span>
-          <input className={styles.input} type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ワイン名" />
+          <input className={styles.input} type="text" value={form.title} onChange={(e) => setField('title', e.target.value)} placeholder="ワイン名" disabled={busy} />
         </label>
 
         <div className={styles.row}>
           <label className={styles.field}>
             <span className={styles.label}>生産者</span>
-            <input className={styles.input} type="text" value={producer} onChange={(e) => setProducer(e.target.value)} />
+            <input className={styles.input} type="text" value={form.producer} onChange={(e) => setField('producer', e.target.value)} disabled={busy} />
           </label>
           <label className={styles.field}>
             <span className={styles.label}>ヴィンテージ</span>
-            <input className={styles.input} type="number" value={vintage} onChange={(e) => setVintage(e.target.value)} placeholder="例: 2021" />
+            <input className={styles.input} type="number" value={form.vintage} onChange={(e) => setField('vintage', e.target.value)} placeholder="例: 2021" disabled={busy} />
           </label>
         </div>
 
         <div className={styles.row}>
           <label className={styles.field}>
             <span className={styles.label}>品種</span>
-            <input className={styles.input} type="text" value={variety} onChange={(e) => setVariety(e.target.value)} />
+            <input className={styles.input} type="text" value={form.variety} onChange={(e) => setField('variety', e.target.value)} disabled={busy} />
           </label>
           <label className={styles.field}>
             <span className={styles.label}>産地</span>
-            <input className={styles.input} type="text" value={origin} onChange={(e) => setOrigin(e.target.value)} />
+            <input className={styles.input} type="text" value={form.origin} onChange={(e) => setField('origin', e.target.value)} disabled={busy} />
           </label>
         </div>
 
         <label className={styles.field}>
           <span className={styles.label}>メモ</span>
-          <textarea className={styles.textarea} value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+          <textarea className={styles.textarea} value={form.description} onChange={(e) => setField('description', e.target.value)} rows={4} disabled={busy} />
         </label>
 
-        {errorMessage && <p className={styles.errorText}>{errorMessage}</p>}
-
-        <div className={styles.actions}>
-          <button className={styles.saveBtn} disabled={saving || deleting} onClick={() => void handleSave()}>
-            {saving ? '保存中…' : '保存する'}
-          </button>
-
-          {mode === 'edit' && canDelete && !confirmingDelete && (
-            <button className={styles.deleteBtn} disabled={saving || deleting} onClick={() => setConfirmingDelete(true)}>
-              このワインを削除
-            </button>
-          )}
-          {mode === 'edit' && canDelete && confirmingDelete && (
-            <div className={styles.confirmRow}>
-              <span className={styles.confirmText}>本当に削除しますか？</span>
-              <button className={styles.deleteBtn} disabled={deleting} onClick={() => void handleDelete()}>
-                {deleting ? '削除中…' : '削除する'}
-              </button>
-              <button className={styles.cancelBtn} disabled={deleting} onClick={() => setConfirmingDelete(false)}>
-                キャンセル
+        {mode === 'create' ? (
+          <>
+            {errorMessage && <p className={styles.errorText}>{errorMessage}</p>}
+            <div className={styles.actions}>
+              <button className={styles.saveBtn} disabled={saving} onClick={() => void handleCreate()}>
+                {saving ? '保存中…' : '保存する'}
               </button>
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          <div className={styles.actions}>
+            {loadingLatest && <p className={styles.confirmText}>最新の内容を読み込み中…</p>}
+            <EditFooter
+              changedLabels={changedLabels}
+              isSaving={saving}
+              canSave={!validation && !loadingLatest}
+              errorMessage={errorMessage || (changedLabels.length > 0 ? validation : '') || undefined}
+              onSave={() => void handleSave()}
+              onClose={leave}
+              showUnsavedConfirm={showUnsavedConfirm}
+              onContinueEditing={() => setShowUnsavedConfirm(false)}
+              onDiscard={leave}
+            />
+            {/* 無効化（archive）は admin だけ。一覧から見えなくなる。履歴に残り、admin が戻せる */}
+            {canArchive && !showUnsavedConfirm && !confirmingArchive && (
+              <button className={styles.deleteBtn} disabled={busy} onClick={() => setConfirmingArchive(true)}>
+                このワインを無効化
+              </button>
+            )}
+            {canArchive && confirmingArchive && (
+              <div className={styles.confirmRow}>
+                <span className={styles.confirmText}>無効化すると一覧から見えなくなります（履歴に残り、戻せます）</span>
+                <button className={styles.deleteBtn} disabled={saving} onClick={() => void handleArchive()}>
+                  {saving ? '無効化中…' : '無効化する'}
+                </button>
+                <button className={styles.cancelBtn} disabled={saving} onClick={() => setConfirmingArchive(false)}>
+                  キャンセル
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
