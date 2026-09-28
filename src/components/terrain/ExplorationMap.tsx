@@ -28,6 +28,7 @@ import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/typ
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import ContourLayer from './ContourLayer';
+import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import styles from './ExplorationMap.module.css';
 
@@ -249,10 +250,15 @@ export default function ExplorationMap({ entries }: Props) {
     };
   }, [showContours, contourBlob, contourVersion, contours?.version]);
 
-  const logPoints = useMemo(() => {
+  // 大分類 → 種名（表記ゆれは検索の時だけそろえる。speciesFilter.ts）
+  const [species, setSpecies] = useState<string>(ALL_SPECIES);
+  const categoryPoints = useMemo(() => {
     if (fieldLogFilter === 'none') return [];
     return entries.filter((e) => fieldLogFilter === 'all' || e.largeCategory === fieldLogFilter);
   }, [entries, fieldLogFilter]);
+  const species_ = useMemo(() => speciesOptions(categoryPoints), [categoryPoints]);
+  const activeSpecies = species === ALL_SPECIES || species_.some((o) => o.key === species) ? species : ALL_SPECIES;
+  const logPoints = useMemo(() => filterBySpecies(categoryPoints, activeSpecies), [categoryPoints, activeSpecies]);
 
   // ---- タップした地点の情報 ----
   const describePoint = useCallback((lat: number, lng: number): string[] => {
@@ -423,7 +429,7 @@ export default function ExplorationMap({ entries }: Props) {
           </Polyline>
         ))}
         {logPoints.map((e) => (
-          <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: 0.9 }}>
+          <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
             <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}</Popup>
           </CircleMarker>
         ))}
@@ -531,7 +537,7 @@ export default function ExplorationMap({ entries }: Props) {
             {contourError && <p className={styles.sub}>{contourError}</p>}
             <label className={styles.check}>
               <span className={styles.swatch} style={{ background: '#2b8a3e', borderRadius: '50%' }} />Field Log
-              <select className={styles.selectSmall} value={fieldLogFilter} onChange={(e) => setFieldLogFilter(e.target.value as FieldLogFilter)} aria-label="Field Log の表示">
+              <select className={styles.selectSmall} value={fieldLogFilter} onChange={(e) => { setFieldLogFilter(e.target.value as FieldLogFilter); setSpecies(ALL_SPECIES); }} aria-label="Field Log の表示">
                 <option value="キノコ">きのこ</option>
                 <option value="植物">植物（山菜など）</option>
                 <option value="all">すべて</option>
@@ -539,6 +545,18 @@ export default function ExplorationMap({ entries }: Props) {
               </select>
               <span className={styles.num}>{logPoints.length}件</span>
             </label>
+            {fieldLogFilter !== 'none' && species_.length > 0 && (
+              <label className={styles.check}>
+                <span className={styles.sub}>種名</span>
+                <select className={styles.selectSmall} value={activeSpecies} onChange={(e) => setSpecies(e.target.value)} aria-label="Field Log の種名">
+                  <option value={ALL_SPECIES}>すべての種（{species_.length}種）</option>
+                  {species_.map((o) => (
+                    <option key={o.key} value={o.key}>{o.label}（{o.count}件{o.uncertain ? `・うち？${o.uncertain}` : ''}）</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {activeSpecies !== ALL_SPECIES && <p className={styles.sub}>過去に記録した地点です（発生の予測ではありません）。「？」付きの記録は薄い点</p>}
             {entries.length === 0 && <p className={styles.sub}>Field Log はログイン中・読み込み済みのときだけ表示されます</p>}
 
             <h3 className={styles.h}>背景</h3>
