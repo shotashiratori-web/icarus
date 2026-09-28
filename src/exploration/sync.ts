@@ -20,6 +20,8 @@ export interface NewExplorationInput {
   purpose: Purpose;
   memo: string;
   targets: Omit<TargetInput, 'requestId'>[];
+  source?: 'upload' | 'yamap_import';
+  importBatchId?: string | null;
 }
 
 // 端末に保存する（通信しない）。同じ GPX（SHA-256 一致）がすでに端末にあれば、それを返して新しく作らない。
@@ -43,6 +45,8 @@ export async function saveNewExploration(input: NewExplorationInput, ready = tru
     targets: input.targets.map((t) => ({ ...t, requestId: crypto.randomUUID() })),
     preview,
     ready,
+    source: input.source ?? 'upload',
+    importBatchId: input.importBatchId ?? null,
     stage: 'saved',
     sessionId: null,
     lastError: null,
@@ -144,6 +148,7 @@ async function runStages(id: string, idToken: string): Promise<PendingExploratio
             memo: p.memo,
             ...(p.exploredOnManual ? { exploredOn: p.exploredOnManual } : {}),
             targets: p.targets,
+            ...(p.source === 'yamap_import' ? { source: 'yamap_import' as const, ...(p.importBatchId ? { importBatchId: p.importBatchId } : {}) } : {}),
           }, idToken);
         } catch (e) {
           // 原本がサーバーに無い（消えた・別環境）→ ① からやり直す（1 回だけ）

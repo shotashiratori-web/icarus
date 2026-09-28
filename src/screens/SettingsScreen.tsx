@@ -89,6 +89,10 @@ export default function SettingsScreen({ go }: Props) {
                 <span className={styles.navIcon}>🩹</span>
                 <span>写真ハッシュ補完</span>
               </button>
+              <button className={styles.navBtn} onClick={() => go({ name: 'explorationImport' })}>
+                <span className={styles.navIcon}>🥾</span>
+                <span>探索履歴の取り込み（YAMAP GPX）</span>
+              </button>
             </div>
           </section>
         )}
