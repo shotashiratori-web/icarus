@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
@@ -20,6 +20,19 @@ import HomeButton from '../components/HomeButton';
 import FieldDataFreshness from '../components/FieldDataFreshness';
 import styles from './ZukanFieldMapScreen.module.css';
 
+// 地形探索（Exploration Mode Stage 1）。通常モードの bundle を増やさないよう遅延読み込み
+const ExplorationMap = lazy(() => import('../components/terrain/ExplorationMap'));
+
+type MapMode = 'normal' | 'terrain';
+const MAP_MODE_KEY = 'icarus:field-map-mode';
+function loadMapMode(): MapMode {
+  try {
+    return localStorage.getItem(MAP_MODE_KEY) === 'terrain' ? 'terrain' : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
 type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen };
 
 export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
@@ -35,6 +48,11 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();
   const isAdmin = staffMe?.role === 'admin';
 
+  const [mapMode, setMapMode] = useState<MapMode>(() => (focusEntry ? 'normal' : loadMapMode()));
+  const switchMapMode = (m: MapMode) => {
+    setMapMode(m);
+    try { localStorage.setItem(MAP_MODE_KEY, m); } catch { /* 保存できなくても切り替えは有効 */ }
+  };
   const [manageMode, setManageMode] = useState(false);
   const [showDupOnly, setShowDupOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -189,21 +207,34 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
     <div className={styles.root}>
       <header className={styles.header}>
         <button className={styles.back} onClick={() => go(from)}>← 戻る</button>
-        <span className={styles.title}>🗺️ フィールドマップ</span>
+        <span className={styles.title}>{mapMode === 'terrain' ? '⛰ 地形探索' : '🗺️ フィールドマップ'}</span>
+        <button
+          className={styles.modeBtn}
+          onClick={() => switchMapMode(mapMode === 'terrain' ? 'normal' : 'terrain')}
+          aria-pressed={mapMode === 'terrain'}
+        >
+          {mapMode === 'terrain' ? '📍 通常' : '⛰ 地形探索'}
+        </button>
         <HomeButton go={go} />
       </header>
 
       <main className={styles.main}>
-        {loadState === 'loading' && <div className={styles.loading}>読み込み中…</div>}
+        {mapMode === 'terrain' && (
+          <Suspense fallback={<div className={styles.loading}>地形探索を読み込み中…</div>}>
+            <ExplorationMap entries={entries} />
+          </Suspense>
+        )}
 
-        {loadState === 'error' && (
+        {mapMode === 'normal' && loadState === 'loading' && <div className={styles.loading}>読み込み中…</div>}
+
+        {mapMode === 'normal' && loadState === 'error' && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>{errorMessage}</p>
             <button className={styles.retryBtn} onClick={() => idToken && reload(idToken)}>再読み込み</button>
           </div>
         )}
 
-        {loadState === 'ready' && (
+        {mapMode === 'normal' && loadState === 'ready' && (
           <>
             <FieldMapControls
               rootRef={controlsRef}

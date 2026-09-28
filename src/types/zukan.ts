@@ -19,6 +19,8 @@ export interface FieldLogEntry {
   // 端末キャッシュから表示している時、写真の署名付きURL（thumbnailUrl/photoUrl）の期限が切れていれば true。
   // 画面は期限切れURLを<img>に渡さず「写真は再取得待ち」を出す。APIから取り直せば付かない（Field Map Stale Cache）
   imageExpired?: boolean;
+  // 大分類（キノコ・植物…）。地形探索モードで Field Log を絞るのに使う。古いキャッシュには無い（Exploration Mode Stage 1）
+  largeCategory?: string;
 }
 
 interface FieldLogGeoJsonFeature {
@@ -37,6 +39,7 @@ interface FieldLogGeoJsonFeature {
     recordedAt?: string;
     eventId?: string;
     takenAt?: string;
+    largeCategory?: string;
   };
 }
 

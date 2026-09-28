@@ -1,0 +1,15 @@
+{
+  "name": "Icarus",
+  "short_name": "Icarus",
+  "description": "Lift Up余市のフィールド記録・図鑑・地形探索",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f4f0",
+  "theme_color": "#1a1a1a",
+  "lang": "ja",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
