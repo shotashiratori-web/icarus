@@ -44,6 +44,9 @@ import type { SpotEntity } from './types/spotEntity';
 import type { FoodEntity } from './types/knowledge';
 import UpdateBanner from './components/UpdateBanner';
 
+// admin 専用の取り込み画面は遅延読み込み（通常画面の初回 JS を増やさない）
+const ExplorationImportScreen = lazy(() => import('./screens/ExplorationImportScreen'));
+
 // leafletはフィールドマップを開くまで読み込まない（バンドルサイズ抑制のため動的import）
 const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
 
@@ -108,7 +111,9 @@ export type Screen =
   | { name: 'foodEditorForm'; mode: 'edit'; food: FoodEntity; from?: Screen }
   // Home IA整理 v1（2026-09-14）。開発・管理系機能をHomeから分離した専用画面。入口はHomeScreenの
   // ヘッダー「設定」ボタンのみ。表示条件（role gating）はHomeScreenから移動しただけで変更しない
-  | { name: 'settings' };
+  | { name: 'settings' }
+  // Exploration History: 過去 YAMAP GPX の一括取り込み（admin・PC）。入口は設定の管理・メンテナンス
+  | { name: 'explorationImport' };
 
 function initialScreen(): Screen {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'meta') {
@@ -242,6 +247,7 @@ function AppRoutes() {
     ? <FoodEditorFormScreen go={go} mode="edit" food={screen.food} from={screen.from} />
     : <FoodEditorFormScreen go={go} mode="create" />;
   if (screen.name === 'settings') return <SettingsScreen go={go} />;
+  if (screen.name === 'explorationImport') return <Suspense fallback={null}><ExplorationImportScreen go={go} /></Suspense>;
 
   return null;
 }

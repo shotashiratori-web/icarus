@@ -67,6 +67,8 @@ export interface CreateSessionBody {
   memo: string;
   exploredOn?: string;
   targets: TargetInput[];
+  source?: 'upload' | 'yamap_import';
+  importBatchId?: string;
 }
 
 export async function createExplorationSession(body: CreateSessionBody, idToken: string): Promise<{ outcome: 'applied' | 'alreadyApplied' | 'duplicate'; item: ExplorationSession }> {

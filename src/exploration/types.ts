@@ -75,6 +75,9 @@ export interface PendingExploration {
   preview: PendingPreview;
   // GPX を選んだ時点で原本は保存する（下書き）。歩いた人・目的などを入れて「送信」を押すと true。false の間は自動送信しない
   ready: boolean;
+  // 過去分の一括取り込み（admin）は 'yamap_import' と取り込みの回。古い記録には無い（= 'upload'）
+  source?: 'upload' | 'yamap_import';
+  importBatchId?: string | null;
   stage: PendingStage;
   sessionId: string | null;
   lastError: PendingError | null;

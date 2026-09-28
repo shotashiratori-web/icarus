@@ -189,6 +189,22 @@ describe('2 段送信', () => {
   });
 });
 
+describe('過去分の一括取り込み', () => {
+  it('3b. source=yamap_import と取り込みの回を登録に渡す（1 件ずつの登録は渡さない）', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (init?.method === 'POST') bodies.push(JSON.parse(String(init.body)));
+      return fakeFetch(input, init);
+    });
+    const a = await saveNewExploration({ ...input(), source: 'yamap_import', importBatchId: 'batch-1', purpose: 'unknown', targets: [] } as never);
+    await syncPending(a.record.id, 'tok');
+    const b = await saveNewExploration(input(gpx('2026-09-19T23:30:00Z', 43.4)));
+    await syncPending(b.record.id, 'tok');
+    expect(bodies[0]).toMatchObject({ source: 'yamap_import', importBatchId: 'batch-1', purpose: 'unknown', targets: [] });
+    expect(bodies[1]).not.toHaveProperty('source');
+  });
+});
+
 describe('失敗の扱い', () => {
   it('9. hash 不一致（400）→ 送信失敗。段階と原本は残り、自動再送の対象から外れる', async () => {
     server.mode.put = 'mismatch';
