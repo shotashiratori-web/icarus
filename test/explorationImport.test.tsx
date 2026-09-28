@@ -83,10 +83,15 @@ describe('ExplorationImportScreen', () => {
     expect(await screen.findByText(AREA_OUTSIDE_NOTE)).toBeInTheDocument();
     expect(screen.getByText('取り込む 2 件')).toBeInTheDocument();
     expect(screen.getByText(/範囲内 1 件・範囲外 1 件/)).toBeInTheDocument();
+    // 歩いた人が空の間は取り込めない（必須）
+    expect(screen.getByRole('button', { name: '2 件を取り込む' })).toBeDisabled();
+    expect(screen.getByText('歩いた人を入力してください（入力するまで取り込めません）')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('例: 翔大'), { target: { value: '翔大' } });
     fireEvent.click(screen.getByRole('button', { name: '2 件を取り込む' }));
     expect(submit.submitExploration).not.toHaveBeenCalled(); // まだ確認画面
-    fireEvent.click(screen.getByRole('button', { name: '取り込む' }));
+    expect(screen.getByRole('status')).toHaveTextContent('取り込む 2 件'); // 件数を大きく
+    const confirmBtns = screen.getAllByRole('button', { name: '2 件を取り込む' });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
     await waitFor(() => expect(submit.submitExploration).toHaveBeenCalledTimes(2));
     const saved = await listPending();
     expect(saved).toHaveLength(2);
@@ -94,6 +99,20 @@ describe('ExplorationImportScreen', () => {
     for (const p of saved) {
       expect(p).toMatchObject({ source: 'yamap_import', ready: true, purpose: 'unknown', targets: [], explorerNames: ['翔大'], stage: 'saved' });
     }
+    // 取り込んだ後は計画を作り直す: サーバーに登録済み（ここではモックで登録済みとして返す）→ 取り込む 0 件
+    api.getGpxStatus.mockResolvedValue({ stored: true, bytes: 1, sessionId: 'now-registered' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '0 件を取り込む' })).toBeDisabled(), { timeout: 3000 });
+  });
+
+  it('2b. 同じファイルを選び直しても読み直す（選択欄を読み取り後に空に戻す）', async () => {
+    render(<ExplorationImportScreen go={vi.fn()} />);
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([inside1], 'a.gpx')] } });
+    expect(await screen.findByText('取り込む 1 件')).toBeInTheDocument();
+    await waitFor(() => expect(input.value).toBe(''));
+    api.getGpxStatus.mockResolvedValue({ stored: true, bytes: 1, sessionId: 'x' });
+    fireEvent.change(input, { target: { files: [new File([inside1], 'a.gpx')] } });
+    expect(await screen.findByText('取り込む 0 件')).toBeInTheDocument();
   });
 
   it('3. サーバーに登録済みの GPX はスキップ（取り込む 0 件なら取り込めない）', async () => {

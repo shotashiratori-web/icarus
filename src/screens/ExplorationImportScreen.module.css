@@ -21,3 +21,6 @@
 .field { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-xs); color: var(--color-text-sub); }
 .field input, .field select { min-height: 36px; padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text); font-size: var(--font-size-sm); }
 .confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-3); border: 1px solid #e8590c; border-radius: var(--radius-md); background: var(--color-surface); font-size: var(--font-size-sm); }
+
+/* 最終確認で件数を目立たせる（全件を誤って取り込まないように） */
+.bigCount { width: 100%; font-size: var(--font-size-2xl); font-weight: 800; color: #e8590c; font-variant-numeric: tabular-nums; }
