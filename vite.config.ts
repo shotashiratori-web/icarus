@@ -2,10 +2,24 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 import { cloudflare } from "@cloudflare/vite-plugin";
+import type { Plugin } from 'vite'
+
+// 2026-09-28 Exploration Mode Stage 1: その版のファイル一覧を出す。Service Worker（public/sw.js）が
+// これを見て、遅延読み込みの分も含めて全部を端末に保存し、前の版のファイルを消す（圏外でもどの画面も開ける）
+function assetManifest(): Plugin {
+  return {
+    name: 'icarus-asset-manifest',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const files = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort()
+      this.emitFile({ type: 'asset', fileName: 'asset-manifest.json', source: JSON.stringify({ files }) })
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), cloudflare()],
+  plugins: [react(), cloudflare(), assetManifest()],
   base: './',
   // 2026-09-16: 2026-09-15に追加したbuild.target（es2017/safari12/ios12への拡張）をrevert。
   // 当時は「新規スタッフの白紙は古いSafariの構文非対応が原因」という仮説だったが、実機がiPhone 16

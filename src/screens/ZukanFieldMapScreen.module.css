@@ -28,6 +28,18 @@
   text-align: center;
 }
 
+.modeBtn {
+  flex: none;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .main {
   flex: 1;
   position: relative;

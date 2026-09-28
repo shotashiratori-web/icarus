@@ -42,6 +42,7 @@ import type { FieldLogEntry } from './types/zukan';
 import type { WineEntity } from './types/wineEntity';
 import type { SpotEntity } from './types/spotEntity';
 import type { FoodEntity } from './types/knowledge';
+import UpdateBanner from './components/UpdateBanner';
 
 // leafletはフィールドマップを開くまで読み込まない（バンドルサイズ抑制のため動的import）
 const ZukanFieldMapScreen = lazy(() => import('./screens/ZukanFieldMapScreen'));
@@ -237,6 +238,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AppRoutes />
+      <UpdateBanner />
     </AuthProvider>
   );
 }
