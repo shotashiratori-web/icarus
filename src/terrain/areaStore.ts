@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import { fetchTerrainFile } from '../api/terrainApi';
-import type { TerrainAreaSummary, TerrainFileName, TerrainManifest } from './types';
+import type { BaseFileName, OptionalFileName, TerrainAreaSummary, TerrainFileName, TerrainManifest } from './types';
 
 // エリアパッケージの端末保存（§5-2）。明示的な「オフライン保存」でだけ保存する（API レスポンスを無差別にためない）。
 // 既存の IndexedDB 'icarus'（ノート・下書き）とは別の DB にして、既存の版数・移行に影響させない
@@ -10,7 +10,15 @@ const DB_VERSION = 1;
 const FILES = 'files'; // key: `${areaId}/${version}/${file}` → StoredFile（iOS の古い Safari は Blob を IndexedDB に入れられないため ArrayBuffer で持つ）
 const AREAS = 'areas'; // key: areaId → SavedArea
 
-export const PACKAGE_FILES: TerrainFileName[] = ['terrain.png', 'access.png', 'roads.json', 'hillshade.jpg'];
+export const PACKAGE_FILES: BaseFileName[] = ['terrain.png', 'access.png', 'roads.json', 'hillshade.jpg'];
+// 版によって有るものと無いもの（manifest に載っていれば必ずそろえる）。等高線は 2026-09-29 の版から
+export const OPTIONAL_FILES: OptionalFileName[] = ['contours.json'];
+
+export function packageFilesOf(manifest: TerrainManifest): TerrainFileName[] {
+  return [...PACKAGE_FILES, ...OPTIONAL_FILES.filter((f) => manifest.files[f])];
+}
+
+export type PackageFiles = Record<BaseFileName, Blob> & Partial<Record<OptionalFileName, Blob>>;
 
 export interface SavedArea {
   areaId: string;
@@ -23,7 +31,7 @@ export interface SavedArea {
 
 export interface AreaPackage {
   manifest: TerrainManifest;
-  files: Record<TerrainFileName, Blob>;
+  files: PackageFiles;
   source: 'saved' | 'network';
   savedAt?: string;
 }
@@ -53,6 +61,7 @@ export async function closeAreaStoreForTest(): Promise<void> {
 }
 
 const fileKey = (areaId: string, version: string, file: string) => `${areaId}/${version}/${file}`;
+const versionRange = (areaId: string, version: string) => IDBKeyRange.bound(`${areaId}/${version}/`, `${areaId}/${version}/\uffff`);
 
 async function sha256Hex(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();
@@ -68,8 +77,8 @@ export async function loadSavedArea(areaId: string): Promise<AreaPackage | null>
   const d = await db();
   const saved: SavedArea | undefined = await d.get(AREAS, areaId);
   if (!saved) return null;
-  const files = {} as Record<TerrainFileName, Blob>;
-  for (const f of PACKAGE_FILES) {
+  const files = {} as PackageFiles;
+  for (const f of packageFilesOf(saved.manifest)) {
     const stored: StoredFile | undefined = await d.get(FILES, fileKey(areaId, saved.version, f));
     if (!stored) return null; // 途中で消えていたら保存なし扱い（部分的なデータは使わない）
     files[f] = new Blob([stored.data], { type: stored.type });
@@ -81,13 +90,14 @@ export async function loadSavedArea(areaId: string): Promise<AreaPackage | null>
 export async function fetchAreaPackage(area: TerrainAreaSummary, idToken: string, onProgress?: (done: number, total: number) => void): Promise<AreaPackage> {
   const manifest = JSON.parse(await (await fetchTerrainFile(area.areaId, area.version, 'manifest.json', idToken)).text()) as TerrainManifest;
   if (manifest.areaId !== area.areaId || manifest.version !== area.version) throw new Error('地形データの版が一致しません');
-  const files = {} as Record<TerrainFileName, Blob>;
+  const files = {} as PackageFiles;
+  const names = packageFilesOf(manifest);
   let done = 0;
-  for (const f of PACKAGE_FILES) {
+  for (const f of names) {
     const blob = await fetchTerrainFile(area.areaId, area.version, f, idToken);
-    if ((await sha256Hex(blob)) !== manifest.files[f].sha256) throw new Error(`地形データ（${f}）が壊れています。もう一度お試しください`);
+    if ((await sha256Hex(blob)) !== manifest.files[f]?.sha256) throw new Error(`地形データ（${f}）が壊れています。もう一度お試しください`);
     files[f] = blob;
-    onProgress?.(++done, PACKAGE_FILES.length);
+    onProgress?.(++done, names.length);
   }
   return { manifest, files, source: 'network' };
 }
@@ -96,21 +106,23 @@ export async function fetchAreaPackage(area: TerrainAreaSummary, idToken: string
 export async function saveAreaPackage(pkg: AreaPackage): Promise<SavedArea> {
   const d = await db();
   const { manifest } = pkg;
-  const bytes = PACKAGE_FILES.reduce((s, f) => s + pkg.files[f].size, 0);
+  const names = packageFilesOf(manifest);
+  const bytes = names.reduce((s, f) => s + pkg.files[f]!.size, 0);
   const prev: SavedArea | undefined = await d.get(AREAS, manifest.areaId);
   const saved: SavedArea = {
     areaId: manifest.areaId, version: manifest.version, name: manifest.name, manifest,
     savedAt: new Date().toISOString(), bytes,
   };
   const stored: [TerrainFileName, StoredFile][] = [];
-  for (const f of PACKAGE_FILES) stored.push([f, { type: pkg.files[f].type, data: await pkg.files[f].arrayBuffer() }]);
+  for (const f of names) stored.push([f, { type: pkg.files[f]!.type, data: await pkg.files[f]!.arrayBuffer() }]);
   const tx = d.transaction([FILES, AREAS], 'readwrite');
   for (const [f, v] of stored) await tx.objectStore(FILES).put(v, fileKey(manifest.areaId, manifest.version, f));
   await tx.objectStore(AREAS).put(saved);
   await tx.done;
   if (prev && prev.version !== manifest.version) {
+    // 古い版のファイルは名前を問わず全部消す（版によってファイルの種類が違うため、キーの範囲で消す）
     const del = d.transaction(FILES, 'readwrite');
-    for (const f of PACKAGE_FILES) await del.store.delete(fileKey(prev.areaId, prev.version, f));
+    await del.store.delete(versionRange(prev.areaId, prev.version));
     await del.done;
   }
   try {
@@ -126,7 +138,7 @@ export async function deleteSavedArea(areaId: string): Promise<void> {
   const saved: SavedArea | undefined = await d.get(AREAS, areaId);
   if (!saved) return;
   const tx = d.transaction([FILES, AREAS], 'readwrite');
-  for (const f of PACKAGE_FILES) await tx.objectStore(FILES).delete(fileKey(areaId, saved.version, f));
+  await tx.objectStore(FILES).delete(versionRange(areaId, saved.version));
   await tx.objectStore(AREAS).delete(areaId);
   await tx.done;
 }

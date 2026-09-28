@@ -36,10 +36,13 @@ export interface TerrainManifest {
   };
   relPercentiles: Record<'50' | '60' | '70' | '80' | '90', number>;
   sources: { name: string; url: string }[];
-  files: Record<TerrainFileName, { bytes: number; sha256: string }>;
+  // 等高線（contours.json）は 2026-09-29 の版から。古い版の manifest には無い
+  files: Record<BaseFileName, { bytes: number; sha256: string }> & Partial<Record<OptionalFileName, { bytes: number; sha256: string }>>;
 }
 
-export type TerrainFileName = 'terrain.png' | 'access.png' | 'roads.json' | 'hillshade.jpg';
+export type BaseFileName = 'terrain.png' | 'access.png' | 'roads.json' | 'hillshade.jpg';
+export type OptionalFileName = 'contours.json';
+export type TerrainFileName = BaseFileName | OptionalFileName;
 
 export interface TerrainAreaSummary {
   areaId: string;

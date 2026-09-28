@@ -27,6 +27,8 @@ import { EXPLORED_COLOR } from '../../terrain/render';
 import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/types';
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
+import ContourLayer from './ContourLayer';
+import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import styles from './ExplorationMap.module.css';
 
 // 地形探索（Exploration Mode Stage 1）。Field Map のモードの 1 つ。地図は通常モードと別に持つ（通常モードを変えない）。
@@ -228,6 +230,25 @@ export default function ExplorationMap({ entries }: Props) {
     : null), [manifest]);
   const roadGroups = useMemo(() => (loaded ? groupByClass(loaded.roads) : null), [loaded]);
 
+  // ---- 等高線（既定 OFF。ON にした時だけ読み込む。2026-09-29 より前の版には無い） ----
+  const [showContours, setShowContours] = useState(false);
+  const [contours, setContours] = useState<{ version: string; data: Contours } | null>(null);
+  const [contourError, setContourError] = useState<string | null>(null);
+  const contourBlob = loaded?.pkg.files['contours.json'] ?? null;
+  const contourVersion = manifest?.version ?? null;
+  useEffect(() => {
+    if (!showContours || !contourBlob || !contourVersion || contours?.version === contourVersion) return;
+    let cancelled = false;
+    setContourError(null);
+    decodeContours(contourBlob).then(
+      (data) => !cancelled && setContours({ version: contourVersion, data }),
+      (e) => !cancelled && setContourError(e instanceof Error ? e.message : '等高線を読めませんでした'),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [showContours, contourBlob, contourVersion, contours?.version]);
+
   const logPoints = useMemo(() => {
     if (fieldLogFilter === 'none') return [];
     return entries.filter((e) => fieldLogFilter === 'all' || e.largeCategory === fieldLogFilter);
@@ -377,6 +398,7 @@ export default function ExplorationMap({ entries }: Props) {
         )}
         {!onlineBase && <ImageOverlay url={loaded.hillshadeUrl} bounds={bounds} attribution={attribution} />}
         {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={1} zIndex={5} />}
+        {showContours && contours && contours.version === manifest.version && <ContourLayer contours={contours.data} />}
         {roadGroups && show.road && (
           <>
             <Polyline positions={roadGroups.road} pathOptions={{ color: '#495057', weight: 1.6, opacity: 0.9, interactive: false }} />
@@ -498,6 +520,15 @@ export default function ExplorationMap({ entries }: Props) {
             <label className={styles.check}><input type="checkbox" checked={show.sun} onChange={(e) => setShow((s) => ({ ...s, sun: e.target.checked }))} /><span className={styles.swatch} style={{ background: 'linear-gradient(90deg,#1c3f95,#f6d743)' }} />日射量</label>
             <label className={styles.check}><input type="checkbox" checked={show.road} onChange={(e) => setShow((s) => ({ ...s, road: e.target.checked }))} /><span className={styles.line} style={{ background: '#495057' }} />道路・林道<span className={styles.sub}>（茶=林道・幅3m未満）</span></label>
             <label className={styles.check}><input type="checkbox" checked={show.trail} onChange={(e) => setShow((s) => ({ ...s, trail: e.target.checked }))} /><span className={styles.line} style={{ background: 'repeating-linear-gradient(90deg,#212529 0 3px,transparent 3px 6px)' }} />登山道・徒歩道</label>
+            <label className={styles.check}>
+              <input type="checkbox" checked={showContours} disabled={!contourBlob} onChange={(e) => setShowContours(e.target.checked)} />
+              <span className={styles.line} style={{ background: CONTOUR_STYLE.color }} />等高線<span className={styles.sub}>（10m・太線=50m）</span>
+            </label>
+            {!contourBlob && <p className={styles.sub}>この版の地形データには等高線がありません（新しい版を「更新して保存」すると使えます）</p>}
+            {showContours && contourBlob && !contourError && (
+              <p className={styles.sub}>{contours ? `50m線はズーム${MAJOR_MIN_ZOOM}以上、10m線は${MINOR_MIN_ZOOM}以上、標高は${LABEL_MIN_ZOOM}以上で表示` : '等高線を読み込み中…'}</p>
+            )}
+            {contourError && <p className={styles.sub}>{contourError}</p>}
             <label className={styles.check}>
               <span className={styles.swatch} style={{ background: '#2b8a3e', borderRadius: '50%' }} />Field Log
               <select className={styles.selectSmall} value={fieldLogFilter} onChange={(e) => setFieldLogFilter(e.target.value as FieldLogFilter)} aria-label="Field Log の表示">
