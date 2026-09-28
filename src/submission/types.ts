@@ -1,4 +1,4 @@
-export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'wineTastingNote' | 'wineTastingNotePhoto' | 'daily' | 'workLog';
+export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'wineTastingNote' | 'wineTastingNotePhoto' | 'daily' | 'workLog' | 'explorationSession';
 
 export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   foodLog: '食材ログ',
@@ -12,6 +12,8 @@ export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   wineTastingNotePhoto: 'テイスティングノート写真',
   daily: 'Daily',
   workLog: '作業ログ',
+  // Exploration History（Stage 2）。GPX 原本は別の端末保存（icarus-exploration）にあり、ここには ID だけ
+  explorationSession: '探索の記録（GPX）',
 };
 
 // draft/sending はEntity側の画面状態が管理する。ここで永続化するのはpendingのみ(Phase1)。
@@ -28,7 +30,9 @@ export type ErrorCode =
   | 'GPS_NOT_FOUND'
   // Stage 1A: Photo Asset APIがASSET_UNSUPPORTED_MIME_TYPE（例: HEIC/HEIF）で拒否した場合専用。
   // ファイル形式が原因の恒久的失敗であり、再送しても結果は変わらないためretryable:falseで扱う
-  | 'UNSUPPORTED_MEDIA_TYPE';
+  | 'UNSUPPORTED_MEDIA_TYPE'
+  // Exploration History: サーバーが理由付きで断った（hash 不一致・GPX として読めない・探索日が必要など）。原本は端末に残る
+  | 'GPX_REJECTED';
 
 export interface SubmissionError {
   code: ErrorCode;

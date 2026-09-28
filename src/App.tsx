@@ -170,6 +170,18 @@ function AppRoutes() {
     return () => window.removeEventListener('online', onOnline);
   }, [authState, idToken]);
 
+  // Exploration History（Stage 2）: 送信キューに載る前にアプリが終了した等で、端末（icarus-exploration）にだけ
+  // 残っている未送信の GPX を、起動時・オンライン復帰時に拾い直して送る（同じ記録は 1 本にまとまるので二重送信しない）
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
+    // 送信の仕組みは地形探索と一緒に遅延読み込み（通常画面の初回 JS を増やさない）
+    const resume = () => { void import('./exploration/submit').then((m) => m.resumeExplorationPending(idToken)).catch(() => undefined); };
+    resume();
+    const onOnline = () => resume();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [authState, idToken]);
+
   // メタデータ調査画面は認証不要・データ送信なしのため、承認ゲートより先に描画する
   if (screen.name === 'metaDebug') return <MetaDebugScreen go={go} />;
 

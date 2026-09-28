@@ -107,23 +107,29 @@ export function accessClassRaw(grid: TerrainGrid, i: number, cc: CompiledConditi
 }
 
 export interface CandidateStats {
-  km2: Record<AccessClass | 'total', number>;
+  km2: Record<AccessClass | 'total', number>; // 未探索（explored を渡さなければ全部）
+  exploredKm2: Record<AccessClass | 'total', number>; // 探索済み（探索範囲に入る候補）
 }
 
-export function candidateStats(m: TerrainManifest, grid: TerrainGrid, cc: CompiledConditions): CandidateStats {
+export function candidateStats(m: TerrainManifest, grid: TerrainGrid, cc: CompiledConditions, explored?: Uint8Array | null): CandidateStats {
   const count = { A: 0, B: 0, C: 0 };
+  const done = { A: 0, B: 0, C: 0 };
   const n = grid.width * grid.height;
   for (let i = 0; i < n; i++) {
-    if (isCandidateRaw(grid, i, cc)) count[accessClassRaw(grid, i, cc)]++;
+    if (!isCandidateRaw(grid, i, cc)) continue;
+    const k = accessClassRaw(grid, i, cc);
+    if (explored && explored[i]) done[k]++;
+    else count[k]++;
   }
   const cell = (m.grid.pxM * m.grid.pxM) / 1e6;
-  const km2 = (v: number) => Math.round(v * cell * 10) / 10;
-  return { km2: { A: km2(count.A), B: km2(count.B), C: km2(count.C), total: km2(count.A + count.B + count.C) } };
+  const km2 = (v: number) => Math.round(v * cell * 100) / 100; // 探索済みの小さな面積も 0 にしない（0.01km² 単位）
+  const pack = (c: typeof count) => ({ A: km2(c.A), B: km2(c.B), C: km2(c.C), total: km2(c.A + c.B + c.C) });
+  return { km2: pack(count), exploredKm2: pack(done) };
 }
 
 // 現在地から最寄りの候補（格子で探す。maxM まで）
 export function nearestCandidate(
-  m: TerrainManifest, grid: TerrainGrid, cc: CompiledConditions, lat: number, lng: number, maxM = 2500,
+  m: TerrainManifest, grid: TerrainGrid, cc: CompiledConditions, lat: number, lng: number, maxM = 2500, explored?: Uint8Array | null,
 ): { distanceM: number; bearingDeg: number; access: AccessClass } | null {
   const { x, y } = latLngToGrid(m, lat, lng);
   const xi = Math.floor(x);
@@ -139,7 +145,7 @@ export function nearestCandidate(
       const dd = dx * dx + dy * dy;
       if (dd > R * R || (best && dd >= best.dd)) continue;
       const i = Y * grid.width + X;
-      if (isCandidateRaw(grid, i, cc)) best = { dd, dx, dy, i };
+      if (isCandidateRaw(grid, i, cc) && !(explored && explored[i])) best = { dd, dx, dy, i };
     }
   }
   if (!best) return null;
