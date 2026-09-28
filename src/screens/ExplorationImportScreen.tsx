@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
@@ -8,7 +8,7 @@ import { listSavedAreas } from '../terrain/areaStore';
 import { findPendingBySha, getPending, listPending } from '../exploration/pendingStore';
 import { saveNewExploration } from '../exploration/sync';
 import { submitExploration } from '../exploration/submit';
-import { AREA_OUTSIDE_NOTE, planImport, summarize, type AreaBounds, type ImportRow } from '../exploration/importPlan';
+import { AREA_OUTSIDE_NOTE, planImport, summarize, type AreaBounds, type ImportRow, type ParsedFile } from '../exploration/importPlan';
 import { displayStatus, PURPOSE_LABEL, PURPOSES, STATUS_LABEL, type PendingExploration, type Purpose } from '../exploration/types';
 import styles from './ExplorationImportScreen.module.css';
 
@@ -40,6 +40,7 @@ export default function ExplorationImportScreen({ go }: Props) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Record<string, PendingExploration>>({});
   const [batchItems, setBatchItems] = useState<PendingExploration[]>([]);
+  const lastFiles = useRef<ParsedFile[]>([]);
 
   const refreshBatch = useCallback(async () => {
     const all = await listPending().catch(() => [] as PendingExploration[]);
@@ -67,6 +68,23 @@ export default function ExplorationImportScreen({ go }: Props) {
     return (await listSavedAreas().catch(() => [])).map((s) => ({ areaId: s.areaId, ...s.manifest.bounds }));
   };
 
+  const planFiles = async (files: ParsedFile[]) => {
+    lastFiles.current = files;
+    const areas = await loadAreas();
+    const planned = await planImport(files, areas, {
+      server: async (sha) => {
+        if (!idToken) return null;
+        try {
+          return (await getGpxStatus(sha, idToken)).sessionId;
+        } catch {
+          return null; // 確かめられない時は取り込み側で duplicate として扱われる（重複しない）
+        }
+      },
+      device: async (sha) => !!(await findPendingBySha(sha).catch(() => undefined)),
+    });
+    setRows(planned);
+  };
+
   const onFiles = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
     setPlanning(true);
@@ -75,19 +93,7 @@ export default function ExplorationImportScreen({ go }: Props) {
     setProgress({});
     try {
       const files = await Promise.all(Array.from(list).filter((f) => !f.name.startsWith('.')).map(async (f) => ({ fileName: f.name, bytes: await f.arrayBuffer() })));
-      const areas = await loadAreas();
-      const planned = await planImport(files, areas, {
-        server: async (sha) => {
-          if (!idToken) return null;
-          try {
-            return (await getGpxStatus(sha, idToken)).sessionId;
-          } catch {
-            return null; // 確かめられない時は取り込み側で duplicate として扱われる（重複しない）
-          }
-        },
-        device: async (sha) => !!(await findPendingBySha(sha).catch(() => undefined)),
-      });
-      setRows(planned);
+      await planFiles(files);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'GPX を読み込めませんでした');
     } finally {
@@ -96,12 +102,15 @@ export default function ExplorationImportScreen({ go }: Props) {
   };
 
   const summary = summarize(rows);
+  // 歩いた人は必須（分かっている事実の入力漏れを防ぐ）。目的は既定「不明」、探した対象・結果は任意
+  const explorerNames = names.split(/[、,]/).map((x) => x.trim()).filter(Boolean);
+  const namesMissing = explorerNames.length === 0;
 
   const runImport = async () => {
     setConfirming(false);
     setRunning(true);
+    if (namesMissing) return;
     const importBatchId = crypto.randomUUID();
-    const explorerNames = names.split(/[、,]/).map((s) => s.trim()).filter(Boolean);
     try {
       for (const r of rows.filter((x) => x.state === 'new')) {
         // 1 件ずつ: 端末に保存（送信できる状態）→ 送信。失敗しても端末に残り、次の件へ進む（オンライン時に自動再送）
@@ -117,6 +126,8 @@ export default function ExplorationImportScreen({ go }: Props) {
     } finally {
       setRunning(false);
       await refreshBatch();
+      // 取り込んだ後は計画を作り直す（登録済みはスキップ表示になり、「取り込む」は 0 件に戻る）
+      if (lastFiles.current.length > 0) await planFiles(lastFiles.current).catch(() => undefined);
     }
   };
 
@@ -159,11 +170,11 @@ export default function ExplorationImportScreen({ go }: Props) {
         <div className={styles.row}>
           <label className={`${styles.btn} ${styles.primary}`}>
             GPX を選ぶ（複数可）
-            <input type="file" multiple hidden onChange={(e) => void onFiles(e.target.files)} />
+            <input type="file" multiple hidden onChange={(e) => { const el = e.currentTarget; void onFiles(el.files).finally(() => { el.value = ''; }); }} />
           </label>
           <label className={styles.btn}>
             フォルダごと選ぶ
-            <input type="file" multiple hidden {...({ webkitdirectory: '' } as Record<string, string>)} onChange={(e) => void onFiles(e.target.files)} />
+            <input type="file" multiple hidden {...({ webkitdirectory: '' } as Record<string, string>)} onChange={(e) => { const el = e.currentTarget; void onFiles(el.files).finally(() => { el.value = ''; }); }} />
           </label>
         </div>
         {planning && <p className={styles.sub}>読み取り中…（サーバーに同じ GPX があるかも確かめています）</p>}
@@ -210,8 +221,9 @@ export default function ExplorationImportScreen({ go }: Props) {
             </div>
 
             <section className={styles.meta} aria-label="取り込む記録にまとめて付ける内容">
-              <label className={styles.field}><span>歩いた人（、で区切る。全件に付く）</span>
-                <input type="text" value={names} placeholder="例: 翔大" onChange={(e) => setNames(e.target.value)} disabled={running} />
+              <label className={styles.field}><span>歩いた人（必須。、で区切る。全件に付く）</span>
+                <input type="text" value={names} placeholder="例: 翔大" aria-required="true" onChange={(e) => setNames(e.target.value)} disabled={running} />
+                {namesMissing && summary.toImport > 0 && <span className={styles.warn}>歩いた人を入力してください（入力するまで取り込めません）</span>}
               </label>
               <label className={styles.field}><span>目的（全件）</span>
                 <select value={purpose} onChange={(e) => setPurpose(e.target.value as Purpose)} disabled={running}>
@@ -229,13 +241,14 @@ export default function ExplorationImportScreen({ go }: Props) {
             )}
 
             {!confirming ? (
-              <button className={`${styles.btn} ${styles.primary}`} onClick={() => setConfirming(true)} disabled={running || summary.toImport === 0 || !idToken}>
+              <button className={`${styles.btn} ${styles.primary}`} onClick={() => setConfirming(true)} disabled={running || summary.toImport === 0 || !idToken || namesMissing}>
                 {running ? '取り込み中…' : `${summary.toImport} 件を取り込む`}
               </button>
             ) : (
               <div className={styles.confirm}>
-                <span>{summary.toImport} 件（{summary.oldest} 〜 {summary.newest}・{summary.distanceKm}km・範囲外 {summary.outside} 件を含む）を、歩いた人「{names.trim() || '未記入'}」・目的「{PURPOSE_LABEL[purpose]}」で取り込みます。</span>
-                <button className={`${styles.btn} ${styles.primary}`} onClick={() => void runImport()}>取り込む</button>
+                <div className={styles.bigCount} role="status">取り込む {summary.toImport} 件</div>
+                <span>{summary.oldest} 〜 {summary.newest}・{summary.distanceKm}km・範囲外 {summary.outside} 件を含む。歩いた人「{explorerNames.join('、')}」・目的「{PURPOSE_LABEL[purpose]}」。選んだ {summary.total} 件のうち、スキップ {summary.total - summary.toImport} 件。</span>
+                <button className={`${styles.btn} ${styles.primary}`} onClick={() => void runImport()} disabled={namesMissing}>{summary.toImport} 件を取り込む</button>
                 <button className={styles.btn} onClick={() => setConfirming(false)}>やめる</button>
               </div>
             )}
