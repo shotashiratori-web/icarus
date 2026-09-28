@@ -9,7 +9,11 @@ import {
   deleteSavedArea, fetchAreaPackage, listSavedAreas, loadSavedArea, saveAreaPackage,
   type AreaPackage, type SavedArea,
 } from '../../terrain/areaStore';
-import { decodeGrid, decodeRoads } from '../../terrain/decode';
+import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
+import {
+  anyForestLayer, describeForest, FOREST_CLASS, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
+  type ForestData, type ForestLayers, type ForestStand,
+} from '../../terrain/forest';
 import {
   bearingName, cellIndex, cellValues, compileConditions, isCandidateRaw, accessClassRaw, latLngToGrid,
   nearestCandidate, candidateStats, type ExplorationConditions, type AccessClass,
@@ -46,6 +50,21 @@ interface Loaded {
   roads: RoadLine[];
   roadIndex: IndexedRoads;
   hillshadeUrl: string;
+  forest: ForestData | null; // 2026-09-29 より前の版には無い
+  forestError: string | null;
+}
+
+// 森林（forest.png + forest.json）。読めなくても地形探索は使えるようにする
+async function decodeForestPkg(pkg: AreaPackage): Promise<{ forest: ForestData | null; forestError: string | null }> {
+  const png = pkg.files['forest.png'];
+  const js = pkg.files['forest.json'];
+  if (!png || !js) return { forest: null, forestError: null };
+  try {
+    const [px, meta] = await Promise.all([pixels(png), js.text().then((t) => parseForestJson(JSON.parse(t)))]);
+    return { forest: forestFromPixels(pkg.manifest, px.data, px.width, px.height, meta), forestError: null };
+  } catch (e) {
+    return { forest: null, forestError: e instanceof Error ? e.message : '森林データを読めませんでした' };
+  }
 }
 
 const pct = (n: number) => `${n}%`;
@@ -54,6 +73,8 @@ const fmtDate = (iso: string) => {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
+
+const FOREST_ATTRIBUTION = '国土数値情報（国有林野）・北海道 森林計画・環境省 現存植生図2024 を加工';
 
 function ClickProbe({ onClick }: { onClick: (lat: number, lng: number) => void }) {
   useMapEvents({ click: (e) => onClick(e.latlng.lat, e.latlng.lng) });
@@ -114,10 +135,10 @@ export default function ExplorationMap({ entries }: Props) {
 
   // ---- 読み込み: 保存済みがあればそれを先に使い、電波とログインがあれば新しい版を確かめる ----
   const load = useCallback(async (pkg: AreaPackage) => {
-    const [grid, roads] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg)]);
+    const [grid, roads, fr] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg)]);
     setLoaded((prev) => {
       if (prev) URL.revokeObjectURL(prev.hillshadeUrl);
-      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']) };
+      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr };
     });
   }, []);
 
@@ -231,6 +252,51 @@ export default function ExplorationMap({ entries }: Props) {
     : null), [manifest]);
   const roadGroups = useMemo(() => (loaded ? groupByClass(loaded.roads) : null), [loaded]);
 
+  // ---- 森林（S1）: レイヤーはすべて独立（ミズナラ 1〜3 位を 1 色に潰さない）。既定はすべて OFF ----
+  const [forestLayers, setForestLayers] = useState<ForestLayers>(NO_FOREST_LAYERS);
+  const forest = loaded?.forest ?? null;
+  const communities = useMemo(() => (forest ? mizunaraCommunities(forest) : []), [forest]);
+  const forestHa = useMemo(() => {
+    if (!forest || !manifest) return null;
+    const px = manifest.grid.pxM;
+    const byStand = (f: (st: ForestStand) => boolean) => forestAreaHa(forest, px, (st) => !!st && f(st));
+    const veg: Record<string, number> = {};
+    for (const c of communities) veg[c] = forestAreaHa(forest, px, (_, v) => v?.name === c);
+    return {
+      mz1: byStand((st) => st.mizunaraRank === 1), mz2: byStand((st) => st.mizunaraRank === 2), mz3: byStand((st) => st.mizunaraRank === 3),
+      kokuyuNoMizunara: byStand((st) => st.owner === 'k' && st.mizunaraRank === 0 && st.cls !== FOREST_CLASS.noRegister),
+      broadleafUnknown: byStand((st) => st.cls === FOREST_CLASS.broadleafUnknown),
+      larch: byStand((st) => st.cls === FOREST_CLASS.larch), todo: byStand((st) => st.cls === FOREST_CLASS.todo),
+      veg,
+    };
+  }, [forest, manifest, communities]);
+  const [forestUrl, setForestUrl] = useState<string | null>(null);
+  const forestCanvas = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!forest || !anyForestLayer(forestLayers)) {
+      setForestUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      return;
+    }
+    const canvas = forestCanvas.current ?? (forestCanvas.current = document.createElement('canvas'));
+    canvas.width = forest.width;
+    canvas.height = forest.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(forest.width, forest.height);
+    renderForest(forest, forestLayers, img.data);
+    ctx.putImageData(img, 0, 0);
+    let revoked = false;
+    canvas.toBlob((blob) => {
+      if (!blob || revoked) return;
+      const url = URL.createObjectURL(blob);
+      setForestUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
+    });
+    return () => { revoked = true; };
+  }, [forest, forestLayers]);
+  const toggleForest = (k: Exclude<keyof ForestLayers, 'vegMizunara'>) => (e: React.ChangeEvent<HTMLInputElement>) => setForestLayers((l) => ({ ...l, [k]: e.target.checked }));
+  const toggleCommunity = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForestLayers((l) => ({ ...l, vegMizunara: e.target.checked ? [...l.vegMizunara, name] : l.vegMizunara.filter((n) => n !== name) }));
+
   // ---- 等高線（既定 OFF。ON にした時だけ読み込む。2026-09-29 より前の版には無い） ----
   const [showContours, setShowContours] = useState(false);
   const [contours, setContours] = useState<{ version: string; data: Contours } | null>(null);
@@ -279,6 +345,7 @@ export default function ExplorationMap({ entries }: Props) {
     lines.push(`尾根線から ${v.ridgeM === null ? '200m以上' : `約${Math.round(v.ridgeM / 10) * 10}m`}`);
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
+    if (loaded.forest) lines.push(...describeForest(loaded.forest, i));
     if (showHistory) {
       // この地点を探索範囲（線から探索幅）に含むセッションを全部出す（日付・目的・歩いた人・対象の結果）
       const near = visibleHistory.filter((e) => e.track && distanceToTrackM(lat, lng, e.track) <= coverageWidth);
@@ -403,6 +470,7 @@ export default function ExplorationMap({ entries }: Props) {
           />
         )}
         {!onlineBase && <ImageOverlay url={loaded.hillshadeUrl} bounds={bounds} attribution={attribution} />}
+        {forestUrl && <ImageOverlay url={forestUrl} bounds={bounds} opacity={1} zIndex={4} attribution={FOREST_ATTRIBUTION} />}
         {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={1} zIndex={5} />}
         {showContours && contours && contours.version === manifest.version && <ContourLayer contours={contours.data} />}
         {roadGroups && show.road && (
@@ -521,6 +589,48 @@ export default function ExplorationMap({ entries }: Props) {
               exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
             />
 
+            <h3 className={styles.h}>森林（森林計画・植生図）</h3>
+            {!forest && !loaded.forestError && <p className={styles.sub}>この版の地形データには森林がありません（新しい版を「更新して保存」すると使えます）</p>}
+            {loaded.forestError && <p className={styles.sub}>{loaded.forestError}</p>}
+            {forest && forestHa && (
+              <>
+                <p className={styles.sub}>森林計画でミズナラが入る林分（{forest.sources.kokuyu?.year ?? '—'}年・国有林／{forest.sources.minyu?.year ?? '—'}年・民有林）</p>
+                {([['mz1', '1位'], ['mz2', '2位'], ['mz3', '3位']] as const).map(([k, label]) => (
+                  <label key={k} className={styles.check}>
+                    <input type="checkbox" checked={forestLayers[k]} onChange={toggleForest(k)} />
+                    <span className={styles.swatch} style={{ background: `rgba(${FOREST_COLORS[k].slice(0, 3).join(',')},0.9)` }} />ミズナラ {label}
+                    <span className={styles.num}>{forestHa[k].toLocaleString()} ha</span>
+                  </label>
+                ))}
+                <label className={styles.check}>
+                  <input type="checkbox" checked={forestLayers.kokuyuNoMizunara} onChange={toggleForest('kokuyuNoMizunara')} />
+                  <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.kokuyuNoMizunara.slice(0, 3).join(',')})` }} />国有林でミズナラなし
+                  <span className={styles.num}>{forestHa.kokuyuNoMizunara.toLocaleString()} ha</span>
+                </label>
+                <p className={styles.sub}>林の種類（森林計画）</p>
+                {([['broadleafUnknown', '天然林広葉樹（樹種不明）'], ['larch', 'カラマツ人工林'], ['todo', 'トドマツ人工林']] as const).map(([k, label]) => (
+                  <label key={k} className={styles.check}>
+                    <input type="checkbox" checked={forestLayers[k]} onChange={toggleForest(k)} />
+                    <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS[k].slice(0, 3).join(',')})` }} />{label}
+                    <span className={styles.num}>{forestHa[k].toLocaleString()} ha</span>
+                  </label>
+                ))}
+                <p className={styles.sub}>植生図（{forest.sources.veg?.years ? forest.sources.veg.years.join('〜') : '—'}年調査）のミズナラ系群落（斜線）</p>
+                {communities.map((c) => (
+                  <label key={c} className={styles.check}>
+                    <input type="checkbox" checked={forestLayers.vegMizunara.includes(c)} onChange={toggleCommunity(c)} />
+                    <span className={styles.swatch} style={{ background: `repeating-linear-gradient(45deg,rgb(${vegColor(communities, c).slice(0, 3).join(',')}) 0 2px,transparent 2px 5px)` }} />{c}
+                    <span className={styles.num}>{(forestHa.veg[c] ?? 0).toLocaleString()} ha</span>
+                  </label>
+                ))}
+                <label className={styles.check}>
+                  <input type="checkbox" checked={forestLayers.vegOther} onChange={toggleForest('vegOther')} />
+                  <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.vegOther.slice(0, 3).join(',')})` }} />その他の植生
+                </label>
+                <p className={styles.sub}>調査時点の情報で、今の森林と違う場合があります。天然林広葉樹は樹種が分からないため、ミズナラには含めていません。</p>
+              </>
+            )}
+
             <h3 className={styles.h}>重ねる情報</h3>
             <label className={styles.check}><input type="checkbox" checked={show.ridge} onChange={(e) => setShow((s) => ({ ...s, ridge: e.target.checked }))} /><span className={styles.swatch} style={{ background: '#7b2cbf' }} />尾根線</label>
             <label className={styles.check}><input type="checkbox" checked={show.sun} onChange={(e) => setShow((s) => ({ ...s, sun: e.target.checked }))} /><span className={styles.swatch} style={{ background: 'linear-gradient(90deg,#1c3f95,#f6d743)' }} />日射量</label>
@@ -594,6 +704,12 @@ export default function ExplorationMap({ entries }: Props) {
                 尾根線は周囲より高い凸部。道は国土地理院と OpenStreetMap（地図に無い作業道・踏み跡は出ない。廃道・通行止めも道として数える）。
                 <b>発生を予測するものではなく、探す場所を絞るための地形の手がかりです。</b>
               </p>
+              {forest && (
+                <p className={styles.sub}>
+                  森林は国有林・民有林の森林計画（小班ごとの樹種 1〜3 位）と環境省の現存植生図を、約{Math.round(manifest.grid.pxM)}m の格子に置き直したもの（格子の中心が入る林分）。
+                  小班は数 ha 単位で、一本一本の木ではありません。国有林は {forest.sources.kokuyu?.year ?? '—'} 年時点の計画です。
+                </p>
+              )}
               <p className={styles.sub}>出典: {manifest.sources.map((s) => s.name).join('、')}</p>
             </details>
           </div>
