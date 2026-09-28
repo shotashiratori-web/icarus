@@ -12,6 +12,7 @@ const TITLES: Record<ErrorCode, string> = {
   IMAGE_PARSE_FAILED: '画像の読み込みに失敗しました',
   GPS_NOT_FOUND: '位置情報を取得できませんでした',
   UNSUPPORTED_MEDIA_TYPE: '対応していない写真形式です',
+  GPX_REJECTED: 'GPX を登録できませんでした',
 };
 
 // Unit D（Cloudinary直接アップロード段階）専用の説明文。D1保存段階の失敗とは区別して伝える

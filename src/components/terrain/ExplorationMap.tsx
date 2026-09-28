@@ -22,6 +22,11 @@ import type { FieldLogEntry } from '../../types/zukan';
 import {
   displayedSourceLabel, gpsRemembered, initialPanelOpen, insideBounds, locationPermission, rememberGps, shouldAutoLocate,
 } from '../../terrain/initialView';
+import { buildCoverageMask, DEFAULT_COVERAGE_WIDTH, distanceToTrackM, inPeriod, type CoverageWidth, type PeriodFilter } from '../../terrain/coverage';
+import { EXPLORED_COLOR } from '../../terrain/render';
+import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/types';
+import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
+import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import styles from './ExplorationMap.module.css';
 
 // 地形探索（Exploration Mode Stage 1）。Field Map のモードの 1 つ。地図は通常モードと別に持つ（通常モードを変えない）。
@@ -41,7 +46,7 @@ interface Loaded {
 }
 
 const pct = (n: number) => `${n}%`;
-const km2 = (v: number) => `${v.toFixed(1)} km²`;
+const km2 = (v: number) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)} km²`;
 const fmtDate = (iso: string) => {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -81,7 +86,7 @@ function Follow({ pos, follow, bounds }: { pos: [number, number] | null; follow:
 }
 
 export default function ExplorationMap({ entries }: Props) {
-  const { idToken, handleTokenExpired } = useAuth();
+  const { idToken, handleTokenExpired, staffMe } = useAuth();
 
   const [status, setStatus] = useState<string>('地形データを読み込み中…');
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +176,20 @@ export default function ExplorationMap({ entries }: Props) {
 
   const manifest = loaded?.pkg.manifest ?? null;
   const cc = useMemo(() => (manifest ? compileConditions(manifest, conditions) : null), [manifest, conditions]);
-  const stats = useMemo(() => (manifest && loaded && cc ? candidateStats(manifest, loaded.grid, cc) : null), [manifest, loaded, cc]);
+  // ---- 探索履歴（Stage 2）: 「探索済み」は保存せず、絞り込んだ軌跡 × 探索幅から毎回求める ----
+  const history = useExplorationHistory(idToken, manifest?.areaId ?? null);
+  const [showHistory, setShowHistory] = useState(true);
+  const [coverageWidth, setCoverageWidth] = useState<CoverageWidth>(DEFAULT_COVERAGE_WIDTH);
+  const [purposeFilter, setPurposeFilter] = useState<Purpose | 'all'>('all');
+  const [period, setPeriod] = useState<PeriodFilter>('all');
+  const visibleHistory = useMemo<HistoryEntry[]>(() => history.entries.filter((e) =>
+    e.track && (purposeFilter === 'all' || e.purpose === purposeFilter) && inPeriod(e.exploredOn, period, new Date())),
+  [history.entries, purposeFilter, period]);
+  const coverage = useMemo(() => (manifest && showHistory && visibleHistory.length > 0
+    ? buildCoverageMask(manifest, visibleHistory.map((e) => e.track!), coverageWidth)
+    : null), [manifest, showHistory, visibleHistory, coverageWidth]);
+
+  const stats = useMemo(() => (manifest && loaded && cc ? candidateStats(manifest, loaded.grid, cc, coverage) : null), [manifest, loaded, cc, coverage]);
 
   // ---- 候補の着色（条件・表示が変わるたびに作り直す） ----
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
@@ -185,7 +203,7 @@ export default function ExplorationMap({ entries }: Props) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const img = ctx.createImageData(grid.width, grid.height);
-    renderOverlay(grid, cc, { candidates: { A: show.A, B: show.B, C: show.C }, ridge: show.ridge, sun: show.sun }, manifest.params.rel_scale, img.data);
+    renderOverlay(grid, cc, { candidates: { A: show.A, B: show.B, C: show.C }, ridge: show.ridge, sun: show.sun, exploredCandidates: true }, manifest.params.rel_scale, img.data, coverage);
     ctx.putImageData(img, 0, 0);
     let revoked = false;
     canvas.toBlob((blob) => {
@@ -199,7 +217,7 @@ export default function ExplorationMap({ entries }: Props) {
     return () => {
       revoked = true;
     };
-  }, [loaded, cc, manifest, show.A, show.B, show.C, show.ridge, show.sun]);
+  }, [loaded, cc, manifest, show.A, show.B, show.C, show.ridge, show.sun, coverage]);
 
   const bounds = useMemo<L.LatLngBoundsExpression | null>(() => (manifest
     ? [[manifest.bounds.south, manifest.bounds.west], [manifest.bounds.north, manifest.bounds.east]]
@@ -226,15 +244,26 @@ export default function ExplorationMap({ entries }: Props) {
     const lines: string[] = [];
     if (isCandidateRaw(loaded.grid, i, cc)) {
       const k = accessClassRaw(loaded.grid, i, cc);
-      lines.push(`条件に合う場所 ${k}（${{ A: '車道・林道から100m以内', B: '徒歩道から300m以内', C: '道から離れている' }[k]}）`);
+      const explored = coverage ? coverage[i] === 1 : false;
+      lines.push(`条件に合う場所 ${k}（${{ A: '車道・林道から100m以内', B: '徒歩道から300m以内', C: '道から離れている' }[k]}）${explored ? '・探索済み' : coverage ? '・未探索' : ''}`);
     }
     lines.push(`傾斜 ${Math.round(v.slopeDeg)}°`);
     lines.push(`日射 ${v.sun.toFixed(2)}（水平=1.00）`);
     lines.push(`尾根線から ${v.ridgeM === null ? '200m以上' : `約${Math.round(v.ridgeM / 10) * 10}m`}`);
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
+    if (showHistory) {
+      // この地点を探索範囲（線から探索幅）に含むセッションを全部出す（日付・目的・歩いた人・対象の結果）
+      const near = visibleHistory.filter((e) => e.track && distanceToTrackM(lat, lng, e.track) <= coverageWidth);
+      if (near.length === 0) lines.push(`過去探索 なし（${coverageWidth}m・この絞り込み）`);
+      for (const e of near.slice(0, 5)) {
+        const t = e.targets.map((x) => `${x.target}: ${RESULT_LABEL[x.result]}`).join('、');
+        lines.push(`過去探索 ${e.exploredOn ?? '日付なし'}・${e.explorerNames.join('、') || '—'}・${PURPOSE_LABEL[e.purpose]}${t ? `（${t}）` : ''}${e.origin === 'device' ? '・端末のみ' : ''}`);
+      }
+      if (near.length > 5) lines.push(`ほか ${near.length - 5} 件`);
+    }
     return lines;
-  }, [loaded, manifest, cc]);
+  }, [loaded, manifest, cc, coverage, showHistory, visibleHistory, coverageWidth]);
 
   const onMapClick = useCallback((lat: number, lng: number) => setProbe({ lat, lng, lines: describePoint(lat, lng) }), [describePoint]);
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
@@ -283,7 +312,7 @@ export default function ExplorationMap({ entries }: Props) {
       cancelled = true;
     };
   }, [hasArea, startGps]);
-  const nearest = useMemo(() => (pos && manifest && loaded && cc ? nearestCandidate(manifest, loaded.grid, cc, pos.lat, pos.lng) : null), [pos, manifest, loaded, cc]);
+  const nearest = useMemo(() => (pos && manifest && loaded && cc ? nearestCandidate(manifest, loaded.grid, cc, pos.lat, pos.lng, 2500, coverage) : null), [pos, manifest, loaded, cc, coverage]);
   const hereLines = useMemo(() => (pos ? describePoint(pos.lat, pos.lng) : []), [pos, describePoint]);
 
   // ---- オフライン保存 ----
@@ -358,6 +387,19 @@ export default function ExplorationMap({ entries }: Props) {
         {roadGroups && show.trail && (
           <Polyline positions={roadGroups.trail} pathOptions={{ color: '#212529', weight: 2, opacity: 0.9, dashArray: '2 5', lineCap: 'round', interactive: false }} />
         )}
+        {showHistory && visibleHistory.map((e) => (
+          <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9, interactive: false }} />
+        ))}
+        {showHistory && visibleHistory.map((e) => (
+          <Polyline key={e.key} positions={e.track!} pathOptions={{ color: '#1a73e8', weight: 4, opacity: 1, dashArray: e.origin === 'device' && e.status !== 'registered' ? '8 6' : undefined }}>
+            <Popup>
+              <b>{e.exploredOn ?? '日付なし'}・{PURPOSE_LABEL[e.purpose]}</b><br />
+              {e.explorerNames.join('、') || '歩いた人未記入'}・{e.distanceM >= 1000 ? `${(e.distanceM / 1000).toFixed(1)}km` : `${Math.round(e.distanceM)}m`}<br />
+              {e.targets.map((t) => `${t.target}: ${RESULT_LABEL[t.result]}`).join('、') || '対象未記入'}
+              {e.origin === 'device' && <><br />この端末のみ（{e.status === 'registered' ? '登録済み' : '未登録'}）</>}
+            </Popup>
+          </Polyline>
+        ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: 0.9 }}>
             <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}</Popup>
@@ -426,9 +468,30 @@ export default function ExplorationMap({ entries }: Props) {
                 <input type="checkbox" checked={show[k]} onChange={(e) => setShow((s) => ({ ...s, [k]: e.target.checked }))} />
                 <span className={styles.swatch} style={{ background: `rgb(${CANDIDATE_COLORS[k].join(',')})` }} />
                 {k} {{ A: '車道・林道から100m以内（気軽に確認）', B: '徒歩道から300m以内（徒歩で探索）', C: '道から離れている' }[k]}
-                {stats && <span className={styles.num}>{km2(stats.km2[k])}</span>}
+                {stats && <span className={styles.num}>{coverage ? `未探索 ${km2(stats.km2[k])}` : km2(stats.km2[k])}</span>}
               </label>
             ))}
+
+            {coverage && (
+              <label className={styles.check}>
+                <span className={styles.swatch} style={{ background: `rgb(${EXPLORED_COLOR.join(',')})` }} />探索済み（探索範囲 {coverageWidth}m）
+                {stats && <span className={styles.num}>{km2(stats.exploredKm2.total)}</span>}
+              </label>
+            )}
+
+            <ExplorationHistoryPanel
+              history={history}
+              staffName={staffMe?.displayName ?? ''}
+              show={showHistory}
+              onShowChange={setShowHistory}
+              width={coverageWidth}
+              onWidthChange={setCoverageWidth}
+              purposeFilter={purposeFilter}
+              onPurposeFilterChange={setPurposeFilter}
+              period={period}
+              onPeriodChange={setPeriod}
+              exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
+            />
 
             <h3 className={styles.h}>重ねる情報</h3>
             <label className={styles.check}><input type="checkbox" checked={show.ridge} onChange={(e) => setShow((s) => ({ ...s, ridge: e.target.checked }))} /><span className={styles.swatch} style={{ background: '#7b2cbf' }} />尾根線</label>

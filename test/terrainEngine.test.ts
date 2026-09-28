@@ -89,8 +89,8 @@ describe('Terrain Engine', () => {
   it('5. 面積（km²）を A/B/C 別に数える', () => {
     const s = candidateStats(manifest(), grid(CELLS), compileConditions(manifest(), maitake));
     const cell = (PX * PX) / 1e6;
-    expect(s.km2.A).toBeCloseTo(Math.round(2 * cell * 10) / 10);
-    expect(s.km2.total).toBeCloseTo(Math.round(6 * cell * 10) / 10);
+    expect(s.km2.A).toBeCloseTo(Math.round(2 * cell * 100) / 100);
+    expect(s.km2.total).toBeCloseTo(Math.round(6 * cell * 100) / 100);
   });
 
   it('6. 現在地から最寄りの候補（距離・方角・区分）', () => {

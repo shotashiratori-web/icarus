@@ -243,3 +243,83 @@
     bottom: auto;
   }
 }
+
+/* 探索履歴（Stage 2） */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.field input,
+.field select,
+.localItem input,
+.row select {
+  min-height: 36px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.inputSmall {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.localList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.localItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-top: 1px dashed var(--color-border);
+}
+
+.localText {
+  flex: 1;
+  min-width: 140px;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: #fff;
+  background: #868e96;
+}
+
+.badge_unsent { background: #868e96; }
+.badge_gpx_uploaded { background: #1c7ed6; }
+.badge_registered { background: #2f9e44; }
+.badge_failed { background: var(--color-accent); }
