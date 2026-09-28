@@ -32,6 +32,7 @@ import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/typ
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import ContourLayer from './ContourLayer';
+import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import styles from './ExplorationMap.module.css';
@@ -127,6 +128,7 @@ export default function ExplorationMap({ entries }: Props) {
   const [panelOpen, setPanelOpen] = useState(() => initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[] } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
   const [watching, setWatching] = useState(false);
   const [follow, setFollow] = useState(true);
   const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -720,6 +722,20 @@ export default function ExplorationMap({ entries }: Props) {
         <div className={styles.probe} role="status">
           <button className={styles.probeClose} onClick={() => setProbe(null)} aria-label="閉じる">×</button>
           {probe.lines.map((l) => <div key={l}>{l}</div>)}
+          <div className={styles.probeActions}>
+            <a className={styles.btn} href={googleMapsPinUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">Googleマップで開く</a>
+            <a className={styles.btn} href={googleMapsDirectionsUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">ここへの経路</a>
+            <button
+              className={styles.btn}
+              onClick={() => {
+                const t = coordText(probe.lat, probe.lng);
+                navigator.clipboard?.writeText(t).then(() => setCopied(t), () => setCopied(null));
+              }}
+            >
+              {copied === coordText(probe.lat, probe.lng) ? 'コピーしました' : '座標をコピー'}
+            </button>
+          </div>
+          <div className={styles.sub}>{coordText(probe.lat, probe.lng)}（Googleマップを開いた時だけ座標が Google に渡ります）</div>
         </div>
       )}
       {status && <div className={styles.toast}>{status}</div>}
