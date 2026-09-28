@@ -5,6 +5,9 @@ import HomeButton from '../components/HomeButton';
 import { useAuth } from '../context/AuthContext';
 import { fetchWineTastingNotesByWine, type WineTastingNoteItem } from '../api/wineTastingNoteApi';
 import { TokenExpiredError } from '../api/icarusApi';
+import { fetchWine, fetchWineHistory } from '../api/wineEntityApi';
+import EditHistoryList, { type EditHistoryViewItem } from '../components/edit/EditHistoryList';
+import { wineHistoryView } from '../utils/wineEdit';
 import styles from './WineDetailScreen.module.css';
 
 type Props = { go: (s: Screen) => void; entry: WineEntity };
@@ -16,8 +19,44 @@ export function previewText(text: string, maxLength: number): string {
   return flat.length > maxLength ? `${flat.slice(0, maxLength)}…` : flat;
 }
 
-export default function WineDetailScreen({ go, entry }: Props) {
-  const { authState, idToken, handleTokenExpired } = useAuth();
+export default function WineDetailScreen({ go, entry: initialEntry }: Props) {
+  const { authState, idToken, staffMe, handleTokenExpired } = useAuth();
+  // 一覧から渡された値は古いことがあるので、表示後にサーバーの最新を読み直す（Wine Editing、2026-09-28）
+  const [entry, setEntry] = useState<WineEntity>(initialEntry);
+  const canEdit = staffMe?.staffStatus === 'active';
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState<EditHistoryViewItem[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+
+  useEffect(() => {
+    if (authState !== 'ready' || !idToken) return;
+    let cancelled = false;
+    fetchWine(initialEntry.id, idToken)
+      .then((w) => { if (!cancelled) setEntry(w); })
+      .catch((e) => { if (!cancelled && e instanceof TokenExpiredError) handleTokenExpired(); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEntry.id, authState, idToken]);
+
+  const toggleHistory = async () => {
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryOpen(true);
+    if (!idToken) return;
+    setHistoryLoading(true);
+    setHistoryError('');
+    try {
+      setHistoryItems(wineHistoryView(await fetchWineHistory(entry.id, idToken)));
+    } catch (e) {
+      if (e instanceof TokenExpiredError) handleTokenExpired();
+      setHistoryError(e instanceof Error ? e.message : '編集履歴を読み込めませんでした');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
   const [tastingNotes, setTastingNotes] = useState<WineTastingNoteItem[]>([]);
   const [tastingNotesState, setTastingNotesState] = useState<TastingNotesState>('idle');
 
@@ -121,10 +160,19 @@ export default function WineDetailScreen({ go, entry }: Props) {
         )}
 
         <div className={styles.linkRow}>
-          <button className={styles.editBtn} onClick={() => go({ name: 'wineForm', mode: 'edit', wine: entry })}>
-            ✏️ 編集する
+          {canEdit && (
+            <button className={styles.editBtn} onClick={() => go({ name: 'wineForm', mode: 'edit', wine: entry })}>
+              ✏️ 編集する
+            </button>
+          )}
+          <button className={styles.editBtn} onClick={() => void toggleHistory()} aria-expanded={historyOpen}>
+            🕘 編集履歴{historyOpen ? 'を閉じる' : ''}
           </button>
         </div>
+
+        {historyOpen && (
+          <EditHistoryList items={historyItems} loading={historyLoading} errorMessage={historyError} emptyText="編集履歴はまだありません" />
+        )}
       </main>
     </div>
   );
