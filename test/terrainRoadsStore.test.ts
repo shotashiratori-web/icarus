@@ -114,6 +114,49 @@ describe('areaStore', () => {
     expect(await store.listSavedAreas()).toEqual([]);
   });
 
+  it('4b. 等高線は版によって有無が違う: 古い版（無し）→ 新しい版（有り）→ 古い版のファイルは残らない。新しい版から戻しても等高線は残らない', async () => {
+    const store = await import('../src/terrain/areaStore');
+    const m1 = await makeManifest('20260928-11111111', CONTENTS('v1'));
+    mockServer(m1, CONTENTS('v1'));
+    const area = { areaId: m1.areaId, name: m1.name, version: m1.version, bounds: m1.bounds, totalBytes: 1 };
+    await store.saveAreaPackage(await store.fetchAreaPackage(area, 'tok'));
+    const old = await store.loadSavedArea(m1.areaId);
+    expect(old!.files['contours.json']).toBeUndefined(); // 古い版はそのまま使える
+
+    const withContours = { ...CONTENTS('v2'), 'contours.json': '{"format":"delta-e5","intervalM":10,"indexM":50,"lines":[]}' };
+    const m2 = await makeManifest('20260929-22222222', withContours);
+    mockServer(m2, withContours);
+    const s2 = await store.saveAreaPackage(await store.fetchAreaPackage({ ...area, version: m2.version }, 'tok'));
+    expect(s2.bytes).toBe(Object.values(withContours).reduce((n, v) => n + v.length, 0));
+    const now = await store.loadSavedArea(m1.areaId);
+    expect(await now!.files['contours.json']!.text()).toContain('delta-e5');
+    const keys = async () => {
+      const d = await new Promise<IDBDatabase>((r) => { const q = indexedDB.open('icarus-terrain'); q.onsuccess = () => r(q.result); });
+      const all = await new Promise<IDBValidKey[]>((r) => { const q = d.transaction('files').objectStore('files').getAllKeys(); q.onsuccess = () => r(q.result); });
+      d.close();
+      return all.map(String).sort();
+    };
+    expect(await keys()).toEqual(Object.keys(withContours).map((f) => `${m1.areaId}/${m2.version}/${f}`).sort());
+
+    // 新しい版 → 等高線の無い版（戻した場合）: 新しい版の contours.json も消える
+    const m3 = await makeManifest('20261001-33333333', CONTENTS('v3'));
+    mockServer(m3, CONTENTS('v3'));
+    await store.saveAreaPackage(await store.fetchAreaPackage({ ...area, version: m3.version }, 'tok'));
+    expect(await keys()).toEqual(Object.keys(CONTENTS('v3')).map((f) => `${m1.areaId}/${m3.version}/${f}`).sort());
+    await store.deleteSavedArea(m1.areaId);
+    expect(await keys()).toEqual([]);
+  });
+
+  it('4c. manifest に等高線があるのに欠けている・壊れている版は保存しない', async () => {
+    const store = await import('../src/terrain/areaStore');
+    const withContours = { ...CONTENTS('v2'), 'contours.json': '{"lines":[]}' };
+    const m2 = await makeManifest('20260929-22222222', withContours);
+    mockServer(m2, withContours, 'contours.json');
+    const area = { areaId: m2.areaId, name: m2.name, version: m2.version, bounds: m2.bounds, totalBytes: 1 };
+    await expect(store.fetchAreaPackage(area, 'tok')).rejects.toThrow('contours.json');
+    expect(await store.listSavedAreas()).toEqual([]);
+  });
+
   it('6. 401 はログイン切れとして伝える', async () => {
     const store = await import('../src/terrain/areaStore');
     const { TokenExpiredError } = await import('../src/api/icarusApi');
