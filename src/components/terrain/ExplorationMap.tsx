@@ -19,6 +19,9 @@ import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
 import { describeRoad, groupByClass, indexRoads, nearestRoad, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
 import type { RoadLine, TerrainAreaSummary, TerrainGrid } from '../../terrain/types';
 import type { FieldLogEntry } from '../../types/zukan';
+import {
+  displayedSourceLabel, gpsRemembered, initialPanelOpen, insideBounds, locationPermission, rememberGps, shouldAutoLocate,
+} from '../../terrain/initialView';
 import styles from './ExplorationMap.module.css';
 
 // 地形探索（Exploration Mode Stage 1）。Field Map のモードの 1 つ。地図は通常モードと別に持つ（通常モードを変えない）。
@@ -60,18 +63,20 @@ function FitOnce({ bounds }: { bounds: L.LatLngBoundsExpression }) {
   return null;
 }
 
-function Follow({ pos, follow }: { pos: [number, number] | null; follow: boolean }) {
+// 最初に現在地が取れたら現在地周辺（ズーム 15）へ。範囲の外にいる時は範囲全体のまま
+function Follow({ pos, follow, bounds }: { pos: [number, number] | null; follow: boolean; bounds: { south: number; north: number; west: number; east: number } }) {
   const map = useMap();
   const first = useRef(true);
   useEffect(() => {
     if (!pos) return;
+    const inside = insideBounds(bounds, pos[0], pos[1]);
     if (first.current) {
       first.current = false;
-      map.setView(pos, Math.max(map.getZoom(), 15));
-    } else if (follow) {
+      if (inside) map.setView(pos, Math.max(map.getZoom(), 15));
+    } else if (follow && inside) {
       map.panTo(pos);
     }
-  }, [map, pos, follow]);
+  }, [map, pos, follow, bounds]);
   return null;
 }
 
@@ -90,7 +95,7 @@ export default function ExplorationMap({ entries }: Props) {
   const [show, setShow] = useState({ A: true, B: true, C: true, ridge: false, sun: false, road: true, trail: true });
   const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>('キノコ');
   const [base, setBase] = useState<Base>('offline');
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(() => initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[] } | null>(null);
   const [watching, setWatching] = useState(false);
@@ -238,13 +243,13 @@ export default function ExplorationMap({ entries }: Props) {
   }, [describePoint]);
 
   // ---- 現在地 ----
-  const toggleGps = () => {
-    if (watchId.current !== null) {
-      navigator.geolocation.clearWatch(watchId.current);
-      watchId.current = null;
-      setWatching(false);
-      return;
-    }
+  const stopGps = () => {
+    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+    watchId.current = null;
+    setWatching(false);
+  };
+  const startGps = useCallback(() => {
+    if (watchId.current !== null) return;
     if (!('geolocation' in navigator)) {
       setGpsError('この端末では現在地を取得できません');
       return;
@@ -256,7 +261,28 @@ export default function ExplorationMap({ entries }: Props) {
       (e) => setGpsError(e.code === e.PERMISSION_DENIED ? '位置情報が許可されていません（設定で Icarus の位置情報を許可してください）' : '現在地を取得できませんでした。空の見える場所で少し待ってください'),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 },
     );
+  }, []);
+  const toggleGps = () => {
+    if (watchId.current !== null) {
+      stopGps();
+      rememberGps(false);
+    } else {
+      startGps();
+      rememberGps(true);
+    }
   };
+  // 開いた時: 許可済み、または前回使っていたら自動で現在地を取る（初めての人には開いた瞬間に許可を求めない）
+  const hasArea = !!loaded;
+  useEffect(() => {
+    if (!hasArea) return;
+    let cancelled = false;
+    void locationPermission().then((perm) => {
+      if (!cancelled && shouldAutoLocate(perm, gpsRemembered())) startGps();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasArea, startGps]);
   const nearest = useMemo(() => (pos && manifest && loaded && cc ? nearestCandidate(manifest, loaded.grid, cc, pos.lat, pos.lng) : null), [pos, manifest, loaded, cc]);
   const hereLines = useMemo(() => (pos ? describePoint(pos.lat, pos.lng) : []), [pos, describePoint]);
 
@@ -344,7 +370,7 @@ export default function ExplorationMap({ entries }: Props) {
             <CircleMarker center={[pos.lat, pos.lng]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }} />
           </>
         )}
-        <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} />
+        <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} bounds={manifest.bounds} />
         <ClickProbe onClick={onMapClick} />
       </MapContainer>
 
@@ -447,7 +473,7 @@ export default function ExplorationMap({ entries }: Props) {
               {saved && <button className={styles.btn} onClick={() => void handleDelete()} disabled={!!saving}>保存を削除</button>}
             </div>
             {error && <p className={styles.warn}>{error}</p>}
-            <p className={styles.sub}>表示中: {loaded.pkg.source === 'saved' ? '端末に保存した版' : '取得した版（未保存）'}・{manifest.version}</p>
+            <p className={styles.sub}>表示中: {displayedSourceLabel(manifest.version, saved?.version ?? null)}・{manifest.version}</p>
 
             <details className={styles.details}>
               <summary>計算の方法と注意</summary>
@@ -469,6 +495,7 @@ export default function ExplorationMap({ entries }: Props) {
         </div>
       )}
       {status && <div className={styles.toast}>{status}</div>}
+      {!status && watching && !pos && !gpsError && <div className={styles.toast}>現在地を取得中…</div>}
     </div>
   );
 }
