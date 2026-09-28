@@ -41,7 +41,7 @@ export interface TerrainManifest {
 }
 
 export type BaseFileName = 'terrain.png' | 'access.png' | 'roads.json' | 'hillshade.jpg';
-export type OptionalFileName = 'contours.json';
+export type OptionalFileName = 'contours.json' | 'forest.png' | 'forest.json';
 export type TerrainFileName = BaseFileName | OptionalFileName;
 
 export interface TerrainAreaSummary {

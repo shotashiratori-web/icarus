@@ -2,7 +2,7 @@ import type { AreaPackage } from './areaStore';
 import type { RoadLine, TerrainGrid } from './types';
 
 // パッケージの PNG を格子の値へ戻す。色空間の変換・アルファの乗算をさせない（値がずれるため）
-async function pixels(blob: Blob): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
+export async function pixels(blob: Blob): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
   let source: CanvasImageSource & { width: number; height: number };
   try {
     source = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
