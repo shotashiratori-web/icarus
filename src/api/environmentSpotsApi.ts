@@ -69,3 +69,29 @@ export async function createEnvironmentSpot(body: SpotCreateBody, idToken: strin
 export async function addSpotObservation(spotId: string, body: ObservationInput & { requestId: string }, idToken: string): Promise<{ outcome: string; item: SpotObservation }> {
   return (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(spotId)}/observations`, { method: 'POST', body: JSON.stringify(body) }, idToken)).json();
 }
+
+// 訂正（共通の編集契約: requestId・expectedUpdatedAt・changes・reason）。訂正は端末に保存せず、電波のある時だけ
+export interface EditRequest {
+  requestId: string;
+  expectedUpdatedAt: string;
+  changes: Record<string, unknown>;
+  reason?: string;
+}
+
+export async function patchEnvironmentSpot(id: string, body: EditRequest, idToken: string): Promise<{ outcome: string; updatedAt?: string }> {
+  return (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }, idToken)).json();
+}
+
+export async function patchSpotObservation(id: string, body: EditRequest, idToken: string): Promise<{ outcome: string }> {
+  return (await request(`${WORKER_URL}/spot-observations/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }, idToken)).json();
+}
+
+export function editErrorMessage(e: unknown): string {
+  if (e instanceof SpotNetworkError) return '通信できませんでした。訂正は電波のある所で行ってください（訂正は端末に保存しません）';
+  if (e instanceof SpotApiError) {
+    if (e.code === 'EDIT_CONFLICT') return '他の人が先にこの記録を更新しました。閉じて開き直してから訂正してください';
+    if (e.code === 'EDIT_FORBIDDEN') return '無効化は管理者のみ利用できます';
+    return e.message;
+  }
+  return e instanceof Error ? e.message : '訂正できませんでした';
+}
