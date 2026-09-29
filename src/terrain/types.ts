@@ -35,13 +35,15 @@ export interface TerrainManifest {
     [k: string]: unknown;
   };
   relPercentiles: Record<'50' | '60' | '70' | '80' | '90', number>;
+  // DEM 由来の地形（terrain2.png）は 2026-09-29 の版から。湿潤度の分位点（利用範囲の陸地）
+  twiPercentiles?: Record<'33' | '50' | '67' | '90', number>;
   sources: { name: string; url: string }[];
   // 等高線（contours.json）は 2026-09-29 の版から。古い版の manifest には無い
   files: Record<BaseFileName, { bytes: number; sha256: string }> & Partial<Record<OptionalFileName, { bytes: number; sha256: string }>>;
 }
 
 export type BaseFileName = 'terrain.png' | 'access.png' | 'roads.json' | 'hillshade.jpg';
-export type OptionalFileName = 'contours.json' | 'forest.png' | 'forest.json';
+export type OptionalFileName = 'contours.json' | 'forest.png' | 'forest.json' | 'terrain2.png';
 export type TerrainFileName = BaseFileName | OptionalFileName;
 
 export interface TerrainAreaSummary {

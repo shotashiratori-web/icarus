@@ -12,7 +12,7 @@ const AREAS = 'areas'; // key: areaId → SavedArea
 
 export const PACKAGE_FILES: BaseFileName[] = ['terrain.png', 'access.png', 'roads.json', 'hillshade.jpg'];
 // 版によって有るものと無いもの（manifest に載っていれば必ずそろえる）。等高線・森林は 2026-09-29 の版から
-export const OPTIONAL_FILES: OptionalFileName[] = ['contours.json', 'forest.png', 'forest.json'];
+export const OPTIONAL_FILES: OptionalFileName[] = ['contours.json', 'forest.png', 'forest.json', 'terrain2.png'];
 
 export function packageFilesOf(manifest: TerrainManifest): TerrainFileName[] {
   return [...PACKAGE_FILES, ...OPTIONAL_FILES.filter((f) => manifest.files[f])];
