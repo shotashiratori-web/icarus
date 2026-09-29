@@ -1,0 +1,142 @@
+/* 環境スポット（S3）の記録・詳細のシート。地形探索の地図の上に下から出す */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1200;
+  max-height: 88%;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+  font-size: var(--font-size-sm);
+}
+@media (min-width: 601px) {
+  .sheet {
+    left: auto;
+    right: var(--space-3);
+    bottom: var(--space-3);
+    width: 380px;
+    border-radius: var(--radius-md);
+  }
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.head h3 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.label {
+  margin: var(--space-3) 0 var(--space-1);
+  font-weight: 700;
+}
+.sub {
+  margin: 2px 0;
+  color: var(--color-text-sub);
+  font-size: var(--font-size-xs);
+}
+.warn {
+  margin: 2px 0;
+  color: #b3261e;
+  font-size: var(--font-size-xs);
+}
+.bigButtons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+.big {
+  min-height: 56px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  font-weight: 700;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+.chip {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+.on {
+  border-color: var(--color-primary, #2b8a3e);
+  background: var(--color-primary, #2b8a3e);
+  color: #fff;
+}
+.input {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 16px; /* iOS の自動ズームを防ぐ */
+  box-sizing: border-box;
+}
+.photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.photos img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.btn {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-weight: 700;
+}
+.primary {
+  flex: 1;
+  border-color: var(--color-primary, #2b8a3e);
+  background: var(--color-primary, #2b8a3e);
+  color: #fff;
+}
+.primary:disabled {
+  opacity: 0.45;
+}
+.year {
+  margin: var(--space-3) 0 var(--space-1);
+  font-weight: 700;
+}
+.obs {
+  display: flex;
+  gap: var(--space-2);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.obs span:first-child {
+  min-width: 5.5em;
+  font-variant-numeric: tabular-nums;
+}

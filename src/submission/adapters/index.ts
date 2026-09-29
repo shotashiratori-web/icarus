@@ -6,3 +6,4 @@ import './wineTastingNoteAdapter';
 import './wineTastingNotePhotoAdapter';
 import './workLogAdapter';
 import './explorationSessionAdapter';
+import './environmentSpotAdapter';

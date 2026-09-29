@@ -180,7 +180,11 @@ function AppRoutes() {
   useEffect(() => {
     if (authState !== 'ready' || !idToken) return;
     // 送信の仕組みは地形探索と一緒に遅延読み込み（通常画面の初回 JS を増やさない）
-    const resume = () => { void import('./exploration/submit').then((m) => m.resumeExplorationPending(idToken)).catch(() => undefined); };
+    const resume = () => {
+      void import('./exploration/submit').then((m) => m.resumeExplorationPending(idToken)).catch(() => undefined);
+      // Environment Spots（S3）: 端末にだけ残っている未送信の環境スポット・観察（写真の原本つき）も同じ時に送る
+      void import('./environmentSpots/submit').then((m) => m.resumeSpotPending(idToken)).catch(() => undefined);
+    };
     resume();
     const onOnline = () => resume();
     window.addEventListener('online', onOnline);
