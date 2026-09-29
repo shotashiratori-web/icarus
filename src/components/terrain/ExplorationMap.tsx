@@ -101,6 +101,15 @@ const fmtDate = (iso: string) => {
 // 環境スポットの色（種類・生死）。ミズナラは金色の縁
 const SPOT_COLORS: Record<SpotKindChoice, string> = { alive: '#2e7d32', snag: '#a1887f', fallen: '#5d4037', terrain: '#546e7a', other: '#9e9e9e' };
 
+type PanelTab = 'search' | 'view' | 'record' | 'settings';
+const PANEL_TABS: { id: PanelTab; label: string }[] = [
+  { id: 'search', label: '探す' },
+  { id: 'view', label: '見る' },
+  { id: 'record', label: '記録' },
+  { id: 'settings', label: '設定' },
+];
+const TAB_KEY = 'icarus:exploration-panel-tab';
+
 const FOREST_ATTRIBUTION = '国土数値情報（国有林野）・北海道 森林計画・環境省 現存植生図2024 を加工';
 
 function ClickProbe({ onClick, disabled }: { onClick: (lat: number, lng: number) => void; disabled?: boolean }) {
@@ -180,7 +189,8 @@ export default function ExplorationMap({ entries }: Props) {
   const [presetId, setPresetId] = useState<string>(SPECIES_PRESETS[0].id);
   const [conditions, setConditions] = useState<ExplorationConditions>(SPECIES_PRESETS[0].conditions);
   const [show, setShow] = useState({ A: true, B: true, C: true, ridge: false, sun: false, road: true, trail: true });
-  const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>('キノコ');
+  // 地図をすっきりさせるため、Field Log は最初は出さない（見るタブで選ぶ）
+  const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>('none');
   const [base, setBase] = useState<Base>('offline');
   const [panelOpen, setPanelOpen] = useState(() => initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
@@ -520,6 +530,44 @@ export default function ExplorationMap({ entries }: Props) {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 },
     );
   }, []);
+  // ---- パネルのタブ（探す／見る／記録／設定）と「表示中」の要約 ----
+  const [tab, setTab] = useState<PanelTab>(() => {
+    try {
+      const v = localStorage.getItem(TAB_KEY);
+      return PANEL_TABS.some((t) => t.id === v) ? (v as PanelTab) : 'search';
+    } catch {
+      return 'search';
+    }
+  });
+  const chooseTab = (t: PanelTab) => {
+    setTab(t);
+    try { localStorage.setItem(TAB_KEY, t); } catch { /* 保存できなくても使える */ }
+  };
+  const activeSummary = useMemo(() => {
+    const out: string[] = [];
+    const abc = (['A', 'B', 'C'] as const).filter((k) => show[k]).join('');
+    if (abc) out.push(`候補 ${abc}`);
+    if (hydro && anyTerrainCondition(terrainCond)) out.push(`地形 ${summarizeTerrain(terrainCond)}${terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)}km²）` : ''}`);
+    if (anyForestLayer(forestLayers)) out.push('森林');
+    if (showContours) out.push('等高線');
+    if (showStreams) out.push('沢');
+    if (show.ridge) out.push('尾根線');
+    if (show.sun) out.push('日射');
+    if (showHistory && visibleHistory.length) out.push('探索履歴');
+    if (fieldLogFilter !== 'none') out.push('Field Log');
+    if (showSpots && visibleSpots.length) out.push('環境スポット');
+    return out;
+  }, [show, hydro, terrainCond, terrainMatchKm2, forestLayers, showContours, showStreams, showHistory, visibleHistory.length, fieldLogFilter, showSpots, visibleSpots.length]);
+  // 地図を最小に: 陰影・道・現在地・探索履歴・環境スポットだけ残す
+  const minimizeMap = () => {
+    setShow((sh) => ({ ...sh, A: false, B: false, C: false, ridge: false, sun: false }));
+    setTerrainCond(NO_TERRAIN_CONDITIONS);
+    setForestLayers(NO_FOREST_LAYERS);
+    setShowContours(false);
+    setShowStreams(false);
+    setFieldLogFilter('none');
+  };
+
   // ---- 進行方向モード: iPhone を向けている方向を画面の上にする（地図を回す）。方向センサーは押した時だけ許可を求める ----
   const [headingMode, setHeadingMode] = useState(false);
   const [headingAsk, setHeadingAsk] = useState(false);
@@ -779,14 +827,16 @@ export default function ExplorationMap({ entries }: Props) {
           onChanged={() => void envSpots.refreshRemote()}
         />
       )}
-      {pos && !headingMode && !recordLoc && (
-        <button className={`${styles.btn} ${styles.recordButton}`} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
-      )}
-      {(pos || headingMode) && (
-        <button className={`${styles.btn} ${styles.headingButton} ${headingMode ? styles.primary : ''}`} onClick={onHeadingButton}>
-          {headingMode ? '北を上に戻す' : '進行方向'}
-        </button>
-      )}
+      {/* 地図の上のボタンは 1 か所にまとめる（現在地・進行方向・記録） */}
+      <div className={styles.toolbar}>
+        <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={toggleGps} aria-pressed={watching}>{watching ? '現在地 ON' : '現在地'}</button>
+        {(pos || headingMode) && (
+          <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '進行方向'}</button>
+        )}
+        {pos && !headingMode && !recordLoc && (
+          <button className={styles.tool} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
+        )}
+      </div>
       {headingAsk && (
         <div className={styles.headingAsk} role="dialog" aria-label="進行方向モード">
           <p>地図を向いている方向に合わせるため、方向センサーを使用します。</p>
@@ -804,25 +854,24 @@ export default function ExplorationMap({ entries }: Props) {
           <span className={styles.areaName}>{manifest.name}</span>
           <button className={styles.btn} onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>{panelOpen ? '閉じる' : '条件・操作'}</button>
         </div>
-        {hydro && anyTerrainCondition(terrainCond) && (
-          <p className={styles.condSummary}>地形条件：{summarizeTerrain(terrainCond)}{terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)} km²）` : ''}</p>
+        {activeSummary.length > 0 && (
+          <p className={styles.condSummary}>
+            表示中：{activeSummary.join(' / ')}
+            <button className={styles.linkBtn} onClick={minimizeMap}>最小に</button>
+          </p>
+        )}
+        {panelOpen && (
+          <div className={styles.tabs} role="tablist">
+            {PANEL_TABS.map((t) => (
+              <button key={t.id} role="tab" aria-selected={tab === t.id} className={`${styles.tab} ${tab === t.id ? styles.tabOn : ''}`} onClick={() => chooseTab(t.id)}>{t.label}</button>
+            ))}
+          </div>
         )}
 
         {panelOpen && (
           <div className={styles.panelBody}>
-            <div className={styles.row}>
-              <button className={`${styles.btn} ${styles.primary}`} onClick={toggleGps}>{watching ? '現在地を止める' : '現在地を表示'}</button>
-              <label className={styles.check}><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />追従</label>
-            </div>
-            {gpsError && <p className={styles.warn}>{gpsError}</p>}
-            {pos && (
-              <p className={styles.here}>
-                {nearest ? `最寄りの条件に合う場所（${nearest.access}）: 約${Math.round(nearest.distanceM / 10) * 10}m ${bearingName(nearest.bearingDeg)}` : '約2.5km以内に条件に合う場所なし'}
-                {` ／ 精度 ±${Math.round(pos.accuracy)}m`}
-                {hereLines.length > 0 && <><br />ここ: {hereLines.filter((l) => l.startsWith('傾斜') || l.startsWith('日射')).join('・')}</>}
-              </p>
-            )}
-
+            {tab === 'search' && (
+              <>
             <h3 className={styles.h}>探索条件</h3>
             <select className={styles.select} value={presetId} onChange={(e) => choosePreset(e.target.value)} aria-label="探索のプリセット">
               {SPECIES_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -864,21 +913,8 @@ export default function ExplorationMap({ entries }: Props) {
               </label>
             )}
 
-            <ExplorationHistoryPanel
-              history={history}
-              staffName={staffMe?.displayName ?? ''}
-              show={showHistory}
-              onShowChange={setShowHistory}
-              width={coverageWidth}
-              onWidthChange={setCoverageWidth}
-              purposeFilter={purposeFilter}
-              onPurposeFilterChange={setPurposeFilter}
-              period={period}
-              onPeriodChange={setPeriod}
-              exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
-            />
-
-            <h3 className={styles.h}>地形の条件（DEM から計算）</h3>
+            <details className={styles.details} open={anyTerrainCondition(terrainCond)}>
+              <summary className={styles.h}>地形の条件{anyTerrainCondition(terrainCond) ? `：${summarizeTerrain(terrainCond)}` : ''}</summary>
             {!hydro && !loaded.hydroError && <p className={styles.sub}>この版の地形データには方位・沢がありません（新しい版を「更新して保存」すると使えます）</p>}
             {loaded.hydroError && <p className={styles.sub}>{loaded.hydroError}</p>}
             {hydro && (
@@ -922,42 +958,15 @@ export default function ExplorationMap({ entries }: Props) {
                     {[100, 200, 300, 500].map((v) => <option key={v} value={v}>{v}m 以上</option>)}
                   </select>
                 </label>
-                <label className={styles.check}>
-                  <input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} />
-                  <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />沢の線（集水 10ha 以上）
-                </label>
                 {terrainMatchKm2 !== null && <p className={styles.sub}>条件をすべて満たす範囲 {terrainMatchKm2.toFixed(1)} km²</p>}
                 {anyTerrainCondition(terrainCond) && <button className={styles.btn} onClick={() => setTerrainCond(NO_TERRAIN_CONDITIONS)}>地形の条件をクリア</button>}
                 <p className={styles.sub}>沢は DEM から計算した水の通り道で、実際の水の有無とは違います。上部斜面（肩の目安）は試験的な分類です。</p>
               </>
             )}
 
-            <h3 className={styles.h}>環境スポット（現地の記録）</h3>
-            <div className={styles.row}>
-              <button className={`${styles.btn} ${styles.primary}`} disabled={!pos} onClick={() => pos && setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>現在地で記録</button>
-              <label className={styles.check}><input type="checkbox" checked={showSpots} onChange={(e) => setShowSpots(e.target.checked)} />地図に表示</label>
-            </div>
-            {!pos && <p className={styles.sub}>現在地を表示すると記録できます。地図をタップして「ここを記録」でも記録できます</p>}
-            <div className={styles.chips}>
-              {KIND_CHOICES.map((k) => (
-                <label key={k.id} className={styles.chip}>
-                  <input type="checkbox" checked={spotKinds.includes(k.id)} onChange={(e) => setSpotKinds((c) => (e.target.checked ? [...c, k.id] : c.filter((x) => x !== k.id)))} />
-                  <span className={styles.swatch} style={{ background: SPOT_COLORS[k.id], borderRadius: '50%' }} />{k.label}
-                </label>
-              ))}
-            </div>
-            <label className={styles.check}>
-              樹種
-              <select className={styles.selectSmall} value={spotSpecies} onChange={(e) => setSpotSpecies(e.target.value)} aria-label="環境スポットの樹種">
-                <option value="all">すべて</option>
-                {envSpots.species.filter((sp) => sp.kind === 'tree').map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
-              </select>
-              <span className={styles.num}>{visibleSpots.length}件</span>
-            </label>
-            {unsentSpots > 0 && <p className={styles.sub}>この端末の未送信 {unsentSpots} 件（電波のある所で自動的に送信します）</p>}
-            {envSpots.remoteError && <p className={styles.sub}>{envSpots.remoteError}</p>}
-
-            <h3 className={styles.h}>森林（森林計画・植生図）</h3>
+            </details>
+            <details className={styles.details} open={anyForestLayer(forestLayers)}>
+              <summary className={styles.h}>森林（森林計画・植生図）{anyForestLayer(forestLayers) ? '：表示中' : ''}</summary>
             <label className={styles.check}>
               <input type="checkbox" checked={showSpots && spotSpecies === 'tree-mizunara'} onChange={(e) => { setShowSpots(true); setSpotSpecies(e.target.checked ? 'tree-mizunara' : 'all'); }} />
               <span className={styles.swatch} style={{ background: SPOT_COLORS.alive, borderRadius: '50%', boxShadow: '0 0 0 2px #f9a825' }} />現地確認済みのミズナラ（環境スポット）
@@ -1003,7 +1012,12 @@ export default function ExplorationMap({ entries }: Props) {
               </>
             )}
 
-            <h3 className={styles.h}>重ねる情報</h3>
+            </details>
+              </>
+            )}
+            {tab === 'view' && (
+              <>
+            <h3 className={styles.h}>地図に重ねる</h3>
             <label className={styles.check}><input type="checkbox" checked={show.ridge} onChange={(e) => setShow((s) => ({ ...s, ridge: e.target.checked }))} /><span className={styles.swatch} style={{ background: '#7b2cbf' }} />尾根線</label>
             <label className={styles.check}><input type="checkbox" checked={show.sun} onChange={(e) => setShow((s) => ({ ...s, sun: e.target.checked }))} /><span className={styles.swatch} style={{ background: 'linear-gradient(90deg,#1c3f95,#f6d743)' }} />日射量</label>
             <label className={styles.check}><input type="checkbox" checked={show.road} onChange={(e) => setShow((s) => ({ ...s, road: e.target.checked }))} /><span className={styles.line} style={{ background: '#495057' }} />道路・林道<span className={styles.sub}>（茶=林道・幅3m未満）</span></label>
@@ -1041,6 +1055,71 @@ export default function ExplorationMap({ entries }: Props) {
             {activeSpecies !== ALL_SPECIES && <p className={styles.sub}>過去に記録した地点です（発生の予測ではありません）。「？」付きの記録は薄い点</p>}
             {entries.length === 0 && <p className={styles.sub}>Field Log はログイン中・読み込み済みのときだけ表示されます</p>}
 
+            <label className={styles.check}>
+              <input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} />
+              <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />沢の線（集水 10ha 以上）
+            </label>
+            <h3 className={styles.h}>環境スポット</h3>
+            <label className={styles.check}><input type="checkbox" checked={showSpots} onChange={(e) => setShowSpots(e.target.checked)} />地図に表示</label>
+            <div className={styles.chips}>
+              {KIND_CHOICES.map((k) => (
+                <label key={k.id} className={styles.chip}>
+                  <input type="checkbox" checked={spotKinds.includes(k.id)} onChange={(e) => setSpotKinds((c) => (e.target.checked ? [...c, k.id] : c.filter((x) => x !== k.id)))} />
+                  <span className={styles.swatch} style={{ background: SPOT_COLORS[k.id], borderRadius: '50%' }} />{k.label}
+                </label>
+              ))}
+            </div>
+            <label className={styles.check}>
+              樹種
+              <select className={styles.selectSmall} value={spotSpecies} onChange={(e) => setSpotSpecies(e.target.value)} aria-label="環境スポットの樹種">
+                <option value="all">すべて</option>
+                {envSpots.species.filter((sp) => sp.kind === 'tree').map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+              </select>
+              <span className={styles.num}>{visibleSpots.length}件</span>
+            </label>
+              </>
+            )}
+            {tab === 'record' && (
+              <>
+            <div className={styles.row}>
+              <button className={`${styles.btn} ${styles.primary}`} onClick={toggleGps}>{watching ? '現在地を止める' : '現在地を表示'}</button>
+              <label className={styles.check}><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />追従</label>
+            </div>
+            {gpsError && <p className={styles.warn}>{gpsError}</p>}
+            {pos && (
+              <p className={styles.here}>
+                {nearest ? `最寄りの条件に合う場所（${nearest.access}）: 約${Math.round(nearest.distanceM / 10) * 10}m ${bearingName(nearest.bearingDeg)}` : '約2.5km以内に条件に合う場所なし'}
+                {` ／ 精度 ±${Math.round(pos.accuracy)}m`}
+                {hereLines.length > 0 && <><br />ここ: {hereLines.filter((l) => l.startsWith('傾斜') || l.startsWith('日射')).join('・')}</>}
+              </p>
+            )}
+
+            <h3 className={styles.h}>環境スポット（現地の記録）</h3>
+            <div className={styles.row}>
+              <button className={`${styles.btn} ${styles.primary}`} disabled={!pos} onClick={() => pos && setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>現在地で記録</button>
+            </div>
+            {!pos && <p className={styles.sub}>現在地を表示すると記録できます。地図をタップして「ここを記録」でも記録できます</p>}
+            {unsentSpots > 0 && <p className={styles.sub}>この端末の未送信 {unsentSpots} 件（電波のある所で自動的に送信します）</p>}
+            {envSpots.remoteError && <p className={styles.sub}>{envSpots.remoteError}</p>}
+
+            <ExplorationHistoryPanel
+              history={history}
+              staffName={staffMe?.displayName ?? ''}
+              show={showHistory}
+              onShowChange={setShowHistory}
+              width={coverageWidth}
+              onWidthChange={setCoverageWidth}
+              purposeFilter={purposeFilter}
+              onPurposeFilterChange={setPurposeFilter}
+              period={period}
+              onPeriodChange={setPeriod}
+              exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
+            />
+
+              </>
+            )}
+            {tab === 'settings' && (
+              <>
             <h3 className={styles.h}>背景</h3>
             <select className={styles.select} value={base} onChange={(e) => setBase(e.target.value as Base)} aria-label="背景">
               <option value="offline">陰影（オフラインで使える）</option>
@@ -1084,6 +1163,8 @@ export default function ExplorationMap({ entries }: Props) {
               )}
               <p className={styles.sub}>出典: {manifest.sources.map((s) => s.name).join('、')}</p>
             </details>
+              </>
+            )}
           </div>
         )}
       </section>
