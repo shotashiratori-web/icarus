@@ -5,10 +5,15 @@ import { headingFromEvent, headingLabel, rotorSize, screenToMapPoint, smoothAngl
 
 describe('heading', () => {
   it('1. iOS は webkitCompassHeading、ほかは絶対 alpha（反時計回り）。画面の向きも足す', () => {
-    expect(headingFromEvent({ alpha: 10, webkitCompassHeading: 312 }, 0)).toBe(312);
-    expect(headingFromEvent({ alpha: 90, absolute: true }, 0)).toBe(270);
-    expect(headingFromEvent({ alpha: 90, absolute: false }, 0)).toBeNull(); // 相対値は使わない
-    expect(headingFromEvent({ alpha: null, webkitCompassHeading: 350 }, 90)).toBe(80); // 横向き
+    expect(headingFromEvent({ alpha: 10, webkitCompassHeading: 312 }, 0, 0)).toBe(312);
+    expect(headingFromEvent({ alpha: 90, absolute: true }, 0, 0)).toBe(270);
+    expect(headingFromEvent({ alpha: 90, absolute: false }, 0, 0)).toBeNull(); // 相対値は使わない
+    expect(headingFromEvent({ alpha: null, webkitCompassHeading: 350 }, 90, 0)).toBe(80); // 横向き
+  });
+
+  it('1b. 磁北 → 真北（余市付近は西偏 約 9.5°）: コンパスが 0°（磁北）なら真北では 350.5°', () => {
+    expect(headingFromEvent({ alpha: null, webkitCompassHeading: 0 }, 0)).toBeCloseTo(350.5, 6);
+    expect(headingFromEvent({ alpha: null, webkitCompassHeading: 100 }, 0)).toBeCloseTo(90.5, 6);
   });
 
   it('2. 0/360 をまたいでもなめらかに', () => {

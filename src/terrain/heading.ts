@@ -2,16 +2,21 @@
 // 地図の回転は CSS（回転プラグイン leaflet-rotate は GPL-3.0 のため使わない）。回転中は地図を自分の位置に固定し、
 // ドラッグは使わず、ズームは画面中央（=自分）を軸にする。タップ位置は回転を戻してから地図の座標にする
 
-// DeviceOrientationEvent → 北からの時計回りの向き（度）。iOS は webkitCompassHeading、ほかは絶対 alpha（反時計回り）
+// 磁気偏角（東が正）。コンパスは磁北、地図は真北なので足して真北にする。
+// 余市・仁木・赤井川付近は西偏 約 9.5°（国土地理院 磁気図 2020.0 の値の目安）。範囲が広がったらエリアごとに持つ
+export const DECLINATION_DEG = -9.5;
+
+// DeviceOrientationEvent → 真北からの時計回りの向き（度）。iOS は webkitCompassHeading（磁北基準）、ほかは絶対 alpha（反時計回り）
 export function headingFromEvent(
   e: { alpha: number | null; absolute?: boolean; webkitCompassHeading?: number },
   screenAngle: number,
+  declinationDeg = DECLINATION_DEG,
 ): number | null {
   let h: number | null = null;
   if (typeof e.webkitCompassHeading === 'number' && !Number.isNaN(e.webkitCompassHeading)) h = e.webkitCompassHeading;
   else if (e.absolute && typeof e.alpha === 'number') h = 360 - e.alpha;
   if (h === null) return null;
-  return (((h + screenAngle) % 360) + 360) % 360; // 画面を横にした時は画面の上の向きへ
+  return (((h + screenAngle + declinationDeg) % 360) + 360) % 360; // 画面を横にした時は画面の上の向きへ。磁北 → 真北
 }
 
 // 角度のなめらか化（0/360 をまたいでも正しく）。k: 新しい値の重み
