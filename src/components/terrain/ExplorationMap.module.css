@@ -378,3 +378,99 @@
   font-weight: 700;
   color: var(--color-text);
 }
+
+/* 進行方向モード: 地図を回す箱。通常は画面いっぱい。回転中は四隅が空かない大きさにして rotate */
+.rotor {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+}
+.rotating {
+  inset: auto;
+  will-change: transform;
+}
+.headingLabel {
+  position: absolute;
+  top: var(--space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 2px var(--space-3);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.northMark {
+  position: absolute;
+  top: calc(var(--space-2) + 36px);
+  right: var(--space-3);
+  z-index: 1000;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  color: #c62828;
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+.northMark span {
+  color: #212529;
+  font-weight: 700;
+}
+.headingZoom {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.headingAttribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  padding: 0 4px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+}
+.headingButton {
+  position: absolute;
+  right: var(--space-3);
+  top: calc(var(--space-2) + 84px);
+  z-index: 1001;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.headingAsk {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  width: min(320px, calc(100% - 32px));
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+@media (min-width: 601px) {
+  /* PC はパネルが右上にあるので下の中央へ */
+  .headingButton {
+    top: auto;
+    right: auto;
+    left: 50%;
+    bottom: var(--space-4);
+    transform: translateX(-50%);
+  }
+}

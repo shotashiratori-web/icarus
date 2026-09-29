@@ -37,6 +37,7 @@ import { useExplorationHistory, type HistoryEntry } from './useExplorationHistor
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import ContourLayer from './ContourLayer';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
+import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import styles from './ExplorationMap.module.css';
@@ -94,8 +95,39 @@ const fmtDate = (iso: string) => {
 
 const FOREST_ATTRIBUTION = '国土数値情報（国有林野）・北海道 森林計画・環境省 現存植生図2024 を加工';
 
-function ClickProbe({ onClick }: { onClick: (lat: number, lng: number) => void }) {
-  useMapEvents({ click: (e) => onClick(e.latlng.lat, e.latlng.lng) });
+function ClickProbe({ onClick, disabled }: { onClick: (lat: number, lng: number) => void; disabled?: boolean }) {
+  // 進行方向モードでは Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
+  useMapEvents({ click: (e) => { if (!disabled) onClick(e.latlng.lat, e.latlng.lng); } });
+  return null;
+}
+
+// 進行方向モード: 地図の大きさが変わったら知らせ、ドラッグを止めてズームは中心（=自分）を軸にする
+function HeadingSync({ on, size, pos, mapRef }: { on: boolean; size: number; pos: [number, number] | null; mapRef: React.MutableRefObject<L.Map | null> }) {
+  const map = useMap();
+  useEffect(() => { mapRef.current = map; }, [map, mapRef]);
+  useEffect(() => {
+    map.invalidateSize({ pan: false });
+    const setCenterZoom = (h: { disable: () => void; enable: () => void }, key: 'touchZoom' | 'scrollWheelZoom' | 'doubleClickZoom', v: boolean | 'center') => {
+      h.disable();
+      (map.options as Record<string, unknown>)[key] = v;
+      h.enable();
+    };
+    if (on) {
+      map.dragging.disable();
+      map.boxZoom.disable();
+      setCenterZoom(map.touchZoom, 'touchZoom', 'center');
+      setCenterZoom(map.scrollWheelZoom, 'scrollWheelZoom', 'center');
+      setCenterZoom(map.doubleClickZoom, 'doubleClickZoom', 'center');
+      if (pos) map.setView(pos, map.getZoom(), { animate: false });
+    } else {
+      map.dragging.enable();
+      map.boxZoom.enable();
+      setCenterZoom(map.touchZoom, 'touchZoom', true);
+      setCenterZoom(map.scrollWheelZoom, 'scrollWheelZoom', true);
+      setCenterZoom(map.doubleClickZoom, 'doubleClickZoom', true);
+    }
+    // pos は追従（Follow）が動かす。ここではモードと大きさが変わった時だけ
+  }, [map, on, size]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
 
@@ -437,6 +469,85 @@ export default function ExplorationMap({ entries }: Props) {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 },
     );
   }, []);
+  // ---- 進行方向モード: iPhone を向けている方向を画面の上にする（地図を回す）。方向センサーは押した時だけ許可を求める ----
+  const [headingMode, setHeadingMode] = useState(false);
+  const [headingAsk, setHeadingAsk] = useState(false);
+  const [headingMsg, setHeadingMsg] = useState<string | null>(null);
+  const sensorOk = useRef(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const rotorRef = useRef<HTMLDivElement | null>(null);
+  const labelRef = useRef<HTMLDivElement | null>(null);
+  const northRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const headingRef = useRef<number | null>(null);
+  const [rootSize, setRootSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setRootSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loaded]);
+  // 自分の位置は画面の少し下（前方を広く見る）
+  const anchor = useMemo(() => ({ x: rootSize.w / 2, y: rootSize.h * 0.62 }), [rootSize]);
+  const rotor = useMemo(() => rotorSize(rootSize.w, rootSize.h, anchor), [rootSize, anchor]);
+  const applyHeading = useCallback((deg: number) => {
+    if (rotorRef.current) rotorRef.current.style.transform = `rotate(${-deg}deg)`;
+    if (northRef.current) northRef.current.style.transform = `rotate(${-deg}deg)`;
+    if (labelRef.current) labelRef.current.textContent = headingLabel(deg);
+  }, []);
+  useEffect(() => {
+    if (!headingMode) return;
+    let raf = 0;
+    let got = false;
+    const onOri = (e: DeviceOrientationEvent) => {
+      const angle = (typeof screen !== 'undefined' && screen.orientation ? screen.orientation.angle : 0) || 0;
+      const h = headingFromEvent(e as DeviceOrientationEvent & { webkitCompassHeading?: number }, angle);
+      if (h === null) return;
+      got = true;
+      headingRef.current = smoothAngle(headingRef.current, h);
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (headingRef.current !== null) applyHeading(headingRef.current); });
+    };
+    const absEvent = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+    window.addEventListener(absEvent, onOri as EventListener);
+    const t = setTimeout(() => { if (!got) setHeadingMsg('方向センサーの値が届きません。iPhone を水平に持って 8 の字に動かすと直ることがあります'); }, 4000);
+    return () => { window.removeEventListener(absEvent, onOri as EventListener); cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [headingMode, applyHeading]);
+  const enterHeading = async () => {
+    setHeadingAsk(false);
+    const r = await requestOrientationPermission(); // 押した操作の中で呼ぶ（iOS の条件）
+    if (r !== 'granted') {
+      setHeadingMsg(r === 'unsupported' ? 'この端末では方向センサーを使えません' : '方向センサーが許可されていません（アプリを開き直すと、もう一度たずねます）');
+      return;
+    }
+    sensorOk.current = true;
+    setHeadingMsg(null);
+    headingRef.current = null;
+    if (watchId.current === null) { startGps(); rememberGps(true); }
+    setFollow(true);
+    setHeadingMode(true);
+  };
+  const exitHeading = () => {
+    setHeadingMode(false);
+    setHeadingMsg(null);
+    headingRef.current = null;
+    if (rotorRef.current) rotorRef.current.style.transform = '';
+  };
+  const onHeadingButton = () => {
+    if (headingMode) exitHeading();
+    else if (sensorOk.current) void enterHeading();
+    else setHeadingAsk(true);
+  };
+  // 回っている地図のタップ: 画面の点 → 回転を戻す → 地図の座標
+  const onRootClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!headingMode || !rotorRef.current || !rootRef.current || !mapRef.current) return;
+    if (!rotorRef.current.contains(e.target as Node)) return;
+    const r = rootRef.current.getBoundingClientRect();
+    const pt = screenToMapPoint({ x: e.clientX - r.left, y: e.clientY - r.top }, anchor, rotor, headingRef.current ?? 0);
+    const ll = mapRef.current.containerPointToLatLng([pt.x, pt.y]);
+    onMapClick(ll.lat, ll.lng);
+  };
+
   const toggleGps = () => {
     if (watchId.current !== null) {
       stopGps();
@@ -510,7 +621,12 @@ export default function ExplorationMap({ entries }: Props) {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} ref={rootRef} onClick={onRootClick}>
+      <div
+        ref={rotorRef}
+        className={`${styles.rotor} ${headingMode && rotor > 0 ? styles.rotating : ''}`}
+        style={headingMode && rotor > 0 ? { width: rotor, height: rotor, left: anchor.x - rotor / 2, top: anchor.y - rotor / 2 } : undefined}
+      >
       <MapContainer className={styles.map} bounds={bounds} maxBounds={maxBounds ?? undefined} maxBoundsViscosity={0.8} minZoom={10} preferCanvas zoomControl attributionControl>
         <FitOnce bounds={bounds} />
         {onlineBase && (
@@ -562,8 +678,36 @@ export default function ExplorationMap({ entries }: Props) {
           </>
         )}
         <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} bounds={manifest.bounds} />
-        <ClickProbe onClick={onMapClick} />
+        <ClickProbe onClick={onMapClick} disabled={headingMode} />
+        <HeadingSync on={headingMode} size={headingMode ? rotor : 0} pos={pos ? [pos.lat, pos.lng] : null} mapRef={mapRef} />
       </MapContainer>
+      </div>
+      {headingMode && (
+        <>
+          <div ref={labelRef} className={styles.headingLabel} aria-live="off">向きを取得中…</div>
+          <div ref={northRef} className={styles.northMark} aria-label="北">▲<span>N</span></div>
+          <div className={styles.headingZoom}>
+            <button className={styles.btn} onClick={() => mapRef.current?.zoomIn()} aria-label="拡大">＋</button>
+            <button className={styles.btn} onClick={() => mapRef.current?.zoomOut()} aria-label="縮小">－</button>
+          </div>
+          <div className={styles.headingAttribution}>国土地理院 | © OpenStreetMap contributors{forestUrl ? ` | ${FOREST_ATTRIBUTION}` : ''}</div>
+        </>
+      )}
+      {(pos || headingMode) && (
+        <button className={`${styles.btn} ${styles.headingButton} ${headingMode ? styles.primary : ''}`} onClick={onHeadingButton}>
+          {headingMode ? '北を上に戻す' : '進行方向'}
+        </button>
+      )}
+      {headingAsk && (
+        <div className={styles.headingAsk} role="dialog" aria-label="進行方向モード">
+          <p>地図を向いている方向に合わせるため、方向センサーを使用します。</p>
+          <div className={styles.row}>
+            <button className={`${styles.btn} ${styles.primary}`} onClick={() => void enterHeading()}>使う</button>
+            <button className={styles.btn} onClick={() => setHeadingAsk(false)}>やめる</button>
+          </div>
+        </div>
+      )}
+      {headingMsg && <div className={styles.toast} role="status" onClick={() => setHeadingMsg(null)}>{headingMsg}</div>}
 
       <section className={`${styles.panel} ${panelOpen ? '' : styles.collapsed}`} aria-label="地形探索の条件と操作">
         <div className={styles.panelHead}>
