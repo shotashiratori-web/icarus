@@ -406,8 +406,8 @@
 }
 .northMark {
   position: absolute;
-  top: calc(var(--space-2) + 36px);
-  right: var(--space-3);
+  top: calc(var(--space-2) + 100px);
+  left: var(--space-2);
   z-index: 1000;
   width: 40px;
   height: 40px;
@@ -445,13 +445,6 @@
   background: rgba(255, 255, 255, 0.8);
   font-size: 10px;
 }
-.headingButton {
-  position: absolute;
-  right: var(--space-3);
-  top: calc(var(--space-2) + 84px);
-  z-index: 1001;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
 .headingAsk {
   position: absolute;
   left: 50%;
@@ -464,30 +457,73 @@
   background: var(--color-surface);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
-@media (min-width: 601px) {
-  /* PC はパネルが右上にあるので下の中央へ */
-  .headingButton {
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: var(--space-4);
-    transform: translateX(-50%);
-  }
+
+
+/* パネルのタブ（探す／見る／記録／設定） */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.tab {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--color-text-sub);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+.tabOn {
+  border-bottom-color: var(--color-primary, #2b8a3e);
+  color: var(--color-text);
+}
+.linkBtn {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
 }
 
-/* 環境スポットの記録（現在地）。進行方向ボタンの下 */
-.recordButton {
+/* 地図の上のボタン（現在地・進行方向・記録）。スマホは右上、PC はパネルが右上なので左（ズームの下） */
+.toolbar {
   position: absolute;
-  right: var(--space-3);
-  top: calc(var(--space-2) + 132px);
+  top: var(--space-2);
+  right: var(--space-2);
   z-index: 1001;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.tool {
+  min-height: 40px;
+  min-width: 84px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.toolOn {
+  border-color: var(--color-primary, #2b8a3e);
+  background: var(--color-primary, #2b8a3e);
+  color: #fff;
 }
 @media (min-width: 601px) {
-  .recordButton {
-    top: auto;
+  .toolbar {
     right: auto;
-    left: calc(50% + 70px);
-    bottom: var(--space-4);
+    left: 10px;
+    top: 84px;
+    align-items: flex-start;
   }
 }
