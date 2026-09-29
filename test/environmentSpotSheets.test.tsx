@@ -1,0 +1,86 @@
+import 'fake-indexeddb/auto';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import EnvironmentSpotRecordSheet from '../src/components/terrain/EnvironmentSpotRecordSheet';
+import EnvironmentSpotDetailSheet from '../src/components/terrain/EnvironmentSpotDetailSheet';
+import type { EnvSpeciesItem, EnvironmentSpot } from '../src/environmentSpots/types';
+import type { SpotMarker } from '../src/components/terrain/useEnvironmentSpots';
+
+// 環境スポットの記録・詳細の画面（S3）: 種類ボタン → 樹種（不明・その他）→ 写真 or 写真なし理由、位置の取り方、
+// 観察は対象の初期値なし・あり／なし／見ていない、年ごとの年表
+
+const sp = (id: string, kind: 'tree' | 'target', name: string, extra: Partial<EnvSpeciesItem> = {}): EnvSpeciesItem => ({ id, kind, name, aliases: [], isUnknown: false, isOther: false, sortOrder: 0, status: 'active', ...extra });
+const SPECIES = [
+  sp('tree-mizunara', 'tree', 'ミズナラ', { sortOrder: 10 }), sp('tree-unknown', 'tree', '不明', { sortOrder: 900, isUnknown: true }),
+  sp('tree-other', 'tree', 'その他', { sortOrder: 990, isOther: true }), sp('target-maitake', 'target', 'マイタケ', { sortOrder: 10 }), sp('target-naratake', 'target', 'ナラタケ', { sortOrder: 20 }),
+];
+
+describe('EnvironmentSpotRecordSheet', () => {
+  it('1. 種類・樹種・写真なし理由がそろうまで保存できない。地図指定は GPS 精度を送らない。記録時の地形を付ける', async () => {
+    const onSave = vi.fn(async (..._a: unknown[]) => undefined);
+    render(<EnvironmentSpotRecordSheet location={{ lat: 43.1, lng: 140.8, source: 'map', accuracyM: null }} species={SPECIES} terrainAt={() => ({ terrainVersion: 'v', aspect: '南西' })} onSave={onSave} onClose={vi.fn()} />);
+    const save = screen.getByRole('button', { name: '端末に保存して送信' });
+    expect(save).toBeDisabled();
+    expect(screen.getByText('地図で指定', { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '倒木' }));
+    expect(screen.getByText('樹種を選んでください（分からない時は「不明」）')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'その他' })[1]); // [0] は種類の「その他」、[1] は樹種の「その他」
+    expect(save).toBeDisabled(); // その他は名前が必要
+    fireEvent.change(screen.getByPlaceholderText('樹種名（例: キハダ）'), { target: { value: 'キハダ' } });
+    expect(save).toBeDisabled(); // 写真も理由も無い
+    fireEvent.click(screen.getByRole('button', { name: '危険で撮影不可' }));
+    fireEvent.click(screen.getByRole('button', { name: '2 一部腐朽' }));
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const [body, photos] = onSave.mock.calls[0] as unknown as [Record<string, unknown>, unknown[]];
+    expect(photos).toEqual([]);
+    expect(body).toMatchObject({
+      envType: 'tree', lifeState: 'fallen', treeSpeciesId: 'tree-other', treeSpeciesText: 'キハダ', decayClass: 2,
+      locationSource: 'map', gpsAccuracyM: null, photoMissingReason: 'danger', terrain: { terrainVersion: 'v', aspect: '南西' },
+    });
+  });
+
+  it('2. 地形は樹種を聞かない（生死は該当なし）。現在地は精度を送る', async () => {
+    const onSave = vi.fn(async (..._a: unknown[]) => undefined);
+    render(<EnvironmentSpotRecordSheet location={{ lat: 43.1, lng: 140.8, source: 'gps', accuracyM: 12 }} species={SPECIES} terrainAt={() => null} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '地形' }));
+    expect(screen.queryByText('樹種')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '暗い' }));
+    fireEvent.click(screen.getByRole('button', { name: '端末に保存して送信' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ envType: 'terrain', lifeState: 'na', treeSpeciesId: null, locationSource: 'gps', gpsAccuracyM: 12 });
+  });
+});
+
+describe('EnvironmentSpotDetailSheet', () => {
+  const remote: EnvironmentSpot = {
+    id: 's1', title: 'ミズナラ（生木）', envType: 'tree', lifeState: 'alive', treeSpeciesId: 'tree-mizunara', treeSpecies: 'ミズナラ', treeSpeciesText: null,
+    dbhCm: 62, decayClass: null, lat: 43.1, lng: 140.8, locationSource: 'gps', gpsAccuracyM: 8, photoMissingReason: null, photoMissingMemo: null,
+    photos: [], memo: '', terrain: null, observedAt: '2026-09-29T00:12:00Z', status: 'active', createdByName: '翔大', createdAt: '', updatedAt: '',
+    observations: [
+      { id: 'o1', observedAt: '2026-09-10T01:00:00Z', targetSpeciesId: 'target-maitake', target: 'マイタケ', targetText: '', result: 'not_found', foundStage: null, memo: '', status: 'active', createdByName: '翔大', createdAt: '', updatedAt: '' },
+      { id: 'o2', observedAt: '2027-09-28T01:00:00Z', targetSpeciesId: 'target-maitake', target: 'マイタケ', targetText: '', result: 'found', foundStage: 'prime', memo: '', status: 'active', createdByName: '翔大', createdAt: '', updatedAt: '' },
+    ],
+  };
+  const marker = { key: 's:s1', origin: 'server', spotId: 's1', pendingId: null, lat: 43.1, lng: 140.8, envType: 'tree', lifeState: 'alive', treeSpeciesId: 'tree-mizunara', label: 'ミズナラ（生木）', status: 'registered', error: null, observedAt: null, remote, pending: null } as SpotMarker;
+
+  it('3. 観察を年ごとに表示。対象は未選択から始まり、対象と結果がそろうまで保存できない', async () => {
+    const onObserve = vi.fn(async (..._a: unknown[]) => undefined);
+    render(<EnvironmentSpotDetailSheet marker={marker} species={SPECIES} pendingObs={[]} idToken={null} onObserve={onObserve} onClose={vi.fn()} />);
+    expect(screen.getByText('2027年')).toBeInTheDocument();
+    expect(screen.getByText('2026年')).toBeInTheDocument();
+    expect(screen.getByText('（適期）', { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '観察を追加' }));
+    const save = screen.getByRole('button', { name: '端末に保存して送信' });
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'マイタケ' }).className).not.toMatch(/on/); // 初期値なし
+    fireEvent.click(screen.getByRole('button', { name: 'なし' }));
+    expect(save).toBeDisabled(); // 対象が無い
+    fireEvent.click(screen.getByRole('button', { name: 'マイタケ' }));
+    fireEvent.click(save);
+    await waitFor(() => expect(onObserve).toHaveBeenCalledTimes(1));
+    expect(onObserve.mock.calls[0][0]).toEqual({ spotId: 's1', pendingSpotId: null });
+    expect(onObserve.mock.calls[0][1]).toMatchObject({ targetSpeciesId: 'target-maitake', targetText: '', result: 'not_found', foundStage: null });
+  });
+});

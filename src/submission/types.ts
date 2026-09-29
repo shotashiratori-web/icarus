@@ -1,4 +1,4 @@
-export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'wineTastingNote' | 'wineTastingNotePhoto' | 'daily' | 'workLog' | 'explorationSession';
+export type SubmissionEntity = 'foodLog' | 'fieldLog' | 'fieldLogD1' | 'spot' | 'wine' | 'wineTastingNote' | 'wineTastingNotePhoto' | 'daily' | 'workLog' | 'explorationSession' | 'environmentSpot' | 'spotObservation';
 
 export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   foodLog: '食材ログ',
@@ -14,6 +14,9 @@ export const ENTITY_LABELS: Record<SubmissionEntity, string> = {
   workLog: '作業ログ',
   // Exploration History（Stage 2）。GPX 原本は別の端末保存（icarus-exploration）にあり、ここには ID だけ
   explorationSession: '探索の記録（GPX）',
+  // Environment Spots（S3）。写真の原本は別の端末保存（icarus-environment-spots）にあり、ここには ID だけ
+  environmentSpot: '環境スポット',
+  spotObservation: '環境スポットの観察',
 };
 
 // draft/sending はEntity側の画面状態が管理する。ここで永続化するのはpendingのみ(Phase1)。

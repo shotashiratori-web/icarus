@@ -36,6 +36,11 @@ import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/typ
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import ContourLayer from './ContourLayer';
+import { useEnvironmentSpots, type SpotMarker } from './useEnvironmentSpots';
+import EnvironmentSpotRecordSheet, { type RecordLocation } from './EnvironmentSpotRecordSheet';
+import EnvironmentSpotDetailSheet from './EnvironmentSpotDetailSheet';
+import { KIND_CHOICES, type SpotKindChoice } from '../../environmentSpots/types';
+import { aspectDeg as hydroAspectDeg, directionOf as hydroDirectionOf, LANDFORMS as HYDRO_LANDFORMS, twiValue as hydroTwiValue } from '../../terrain/hydro';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
@@ -92,6 +97,9 @@ const fmtDate = (iso: string) => {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
+
+// 環境スポットの色（種類・生死）。ミズナラは金色の縁
+const SPOT_COLORS: Record<SpotKindChoice, string> = { alive: '#2e7d32', snag: '#a1887f', fallen: '#5d4037', terrain: '#546e7a', other: '#9e9e9e' };
 
 const FOREST_ATTRIBUTION = '国土数値情報（国有林野）・北海道 森林計画・環境省 現存植生図2024 を加工';
 
@@ -253,6 +261,18 @@ export default function ExplorationMap({ entries }: Props) {
   const cc = useMemo(() => (manifest ? compileConditions(manifest, conditions) : null), [manifest, conditions]);
   // ---- 探索履歴（Stage 2）: 「探索済み」は保存せず、絞り込んだ軌跡 × 探索幅から毎回求める ----
   const history = useExplorationHistory(idToken, manifest?.areaId ?? null);
+  // ---- 環境スポット（S3）: この木（地形・その他）がここにある、という現地の記録と、時間つきの観察 ----
+  const spotBbox = useMemo<[number, number, number, number] | null>(() => (manifest ? [manifest.bounds.south, manifest.bounds.west, manifest.bounds.north, manifest.bounds.east] : null), [manifest]);
+  const envSpots = useEnvironmentSpots(idToken, spotBbox);
+  const [showSpots, setShowSpots] = useState(true);
+  const [spotKinds, setSpotKinds] = useState<SpotKindChoice[]>(KIND_CHOICES.map((k) => k.id));
+  const [spotSpecies, setSpotSpecies] = useState<string>('all');
+  const [recordLoc, setRecordLoc] = useState<RecordLocation | null>(null);
+  const [selectedSpot, setSelectedSpot] = useState<string | null>(null);
+  const kindOf = (m: SpotMarker): SpotKindChoice => (m.envType === 'tree' ? (m.lifeState as SpotKindChoice) : m.envType);
+  const visibleSpots = useMemo(() => (showSpots ? envSpots.markers.filter((m) => spotKinds.includes(kindOf(m)) && (spotSpecies === 'all' || m.treeSpeciesId === spotSpecies)) : []), [showSpots, envSpots.markers, spotKinds, spotSpecies]);
+  const selectedMarker = envSpots.markers.find((m) => m.key === selectedSpot) ?? null;
+  const unsentSpots = envSpots.markers.filter((m) => m.origin === 'device' && m.status !== 'registered').length + envSpots.pendingObs.filter((o) => o.stage !== 'registered').length;
   const [showHistory, setShowHistory] = useState(true);
   const [coverageWidth, setCoverageWidth] = useState<CoverageWidth>(DEFAULT_COVERAGE_WIDTH);
   const [purposeFilter, setPurposeFilter] = useState<Purpose | 'all'>('all');
@@ -442,6 +462,37 @@ export default function ExplorationMap({ entries }: Props) {
     }
     return lines;
   }, [loaded, manifest, cc, coverage, showHistory, visibleHistory, coverageWidth]);
+
+  // 記録時の地形の値（terrain_json）。端末の地形パッケージから計算し、version とデータの年を付ける
+  const terrainAt = useCallback((lat: number, lng: number): Record<string, unknown> | null => {
+    if (!loaded || !manifest) return null;
+    const { x, y } = latLngToGrid(manifest, lat, lng);
+    const i = cellIndex(loaded.grid, x, y);
+    if (i === null) return { terrainVersion: manifest.version, outside: true };
+    const v = cellValues(manifest, loaded.grid, i);
+    const snap: Record<string, unknown> = {
+      terrainVersion: manifest.version, slopeDeg: Math.round(v.slopeDeg), sun: Math.round(v.sun * 100) / 100,
+      ridgeM: v.ridgeM === null ? null : Math.round(v.ridgeM), roadM: v.roadM === null ? null : Math.round(v.roadM),
+    };
+    const h = loaded.hydro;
+    if (h) {
+      const d = hydroAspectDeg(h.aspect[i]);
+      snap.aspectDeg = d === null ? null : Math.round(d);
+      snap.aspect = d === null ? '平坦' : DIRECTION_LABEL[hydroDirectionOf(d)];
+      snap.landform = HYDRO_LANDFORMS.find((l) => l.id === h.landform[i])?.label ?? null;
+      snap.streamM = h.streamDist[i] === 255 ? null : Math.round(h.streamDist[i] * manifest.grid.pxM);
+      snap.stream = h.streamDist[i] === 255 ? '沢から約1.2km以上' : `沢から約${Math.round((h.streamDist[i] * manifest.grid.pxM) / 10) * 10}m`;
+      snap.twi = Math.round(hydroTwiValue(manifest, h.twiLevel[i]) * 10) / 10;
+    }
+    const f = loaded.forest;
+    if (f) {
+      const st = f.stand[i] ? f.stands[f.stand[i] - 1] : null;
+      const vg = f.veg[i] ? f.vegs[f.veg[i] - 1] : null;
+      snap.forestStand = st ? { owner: st.owner, year: st.year, species: st.species.map(([n]) => n), mizunaraRank: st.mizunaraRank } : null;
+      snap.vegetation = vg ? { name: vg.name, year: vg.year } : null;
+    }
+    return snap;
+  }, [loaded, manifest]);
 
   const onMapClick = useCallback((lat: number, lng: number) => setProbe({ lat, lng, lines: describePoint(lat, lng) }), [describePoint]);
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
@@ -665,6 +716,19 @@ export default function ExplorationMap({ entries }: Props) {
             </Popup>
           </Polyline>
         ))}
+        {visibleSpots.map((m) => (
+          <CircleMarker
+            key={m.key}
+            center={[m.lat, m.lng]}
+            radius={m.treeSpeciesId === 'tree-mizunara' ? 8 : 7}
+            pathOptions={{
+              color: m.treeSpeciesId === 'tree-mizunara' ? '#f9a825' : '#fff', weight: m.treeSpeciesId === 'tree-mizunara' ? 3 : 1.5,
+              dashArray: m.origin === 'device' && m.status !== 'registered' ? '3 3' : undefined,
+              fillColor: SPOT_COLORS[kindOf(m)], fillOpacity: 0.95,
+            }}
+            eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); setSelectedSpot(m.key); } }}
+          />
+        ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
             <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}</Popup>
@@ -692,6 +756,28 @@ export default function ExplorationMap({ entries }: Props) {
           </div>
           <div className={styles.headingAttribution}>国土地理院 | © OpenStreetMap contributors{forestUrl ? ` | ${FOREST_ATTRIBUTION}` : ''}</div>
         </>
+      )}
+      {recordLoc && (
+        <EnvironmentSpotRecordSheet
+          location={recordLoc}
+          species={envSpots.species}
+          terrainAt={terrainAt}
+          onSave={async (b, ph) => { await envSpots.record(b, ph); }}
+          onClose={() => setRecordLoc(null)}
+        />
+      )}
+      {selectedMarker && !recordLoc && (
+        <EnvironmentSpotDetailSheet
+          marker={selectedMarker}
+          species={envSpots.species}
+          pendingObs={envSpots.pendingObs}
+          idToken={idToken}
+          onObserve={async (t, input) => { await envSpots.observe(t, input); }}
+          onClose={() => setSelectedSpot(null)}
+        />
+      )}
+      {pos && !headingMode && !recordLoc && (
+        <button className={`${styles.btn} ${styles.recordButton}`} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
       )}
       {(pos || headingMode) && (
         <button className={`${styles.btn} ${styles.headingButton} ${headingMode ? styles.primary : ''}`} onClick={onHeadingButton}>
@@ -843,7 +929,36 @@ export default function ExplorationMap({ entries }: Props) {
               </>
             )}
 
+            <h3 className={styles.h}>環境スポット（現地の記録）</h3>
+            <div className={styles.row}>
+              <button className={`${styles.btn} ${styles.primary}`} disabled={!pos} onClick={() => pos && setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>現在地で記録</button>
+              <label className={styles.check}><input type="checkbox" checked={showSpots} onChange={(e) => setShowSpots(e.target.checked)} />地図に表示</label>
+            </div>
+            {!pos && <p className={styles.sub}>現在地を表示すると記録できます。地図をタップして「ここを記録」でも記録できます</p>}
+            <div className={styles.chips}>
+              {KIND_CHOICES.map((k) => (
+                <label key={k.id} className={styles.chip}>
+                  <input type="checkbox" checked={spotKinds.includes(k.id)} onChange={(e) => setSpotKinds((c) => (e.target.checked ? [...c, k.id] : c.filter((x) => x !== k.id)))} />
+                  <span className={styles.swatch} style={{ background: SPOT_COLORS[k.id], borderRadius: '50%' }} />{k.label}
+                </label>
+              ))}
+            </div>
+            <label className={styles.check}>
+              樹種
+              <select className={styles.selectSmall} value={spotSpecies} onChange={(e) => setSpotSpecies(e.target.value)} aria-label="環境スポットの樹種">
+                <option value="all">すべて</option>
+                {envSpots.species.filter((sp) => sp.kind === 'tree').map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+              </select>
+              <span className={styles.num}>{visibleSpots.length}件</span>
+            </label>
+            {unsentSpots > 0 && <p className={styles.sub}>この端末の未送信 {unsentSpots} 件（電波のある所で自動的に送信します）</p>}
+            {envSpots.remoteError && <p className={styles.sub}>{envSpots.remoteError}</p>}
+
             <h3 className={styles.h}>森林（森林計画・植生図）</h3>
+            <label className={styles.check}>
+              <input type="checkbox" checked={showSpots && spotSpecies === 'tree-mizunara'} onChange={(e) => { setShowSpots(true); setSpotSpecies(e.target.checked ? 'tree-mizunara' : 'all'); }} />
+              <span className={styles.swatch} style={{ background: SPOT_COLORS.alive, borderRadius: '50%', boxShadow: '0 0 0 2px #f9a825' }} />現地確認済みのミズナラ（環境スポット）
+            </label>
             {!forest && !loaded.forestError && <p className={styles.sub}>この版の地形データには森林がありません（新しい版を「更新して保存」すると使えます）</p>}
             {loaded.forestError && <p className={styles.sub}>{loaded.forestError}</p>}
             {forest && forestHa && (
@@ -975,6 +1090,7 @@ export default function ExplorationMap({ entries }: Props) {
           <button className={styles.probeClose} onClick={() => setProbe(null)} aria-label="閉じる">×</button>
           {probe.lines.map((l) => <div key={l}>{l}</div>)}
           <div className={styles.probeActions}>
+            <button className={styles.btn} onClick={() => { setRecordLoc({ lat: probe.lat, lng: probe.lng, source: 'map', accuracyM: null }); setProbe(null); }}>ここを記録</button>
             <a className={styles.btn} href={googleMapsPinUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">Googleマップで開く</a>
             <a className={styles.btn} href={googleMapsDirectionsUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">ここへの経路</a>
             <button
