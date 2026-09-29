@@ -15,6 +15,10 @@ import {
   type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import {
+  anyTerrainCondition, describeHydro, DIRECTION_LABEL, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
+  type Direction, type HydroGrid, type TerrainConditions, type Wetness,
+} from '../../terrain/hydro';
+import {
   bearingName, cellIndex, cellValues, compileConditions, isCandidateRaw, accessClassRaw, latLngToGrid,
   nearestCandidate, candidateStats, type ExplorationConditions, type AccessClass,
 } from '../../terrain/engine';
@@ -53,6 +57,19 @@ interface Loaded {
   hillshadeUrl: string;
   forest: ForestData | null; // 2026-09-29 より前の版には無い
   forestError: string | null;
+  hydro: HydroGrid | null; // DEM 由来の地形（terrain2.png）。無い版もある
+  hydroError: string | null;
+}
+
+async function decodeHydroPkg(pkg: AreaPackage): Promise<{ hydro: HydroGrid | null; hydroError: string | null }> {
+  const png = pkg.files['terrain2.png'];
+  if (!png) return { hydro: null, hydroError: null };
+  try {
+    const px = await pixels(png);
+    return { hydro: hydroFromPixels(pkg.manifest, px.data, px.width, px.height), hydroError: null };
+  } catch (e) {
+    return { hydro: null, hydroError: e instanceof Error ? e.message : '地形（方位・沢）を読めませんでした' };
+  }
 }
 
 // 森林（forest.png + forest.json）。読めなくても地形探索は使えるようにする
@@ -137,10 +154,10 @@ export default function ExplorationMap({ entries }: Props) {
 
   // ---- 読み込み: 保存済みがあればそれを先に使い、電波とログインがあれば新しい版を確かめる ----
   const load = useCallback(async (pkg: AreaPackage) => {
-    const [grid, roads, fr] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg)]);
+    const [grid, roads, fr, hy] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg)]);
     setLoaded((prev) => {
       if (prev) URL.revokeObjectURL(prev.hillshadeUrl);
-      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr };
+      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr, ...hy };
     });
   }, []);
 
@@ -295,6 +312,38 @@ export default function ExplorationMap({ entries }: Props) {
     });
     return () => { revoked = true; };
   }, [forest, forestLayers]);
+  // ---- DEM 由来の地形（S2）: 条件どうしは AND、1 つの条件の中は OR。既定は条件なし ----
+  const [terrainCond, setTerrainCond] = useState<TerrainConditions>(NO_TERRAIN_CONDITIONS);
+  const [showStreams, setShowStreams] = useState(false);
+  const hydro = loaded?.hydro ?? null;
+  const [hydroUrl, setHydroUrl] = useState<string | null>(null);
+  const [terrainMatchKm2, setTerrainMatchKm2] = useState<number | null>(null);
+  const hydroCanvas = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!hydro || !manifest || (!anyTerrainCondition(terrainCond) && !showStreams)) {
+      setHydroUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setTerrainMatchKm2(null);
+      return;
+    }
+    const canvas = hydroCanvas.current ?? (hydroCanvas.current = document.createElement('canvas'));
+    canvas.width = hydro.width;
+    canvas.height = hydro.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(hydro.width, hydro.height);
+    const { matchCells } = renderHydro(manifest, hydro, terrainCond, showStreams, img.data);
+    setTerrainMatchKm2(anyTerrainCondition(terrainCond) ? (matchCells * manifest.grid.pxM * manifest.grid.pxM) / 1e6 : null);
+    ctx.putImageData(img, 0, 0);
+    let revoked = false;
+    canvas.toBlob((blob) => {
+      if (!blob || revoked) return;
+      const url = URL.createObjectURL(blob);
+      setHydroUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
+    });
+    return () => { revoked = true; };
+  }, [hydro, manifest, terrainCond, showStreams]);
+  const toggleIn = <T,>(list: T[], v: T, on: boolean) => (on ? [...list, v] : list.filter((x) => x !== v));
+
   const toggleForest = (k: Exclude<keyof ForestLayers, 'vegMizunara'>) => (e: React.ChangeEvent<HTMLInputElement>) => setForestLayers((l) => ({ ...l, [k]: e.target.checked }));
   const toggleCommunity = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForestLayers((l) => ({ ...l, vegMizunara: e.target.checked ? [...l.vegMizunara, name] : l.vegMizunara.filter((n) => n !== name) }));
@@ -347,6 +396,7 @@ export default function ExplorationMap({ entries }: Props) {
     lines.push(`尾根線から ${v.ridgeM === null ? '200m以上' : `約${Math.round(v.ridgeM / 10) * 10}m`}`);
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
+    if (loaded.hydro) lines.push(...describeHydro(manifest, loaded.hydro, i));
     if (loaded.forest) lines.push(...describeForest(loaded.forest, i));
     if (showHistory) {
       // この地点を探索範囲（線から探索幅）に含むセッションを全部出す（日付・目的・歩いた人・対象の結果）
@@ -474,6 +524,7 @@ export default function ExplorationMap({ entries }: Props) {
         {!onlineBase && <ImageOverlay url={loaded.hillshadeUrl} bounds={bounds} attribution={attribution} />}
         {forestUrl && <ImageOverlay url={forestUrl} bounds={bounds} opacity={1} zIndex={4} attribution={FOREST_ATTRIBUTION} />}
         {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={1} zIndex={5} />}
+        {hydroUrl && <ImageOverlay url={hydroUrl} bounds={bounds} opacity={1} zIndex={6} />}
         {showContours && contours && contours.version === manifest.version && <ContourLayer contours={contours.data} />}
         {roadGroups && show.road && (
           <>
@@ -590,6 +641,60 @@ export default function ExplorationMap({ entries }: Props) {
               onPeriodChange={setPeriod}
               exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
             />
+
+            <h3 className={styles.h}>地形の条件（DEM から計算）</h3>
+            {!hydro && !loaded.hydroError && <p className={styles.sub}>この版の地形データには方位・沢がありません（新しい版を「更新して保存」すると使えます）</p>}
+            {loaded.hydroError && <p className={styles.sub}>{loaded.hydroError}</p>}
+            {hydro && (
+              <>
+                <p className={styles.sub}>選んだ条件をすべて満たす範囲を<span style={{ color: `rgb(${TERRAIN_MATCH_COLOR.slice(0, 3).join(',')})`, fontWeight: 700 }}> 点 </span>で表示（同じ項目の中はどれか、項目どうしは全部）</p>
+                <p className={styles.sub}>斜面の向き</p>
+                <div className={styles.chips}>
+                  {DIRECTIONS.map((d: Direction) => (
+                    <label key={d} className={styles.chip}>
+                      <input type="checkbox" checked={terrainCond.directions.includes(d)} onChange={(e) => setTerrainCond((c) => ({ ...c, directions: toggleIn(c.directions, d, e.target.checked) }))} />
+                      {DIRECTION_LABEL[d]}
+                    </label>
+                  ))}
+                </div>
+                <p className={styles.sub}>斜面の位置</p>
+                <div className={styles.chips}>
+                  {LANDFORMS.map((l) => (
+                    <label key={l.id} className={styles.chip}>
+                      <input type="checkbox" checked={terrainCond.landforms.includes(l.id)} onChange={(e) => setTerrainCond((c) => ({ ...c, landforms: toggleIn(c.landforms, l.id as number, e.target.checked) }))} />
+                      {l.label}
+                    </label>
+                  ))}
+                </div>
+                <p className={styles.sub}>湿潤度（水の集まりやすさ）</p>
+                <div className={styles.chips}>
+                  {(['low', 'mid', 'high'] as Wetness[]).map((w) => (
+                    <label key={w} className={styles.chip}>
+                      <input type="checkbox" checked={terrainCond.wetness.includes(w)} onChange={(e) => setTerrainCond((c) => ({ ...c, wetness: toggleIn(c.wetness, w, e.target.checked) }))} />
+                      {WETNESS_LABEL[w]}
+                    </label>
+                  ))}
+                </div>
+                <label className={styles.check}>
+                  沢から
+                  <select className={styles.selectSmall} value={terrainCond.streamWithinM ?? ''} onChange={(e) => setTerrainCond((c) => ({ ...c, streamWithinM: e.target.value ? Number(e.target.value) : null }))} aria-label="沢から○m以内">
+                    <option value="">指定なし</option>
+                    {[50, 100, 200, 300].map((v) => <option key={v} value={v}>{v}m 以内</option>)}
+                  </select>
+                  <select className={styles.selectSmall} value={terrainCond.streamBeyondM ?? ''} onChange={(e) => setTerrainCond((c) => ({ ...c, streamBeyondM: e.target.value ? Number(e.target.value) : null }))} aria-label="沢から○m以上">
+                    <option value="">指定なし</option>
+                    {[100, 200, 300, 500].map((v) => <option key={v} value={v}>{v}m 以上</option>)}
+                  </select>
+                </label>
+                <label className={styles.check}>
+                  <input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} />
+                  <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />沢の線（集水 10ha 以上）
+                </label>
+                {terrainMatchKm2 !== null && <p className={styles.sub}>条件をすべて満たす範囲 {terrainMatchKm2.toFixed(1)} km²</p>}
+                {anyTerrainCondition(terrainCond) && <button className={styles.btn} onClick={() => setTerrainCond(NO_TERRAIN_CONDITIONS)}>地形の条件をクリア</button>}
+                <p className={styles.sub}>沢は DEM から計算した水の通り道で、実際の水の有無とは違います。上部斜面（肩の目安）は試験的な分類です。</p>
+              </>
+            )}
 
             <h3 className={styles.h}>森林（森林計画・植生図）</h3>
             {!forest && !loaded.forestError && <p className={styles.sub}>この版の地形データには森林がありません（新しい版を「更新して保存」すると使えます）</p>}
