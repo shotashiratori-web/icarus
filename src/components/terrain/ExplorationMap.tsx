@@ -15,7 +15,7 @@ import {
   type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import {
-  anyTerrainCondition, describeHydro, DIRECTION_LABEL, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
+  anyTerrainCondition, describeHydro, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
 } from '../../terrain/hydro';
 import {
@@ -571,6 +571,9 @@ export default function ExplorationMap({ entries }: Props) {
           <span className={styles.areaName}>{manifest.name}</span>
           <button className={styles.btn} onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>{panelOpen ? '閉じる' : '条件・操作'}</button>
         </div>
+        {hydro && anyTerrainCondition(terrainCond) && (
+          <p className={styles.condSummary}>地形条件：{summarizeTerrain(terrainCond)}{terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)} km²）` : ''}</p>
+        )}
 
         {panelOpen && (
           <div className={styles.panelBody}>

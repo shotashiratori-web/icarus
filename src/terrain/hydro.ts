@@ -130,3 +130,35 @@ export function describeHydro(m: TerrainManifest, h: HydroGrid, i: number): stri
     `${stream}・湿潤度 ${WETNESS_LABEL[wetnessOf(m, h.twiLevel[i])]}（TWI ${tw.toFixed(1)}）`,
   ];
 }
+
+// ---- 選択中の条件を短くまとめる（パネル上部に出す。S4 で森林・探索実績と組み合わせても何を選んでいるか分かるように） ----
+const LANDFORM_SHORT: Record<number, string> = { 1: '尾根', 2: '上部斜面', 3: '中腹', 4: '平坦', 5: '下部斜面', 6: '谷' };
+const WETNESS_SHORT: Record<Wetness, string> = { low: '乾燥', mid: '中', high: '湿潤' };
+
+// 方位: 時計回りに連続していれば「南〜西」、飛び飛びなら「北・南」。8 方位すべてなら条件なしと同じなので「全方位」
+export function summarizeDirections(ds: Direction[]): string {
+  if (ds.length === 0) return '';
+  if (ds.length === 8) return '全方位';
+  const on = DIRECTIONS.map((d) => ds.includes(d));
+  // 連続した区間を、選ばれていない方位の直後から時計回りに集める
+  const start = on.findIndex((v, i) => v && !on[(i + 7) % 8]);
+  const runs: Direction[][] = [];
+  for (let k = 0; k < 8; k++) {
+    const i = (start + k) % 8;
+    if (!on[i]) continue;
+    if (!on[(i + 7) % 8] || runs.length === 0) runs.push([]);
+    runs[runs.length - 1].push(DIRECTIONS[i]);
+  }
+  return runs.map((r) => (r.length >= 3 ? `${DIRECTION_LABEL[r[0]]}〜${DIRECTION_LABEL[r[r.length - 1]]}` : r.map((d) => DIRECTION_LABEL[d]).join('・'))).join('・');
+}
+
+export function summarizeTerrain(c: TerrainConditions): string {
+  const parts: string[] = [];
+  const d = summarizeDirections(c.directions);
+  if (d) parts.push(d);
+  if (c.landforms.length) parts.push([...c.landforms].sort().map((l) => LANDFORM_SHORT[l]).join('・'));
+  if (c.wetness.length) parts.push((['low', 'mid', 'high'] as Wetness[]).filter((w) => c.wetness.includes(w)).map((w) => WETNESS_SHORT[w]).join('・'));
+  if (c.streamWithinM !== null) parts.push(`沢から${c.streamWithinM}m以内`);
+  if (c.streamBeyondM !== null) parts.push(`沢から${c.streamBeyondM}m以上`);
+  return parts.join(' / ');
+}
