@@ -774,6 +774,9 @@ export default function ExplorationMap({ entries }: Props) {
           idToken={idToken}
           onObserve={async (t, input) => { await envSpots.observe(t, input); }}
           onClose={() => setSelectedSpot(null)}
+          isAdmin={staffMe?.role === 'admin'}
+          here={pos}
+          onChanged={() => void envSpots.refreshRemote()}
         />
       )}
       {pos && !headingMode && !recordLoc && (
