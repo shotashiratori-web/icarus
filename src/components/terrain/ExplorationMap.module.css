@@ -550,3 +550,34 @@ label.btn {
   align-items: center;
   cursor: pointer;
 }
+
+/* 写真の場所を指定中（地図をタップ／座標を入力） */
+.placeBanner {
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  top: var(--space-2);
+  z-index: 1150;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-size: var(--font-size-sm);
+}
+@media (min-width: 601px) {
+  .placeBanner {
+    right: auto;
+    left: 50%;
+    width: 420px;
+    transform: translateX(-50%);
+  }
+}
+.coordInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+}

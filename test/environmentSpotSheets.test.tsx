@@ -22,6 +22,7 @@ describe('EnvironmentSpotRecordSheet', () => {
     const save = screen.getByRole('button', { name: '端末に保存して送信' });
     expect(save).toBeDisabled();
     expect(screen.getByText('地図で指定', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('記録日時: 保存した時刻')).toBeInTheDocument(); // 写真が無い間は保存した時刻
     fireEvent.click(screen.getByRole('button', { name: '倒木' }));
     expect(screen.getByText('樹種を選んでください（分からない時は「不明」）')).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'その他' })[1]); // [0] は種類の「その他」、[1] は樹種の「その他」
@@ -102,6 +103,7 @@ describe('樹種を選びやすく・撮った写真から記録', () => {
       observedAt="2026-09-30T02:10:00.000Z"
     />);
     expect(screen.getByText('写真の撮影時の GPS', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('（写真の撮影日時）', { exact: false })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '生木' }));
     expect(screen.getByText('この場所の林分（森林計画）の樹種')).toBeInTheDocument();
     expect(screen.getByText('よく使う')).toBeInTheDocument();
