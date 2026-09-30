@@ -21,6 +21,8 @@ function assetManifest(): Plugin {
 export default defineConfig({
   plugins: [react(), cloudflare(), assetManifest()],
   base: './',
+  // 2026-09-30: 画面に出す版（GitHub Actions のコミット）。iPhone のホーム画面版が新しい版になったかを確かめるため
+  define: { __APP_BUILD__: JSON.stringify((process.env.GITHUB_SHA ?? 'dev').slice(0, 7)) },
   // 2026-09-16: 2026-09-15に追加したbuild.target（es2017/safari12/ios12への拡張）をrevert。
   // 当時は「新規スタッフの白紙は古いSafariの構文非対応が原因」という仮説だったが、実機がiPhone 16
   // （最新機種）と判明し前提が崩れた。加えて、構文変換だけでは互換性の裏付けとして不十分

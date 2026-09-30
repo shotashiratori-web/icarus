@@ -39,6 +39,10 @@ function matchSpecies(names: string[], trees: EnvSpeciesItem[]): EnvSpeciesItem[
 }
 
 export default function EnvironmentSpotRecordSheet({ location, species, terrainAt, onSave, onClose, initialPhotos, observedAt }: Props) {
+  const [loc, setLoc] = useState<RecordLocation>(location);
+  const [coordValue, setCoordValue] = useState('');
+  const [coordError, setCoordError] = useState<string | null>(null);
+  const [hereOk, setHereOk] = useState(false);
   const [kind, setKind] = useState<SpotKindChoice | null>(null);
   const [speciesId, setSpeciesId] = useState<string | null>(null);
   const [speciesText, setSpeciesText] = useState('');
@@ -59,9 +63,9 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   const other = trees.find((s) => s.id === speciesId)?.isOther ?? false;
   // 候補: この場所の林分の樹種（森林計画）と、この端末でよく使う樹種を先頭に
   const standTrees = useMemo(() => {
-    const t = terrainAt(location.lat, location.lng) as { forestStand?: { species?: string[] } | null } | null;
+    const t = terrainAt(loc.lat, loc.lng) as { forestStand?: { species?: string[] } | null } | null;
     return matchSpecies(t?.forestStand?.species ?? [], trees);
-  }, [terrainAt, location.lat, location.lng, trees]);
+  }, [terrainAt, loc.lat, loc.lng, trees]);
   const frequent = useMemo(() => {
     const u = speciesUsage();
     return trees.filter((s) => (u[s.id] ?? 0) > 0 && !standTrees.includes(s)).sort((a, b) => (u[b.id] ?? 0) - (u[a.id] ?? 0)).slice(0, 3);
@@ -74,7 +78,21 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   useEffect(() => () => urls.forEach((u) => u && URL.revokeObjectURL(u)), [urls]);
 
   const dbhNum = dbh.trim() ? Number(dbh) : null;
+  // 写真が 30 分以上前の撮影なのに位置が「現在地」: 木の場所ではない可能性が高い（山から戻ってからの記録で自宅の位置が入った実例）
+  const staleHere = loc.source === 'gps' && !loc.fromPhoto && !!photoTakenAt && Date.now() - Date.parse(photoTakenAt) > 30 * 60 * 1000;
+  const setByCoords = () => {
+    const m = coordValue.match(/(-?\d+(?:\.\d+)?)\s*[,、\s]\s*(-?\d+(?:\.\d+)?)/);
+    const lat = m ? Number(m[1]) : NaN;
+    const lng = m ? Number(m[2]) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < 20 || lat > 46 || lng < 122 || lng > 154) {
+      setCoordError('「43.05435, 140.78771」のように緯度, 経度で入力してください');
+      return;
+    }
+    setCoordError(null);
+    setLoc({ lat, lng, source: 'map', accuracyM: null });
+  };
   const problems: string[] = [];
+  if (staleHere && !hereOk) problems.push('写真の撮影から時間がたっています。木の場所を座標で指定するか、現在地のままでよいか確認してください');
   if (!choice) problems.push('種類を選んでください');
   if (isTree && !speciesId) problems.push('樹種を選んでください（分からない時は「不明」）');
   if (isTree && other && !speciesText.trim()) problems.push('「その他」の樹種名を入力してください');
@@ -107,9 +125,9 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         envType: choice.envType, lifeState: choice.lifeState,
         treeSpeciesId: isTree ? speciesId : null, treeSpeciesText: isTree && other ? speciesText.trim() : null,
         dbhCm: isTree ? dbhNum : null, decayClass: choice.lifeState === 'snag' || choice.lifeState === 'fallen' ? decay : null,
-        lat: location.lat, lng: location.lng, locationSource: location.source, gpsAccuracyM: location.source === 'gps' ? location.accuracyM : null,
+        lat: loc.lat, lng: loc.lng, locationSource: loc.source, gpsAccuracyM: loc.source === 'gps' ? loc.accuracyM : null,
         photoMissingReason: photos.length ? null : missing, photoMissingMemo: photos.length ? null : missingMemo.trim() || null,
-        memo: memo.trim(), observedAt: photoTakenAt ?? new Date().toISOString(), terrain: terrainAt(location.lat, location.lng),
+        memo: memo.trim(), observedAt: photoTakenAt ?? new Date().toISOString(), terrain: terrainAt(loc.lat, loc.lng),
       }, photos);
       if (isTree && speciesId) countSpeciesUse(speciesId);
       onClose();
@@ -126,10 +144,31 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         <button className={styles.btn} onClick={onClose}>やめる</button>
       </div>
       <p className={styles.sub}>
-        位置: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}（{location.source === 'gps' ? `${location.fromPhoto ? '写真の撮影時の GPS' : '現在地'}${location.accuracyM !== null ? `・精度 約${Math.round(location.accuracyM)}m` : ''}` : '地図で指定'}）
+        位置: {loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}（{loc.source === 'gps' ? `${loc.fromPhoto ? '写真の撮影時の GPS' : '現在地'}${loc.accuracyM !== null ? `・精度 約${Math.round(loc.accuracyM)}m` : ''}` : '地図で指定'}）
       </p>
       <p className={styles.sub}>記録日時: {photoTakenAt ? `${new Date(photoTakenAt).toLocaleString('ja-JP')}（写真の撮影日時）` : '保存した時刻'}</p>
-      {location.source === 'gps' && location.accuracyM !== null && location.accuracyM > 30 && <p className={styles.warn}>GPS の精度が低めです（{Math.round(location.accuracyM)}m）。少し待つか、空の開けた所で記録すると正確になります</p>}
+      {staleHere && !hereOk && (
+        <div className={styles.warnBox}>
+          <p className={styles.warn}>写真は {new Date(photoTakenAt!).toLocaleString('ja-JP')} の撮影です。位置は「現在地」なので、木の場所ではない可能性があります</p>
+          <div className={styles.chips}>
+            <input className={styles.input} value={coordValue} onChange={(e) => setCoordValue(e.target.value)} placeholder="木の座標 例: 43.05435, 140.78771" inputMode="decimal" />
+            <button className={styles.btn} onClick={setByCoords}>この座標にする</button>
+            <button className={styles.btn} onClick={() => setHereOk(true)}>現在地のままでよい</button>
+          </div>
+          {coordError && <p className={styles.warn}>{coordError}</p>}
+        </div>
+      )}
+      {!staleHere && (
+        <details>
+          <summary className={styles.sub}>位置を座標で変える</summary>
+          <div className={styles.chips}>
+            <input className={styles.input} value={coordValue} onChange={(e) => setCoordValue(e.target.value)} placeholder="例: 43.05435, 140.78771" inputMode="decimal" />
+            <button className={styles.btn} onClick={setByCoords}>この座標にする</button>
+          </div>
+          {coordError && <p className={styles.warn}>{coordError}</p>}
+        </details>
+      )}
+      {loc.source === 'gps' && loc.accuracyM !== null && loc.accuracyM > 30 && <p className={styles.warn}>GPS の精度が低めです（{Math.round(loc.accuracyM)}m）。少し待つか、空の開けた所で記録すると正確になります</p>}
 
       <p className={styles.label}>種類</p>
       <div className={styles.bigButtons}>

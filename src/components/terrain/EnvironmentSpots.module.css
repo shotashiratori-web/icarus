@@ -143,3 +143,9 @@
   min-width: 5.5em;
   font-variant-numeric: tabular-nums;
 }
+.warnBox {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border: 1px solid #b3261e;
+  border-radius: var(--radius-sm);
+}

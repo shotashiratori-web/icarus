@@ -36,6 +36,7 @@ import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/typ
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import ContourLayer from './ContourLayer';
+import { APP_BUILD } from '../../appBuild';
 import { useEnvironmentSpots, type SpotMarker } from './useEnvironmentSpots';
 import EnvironmentSpotRecordSheet, { type RecordLocation } from './EnvironmentSpotRecordSheet';
 import EnvironmentSpotDetailSheet from './EnvironmentSpotDetailSheet';
@@ -1229,6 +1230,7 @@ export default function ExplorationMap({ entries }: Props) {
             </div>
             {error && <p className={styles.warn}>{error}</p>}
             <p className={styles.sub}>表示中: {displayedSourceLabel(manifest.version, saved?.version ?? null)}・{manifest.version}</p>
+            <p className={styles.sub}>アプリの版: {APP_BUILD}</p>
 
             <details className={styles.details}>
               <summary>計算の方法と注意</summary>
