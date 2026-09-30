@@ -28,8 +28,9 @@ type Props = {
   observedAt?: string | null; // 撮った写真から記録する時は撮影日時
 };
 
-// iPhone は写真ライブラリから Web へ写真を渡す時に位置情報を外す。「ファイル」から選ぶと元の写真（位置つき）が渡る
-export const NO_GPS_HINT = '写真に位置情報が残っていません（iPhone は写真ライブラリから渡す時に位置を外します）。位置も使いたい時は、写真アプリで写真を「共有 → “ファイル”に保存」してから、ここで「ファイルを選択」で選んでください。';
+// 写真に撮影時の位置が無い時（カメラの位置情報がオフだった・スクリーンショットなど）の案内。
+// iPhone の写真は通常そのまま位置が残る（Field Log と同じく写真の EXIF から読む）
+export const NO_GPS_HINT = 'この写真には撮影時の位置が入っていません（カメラの位置情報がオフだった写真など）。地図で木の場所をタップするか、座標を入力してください。';
 
 // 林分の樹種名（森林計画）→ 樹種マスタ（名前か別表記が一致するもの）
 function matchSpecies(names: string[], trees: EnvSpeciesItem[]): EnvSpeciesItem[] {
@@ -114,7 +115,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
       for (const f of files) add.push(await photoFromFile(f));
       const meta = await readPhotoMeta(files[0]);
       if (!photoTakenAt && meta.takenAt) setPhotoTakenAt(meta.takenAt);
-      // 写真に撮影時の位置が残っていれば（「ファイル」から選んだ元の写真など）、現在地ではなく写真の位置を使う
+      // 写真に撮影時の位置があれば（iPhone の写真は通常ある。Field Log と同じ）、現在地ではなく写真の位置を使う
       if (meta.lat !== null && meta.lng !== null && !(loc.source === 'gps' && loc.fromPhoto)) {
         setLoc({ lat: meta.lat, lng: meta.lng, source: 'gps', accuracyM: meta.accuracyM, fromPhoto: true });
       } else if (meta.lat === null && meta.takenAt && Date.now() - Date.parse(meta.takenAt) > 30 * 60 * 1000) {

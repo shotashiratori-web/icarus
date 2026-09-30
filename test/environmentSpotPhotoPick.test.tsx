@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { EnvSpeciesItem } from '../src/environmentSpots/types';
 
 // 記録画面で「撮った写真を選ぶ」: 選択欄を空に戻しても撮影日時・位置を読む（空になった FileList を読んでいたバグ）。
-// 写真に位置があれば写真の位置、無ければ「ファイル」から選ぶ案内と古い写真×現在地の警告
+// 写真に位置があれば写真の位置、無ければ位置が無い写真の案内と古い写真×現在地の警告
 
 const meta = vi.hoisted(() => ({ value: { lat: null as number | null, lng: null as number | null, accuracyM: null as number | null, takenAt: '2026-09-30T00:14:16.000Z' as string | null } }));
 vi.mock('../src/environmentSpots/photoMeta', () => ({
@@ -22,16 +22,16 @@ function pick() {
 }
 
 describe('撮った写真を選ぶ', () => {
-  it('1. 位置の無い古い写真: 撮影日時を記録日時にし、現在地のままなら警告。「ファイル」から選ぶ案内', async () => {
+  it('1. 位置の無い古い写真: 撮影日時を記録日時にし、現在地のままなら警告。位置が無い写真の案内', async () => {
     meta.value = { lat: null, lng: null, accuracyM: 4.7, takenAt: '2026-09-30T00:14:16.000Z' };
     render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 3 }} species={SPECIES} terrainAt={() => null} onSave={vi.fn(async () => undefined)} onClose={vi.fn()} />);
     pick();
     expect(await screen.findByText('（写真の撮影日時）', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('木の場所ではない可能性があります', { exact: false })).toBeInTheDocument();
-    expect(screen.getByText('“ファイル”に保存', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('撮影時の位置が入っていません', { exact: false })).toBeInTheDocument();
   });
 
-  it('2. 位置の残っている写真（「ファイル」から選んだ元の写真）: 現在地ではなく写真の撮影時の位置を使う', async () => {
+  it('2. 位置の入っている写真（Field Log と同じく写真の位置を使う）: 現在地ではなく写真の撮影時の位置を使う', async () => {
     meta.value = { lat: 43.054353, lng: 140.787705, accuracyM: 4.7, takenAt: '2026-09-30T00:14:16.000Z' };
     const onSave = vi.fn(async (..._a: unknown[]) => undefined);
     render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 3 }} species={SPECIES} terrainAt={() => null} onSave={onSave} onClose={vi.fn()} />);
