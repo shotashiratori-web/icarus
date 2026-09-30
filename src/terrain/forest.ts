@@ -174,6 +174,29 @@ export function describeForest(f: ForestData, i: number): string[] {
   return lines;
 }
 
+// 地点情報の見出し（樹種を一番上に大きく）: 樹種 1〜3 位・出どころと年・林齢・林種、植生（調査年）
+export interface ForestHeadline {
+  species: string | null; // 例: 1位 ミズナラ・2位 その他広葉樹・3位 イタヤカエデ
+  note: string | null; // 例: 森林計画（国有林 2018時点・林齢105・天然生林）
+  vegetation: string | null; // 例: エゾイタヤ－ミズナラ群落（2022調査）
+}
+
+export function forestHeadline(f: ForestData, i: number): ForestHeadline {
+  const si = f.stand[i];
+  const s = si ? f.stands[si - 1] : null;
+  const vi = f.veg[i];
+  const v = vi ? f.vegs[vi - 1] : null;
+  let species: string | null = null;
+  let note: string | null = null;
+  if (s) {
+    species = s.cls === FOREST_CLASS.broadleafUnknown
+      ? '天然林広葉樹（樹種不明）'
+      : s.species.length ? s.species.map(([n, r], k) => `${k + 1}位 ${SPECIES_LABEL[n] ?? n}${r ? `（${r}割）` : ''}`).join('・') : '樹種の記録なし';
+    note = `森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点${s.age ? `・林齢${s.age}` : ''}${s.type ? `・${s.type}` : ''}）`;
+  }
+  return { species, note, vegetation: v ? `${v.name}（${v.year ?? '年不明'}調査）` : null };
+}
+
 // 面積（ha）: 表示中のレイヤーの広さの目安
 export function forestAreaHa(f: ForestData, pxM: number, pred: (s: ForestStand | null, v: ForestVeg | null) => boolean): number {
   let n = 0;
