@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { photoFromFile } from '../../environmentSpots/sync';
-import { countSpeciesUse, speciesUsage } from '../../environmentSpots/photoMeta';
+import { countSpeciesUse, readPhotoMeta, speciesUsage } from '../../environmentSpots/photoMeta';
 import {
   KIND_CHOICES, PHOTO_MISSING_LABEL, type EnvSpeciesItem, type LocationSource, type PendingPhoto, type PendingSpot, type PhotoMissingReason, type SpotKindChoice,
 } from '../../environmentSpots/types';
@@ -45,6 +45,8 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   const [dbh, setDbh] = useState('');
   const [decay, setDecay] = useState<number | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>(initialPhotos ?? []);
+  // 記録日時: 写真の撮影日時があればそれ（山から戻ってから記録しても、見た時刻が残る）。無ければ保存した時刻
+  const [photoTakenAt, setPhotoTakenAt] = useState<string | null>(observedAt ?? null);
   const [missing, setMissing] = useState<PhotoMissingReason | null>(null);
   const [missingMemo, setMissingMemo] = useState('');
   const [memo, setMemo] = useState('');
@@ -85,6 +87,10 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
     try {
       const add: PendingPhoto[] = [];
       for (const f of Array.from(files)) add.push(await photoFromFile(f));
+      if (!photoTakenAt && files.length > 0) {
+        const meta = await readPhotoMeta(files[0]);
+        if (meta.takenAt) setPhotoTakenAt(meta.takenAt);
+      }
       setPhotos((cur) => [...cur, ...add].slice(0, 10));
       setMissing(null);
     } catch (e) {
@@ -103,7 +109,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         dbhCm: isTree ? dbhNum : null, decayClass: choice.lifeState === 'snag' || choice.lifeState === 'fallen' ? decay : null,
         lat: location.lat, lng: location.lng, locationSource: location.source, gpsAccuracyM: location.source === 'gps' ? location.accuracyM : null,
         photoMissingReason: photos.length ? null : missing, photoMissingMemo: photos.length ? null : missingMemo.trim() || null,
-        memo: memo.trim(), observedAt: observedAt ?? new Date().toISOString(), terrain: terrainAt(location.lat, location.lng),
+        memo: memo.trim(), observedAt: photoTakenAt ?? new Date().toISOString(), terrain: terrainAt(location.lat, location.lng),
       }, photos);
       if (isTree && speciesId) countSpeciesUse(speciesId);
       onClose();
@@ -122,6 +128,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
       <p className={styles.sub}>
         位置: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}（{location.source === 'gps' ? `${location.fromPhoto ? '写真の撮影時の GPS' : '現在地'}${location.accuracyM !== null ? `・精度 約${Math.round(location.accuracyM)}m` : ''}` : '地図で指定'}）
       </p>
+      <p className={styles.sub}>記録日時: {photoTakenAt ? `${new Date(photoTakenAt).toLocaleString('ja-JP')}（写真の撮影日時）` : '保存した時刻'}</p>
       {location.source === 'gps' && location.accuracyM !== null && location.accuracyM > 30 && <p className={styles.warn}>GPS の精度が低めです（{Math.round(location.accuracyM)}m）。少し待つか、空の開けた所で記録すると正確になります</p>}
 
       <p className={styles.label}>種類</p>

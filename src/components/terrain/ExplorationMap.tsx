@@ -285,6 +285,27 @@ export default function ExplorationMap({ entries }: Props) {
   // 撮った写真から記録（山から戻ってから）: 写真の撮影時の GPS と日時を使う
   const [recordInit, setRecordInit] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+  // 写真に位置が無い時: 地図をタップ（または座標を入力）して場所を決める間の状態
+  const [placeWait, setPlaceWait] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
+  const [coordValue, setCoordValue] = useState('');
+  const placeAt = (lat: number, lng: number) => {
+    if (!placeWait) return;
+    setRecordInit(placeWait);
+    setRecordLoc({ lat, lng, source: 'map', accuracyM: null });
+    setPlaceWait(null);
+    setCoordValue('');
+  };
+  const placeByText = () => {
+    const m = coordValue.match(/(-?\d+(?:\.\d+)?)\s*[,、\s]\s*(-?\d+(?:\.\d+)?)/);
+    const lat = m ? Number(m[1]) : NaN;
+    const lng = m ? Number(m[2]) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < 20 || lat > 46 || lng < 122 || lng > 154) {
+      setPhotoMsg('座標は「43.05435, 140.78771」のように緯度, 経度で入力してください');
+      return;
+    }
+    setPhotoMsg(null);
+    placeAt(lat, lng);
+  };
   const recordFromPhotos = async (files: FileList | null) => {
     setPhotoMsg(null);
     if (!files || files.length === 0) return;
@@ -294,7 +315,9 @@ export default function ExplorationMap({ entries }: Props) {
       const photos: PendingPhoto[] = [];
       for (const f of list) photos.push(await photoFromFile(f));
       if (meta.lat === null || meta.lng === null) {
-        setPhotoMsg('この写真には位置情報がありません。地図で木の場所をタップ →「ここを記録」→「撮った写真を選ぶ」で記録してください');
+        // iPhone は写真を渡す時に位置情報を外すことがある。写真と撮影日時は持ったまま、場所だけ地図か座標で指定してもらう
+        setPlaceWait({ photos, observedAt: meta.takenAt });
+        setPanelOpen(false);
         return;
       }
       setRecordInit({ photos, observedAt: meta.takenAt });
@@ -544,7 +567,10 @@ export default function ExplorationMap({ entries }: Props) {
     if (!fh?.species && !fh?.vegetation && near.length === 0) return undefined;
     return { species: fh?.species ?? null, note: fh?.note ?? null, vegetation: fh?.vegetation ?? null, spots: near };
   }, [loaded, manifest, envSpots.markers]);
-  const onMapClick = useCallback((lat: number, lng: number) => setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) }), [describePoint, headOf]);
+  const onMapClick = useCallback((lat: number, lng: number) => {
+    if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
+    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) });
+  }, [describePoint, headOf, placeWait]); // eslint-disable-line react-hooks/exhaustive-deps
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
   useEffect(() => {
     setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng), head: headOf(p.lat, p.lng) } : p));
@@ -844,6 +870,18 @@ export default function ExplorationMap({ entries }: Props) {
           </div>
           <div className={styles.headingAttribution}>国土地理院 | © OpenStreetMap contributors{forestUrl ? ` | ${FOREST_ATTRIBUTION}` : ''}</div>
         </>
+      )}
+      {placeWait && !recordLoc && (
+        <div className={styles.placeBanner} role="dialog" aria-label="写真の場所を指定">
+          <b>写真に位置情報がありません</b>
+          <p className={styles.sub}>iPhone は写真を渡す時に位置情報を外すことがあります。地図で木の場所をタップするか、座標を入力してください（写真{placeWait.photos.length}枚{placeWait.observedAt ? `・撮影 ${fmtDate(placeWait.observedAt)}` : ''}は保ったまま）</p>
+          <div className={styles.row}>
+            <input className={styles.coordInput} value={coordValue} onChange={(e) => setCoordValue(e.target.value)} placeholder="43.05435, 140.78771" inputMode="decimal" />
+            <button className={styles.btn} onClick={placeByText}>この座標</button>
+            <button className={styles.btn} onClick={() => { setPlaceWait(null); setPhotoMsg(null); }}>やめる</button>
+          </div>
+          {photoMsg && <p className={styles.warn}>{photoMsg}</p>}
+        </div>
       )}
       {recordLoc && (
         <EnvironmentSpotRecordSheet
