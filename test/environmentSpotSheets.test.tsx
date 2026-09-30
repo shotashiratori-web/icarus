@@ -84,3 +84,37 @@ describe('EnvironmentSpotDetailSheet', () => {
     expect(onObserve.mock.calls[0][1]).toMatchObject({ targetSpeciesId: 'target-maitake', targetText: '', result: 'not_found', foundStage: null });
   });
 });
+
+describe('樹種を選びやすく・撮った写真から記録', () => {
+  // この jsdom では localStorage が無いため、メモリ上の置き換えを使う（ZukanFieldMapScreen.mode.test と同じ）
+  const mem = new Map<string, string>();
+  vi.stubGlobal('localStorage', { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k), clear: () => mem.clear() });
+  it('4. この場所の林分の樹種とよく使う樹種を先頭に。撮った写真の撮影日時を記録日時に、位置は写真の GPS', async () => {
+    localStorage.setItem('icarus:spot-species-usage', JSON.stringify({ 'tree-unknown': 3 }));
+    const onSave = vi.fn(async (..._a: unknown[]) => undefined);
+    const species = [...SPECIES, sp('tree-buna', 'tree', 'ブナ', { sortOrder: 20, aliases: ['ぶな'] })];
+    render(<EnvironmentSpotRecordSheet
+      location={{ lat: 43.1, lng: 140.8, source: 'gps', accuracyM: 6, fromPhoto: true }}
+      species={species}
+      terrainAt={() => ({ forestStand: { species: ['カンバ', 'ミズナラ', 'ぶな'] } })}
+      onSave={onSave} onClose={vi.fn()}
+      initialPhotos={[{ id: 'p1', name: 'IMG_3193.HEIC', type: 'image/heic', data: new ArrayBuffer(3), bytes: 3, sha256: 'a'.repeat(64), assetId: null }]}
+      observedAt="2026-09-30T02:10:00.000Z"
+    />);
+    expect(screen.getByText('写真の撮影時の GPS', { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '生木' }));
+    expect(screen.getByText('この場所の林分（森林計画）の樹種')).toBeInTheDocument();
+    expect(screen.getByText('よく使う')).toBeInTheDocument();
+    const chips = screen.getAllByRole('button').map((b) => b.textContent);
+    // 林分の樹種（ミズナラ・ブナ。カンバは樹種マスタに無いので出さない）→ よく使う（不明）→ ほか
+    expect(chips.indexOf('ミズナラ')).toBeLessThan(chips.indexOf('不明'));
+    expect(chips.indexOf('ブナ')).toBeLessThan(chips.indexOf('不明'));
+    expect(chips.indexOf('不明')).toBeLessThan(chips.lastIndexOf('その他'));
+    fireEvent.click(screen.getByRole('button', { name: 'ミズナラ' }));
+    fireEvent.click(screen.getByRole('button', { name: '端末に保存して送信' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ treeSpeciesId: 'tree-mizunara', observedAt: '2026-09-30T02:10:00.000Z', locationSource: 'gps', gpsAccuracyM: 6 });
+    expect((onSave.mock.calls[0][1] as unknown[]).length).toBe(1);
+    expect(JSON.parse(localStorage.getItem('icarus:spot-species-usage')!)['tree-mizunara']).toBe(1);
+  });
+});

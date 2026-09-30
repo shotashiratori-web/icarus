@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { photoFromFile } from '../../environmentSpots/sync';
+import { countSpeciesUse, speciesUsage } from '../../environmentSpots/photoMeta';
 import {
   KIND_CHOICES, PHOTO_MISSING_LABEL, type EnvSpeciesItem, type LocationSource, type PendingPhoto, type PendingSpot, type PhotoMissingReason, type SpotKindChoice,
 } from '../../environmentSpots/types';
@@ -14,6 +15,7 @@ export interface RecordLocation {
   lng: number;
   source: LocationSource;
   accuracyM: number | null;
+  fromPhoto?: boolean; // 撮った写真の位置情報（撮影時の GPS）
 }
 
 type Props = {
@@ -22,15 +24,27 @@ type Props = {
   terrainAt: (lat: number, lng: number) => Record<string, unknown> | null;
   onSave: (body: PendingSpot['body'], photos: PendingPhoto[]) => Promise<void>;
   onClose: () => void;
+  initialPhotos?: PendingPhoto[]; // 撮った写真から記録する時
+  observedAt?: string | null; // 撮った写真から記録する時は撮影日時
 };
 
-export default function EnvironmentSpotRecordSheet({ location, species, terrainAt, onSave, onClose }: Props) {
+// 林分の樹種名（森林計画）→ 樹種マスタ（名前か別表記が一致するもの）
+function matchSpecies(names: string[], trees: EnvSpeciesItem[]): EnvSpeciesItem[] {
+  const out: EnvSpeciesItem[] = [];
+  for (const n of names) {
+    const t = trees.find((s) => !s.isOther && !s.isUnknown && (s.name === n || s.aliases.includes(n)));
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+export default function EnvironmentSpotRecordSheet({ location, species, terrainAt, onSave, onClose, initialPhotos, observedAt }: Props) {
   const [kind, setKind] = useState<SpotKindChoice | null>(null);
   const [speciesId, setSpeciesId] = useState<string | null>(null);
   const [speciesText, setSpeciesText] = useState('');
   const [dbh, setDbh] = useState('');
   const [decay, setDecay] = useState<number | null>(null);
-  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [photos, setPhotos] = useState<PendingPhoto[]>(initialPhotos ?? []);
   const [missing, setMissing] = useState<PhotoMissingReason | null>(null);
   const [missingMemo, setMissingMemo] = useState('');
   const [memo, setMemo] = useState('');
@@ -41,6 +55,19 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   const isTree = choice?.envType === 'tree';
   const trees = useMemo(() => species.filter((s) => s.kind === 'tree').sort((a, b) => a.sortOrder - b.sortOrder), [species]);
   const other = trees.find((s) => s.id === speciesId)?.isOther ?? false;
+  // 候補: この場所の林分の樹種（森林計画）と、この端末でよく使う樹種を先頭に
+  const standTrees = useMemo(() => {
+    const t = terrainAt(location.lat, location.lng) as { forestStand?: { species?: string[] } | null } | null;
+    return matchSpecies(t?.forestStand?.species ?? [], trees);
+  }, [terrainAt, location.lat, location.lng, trees]);
+  const frequent = useMemo(() => {
+    const u = speciesUsage();
+    return trees.filter((s) => (u[s.id] ?? 0) > 0 && !standTrees.includes(s)).sort((a, b) => (u[b.id] ?? 0) - (u[a.id] ?? 0)).slice(0, 3);
+  }, [trees, standTrees]);
+  const restTrees = trees.filter((s) => !standTrees.includes(s) && !frequent.includes(s));
+  const chip = (s: EnvSpeciesItem) => (
+    <button key={s.id} className={`${styles.chip} ${speciesId === s.id ? styles.on : ''}`} onClick={() => setSpeciesId(s.id)} aria-pressed={speciesId === s.id}>{s.name}</button>
+  );
   const urls = useMemo(() => photos.map((p) => (p.data ? URL.createObjectURL(new Blob([p.data], { type: p.type })) : '')), [photos]);
   useEffect(() => () => urls.forEach((u) => u && URL.revokeObjectURL(u)), [urls]);
 
@@ -76,8 +103,9 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         dbhCm: isTree ? dbhNum : null, decayClass: choice.lifeState === 'snag' || choice.lifeState === 'fallen' ? decay : null,
         lat: location.lat, lng: location.lng, locationSource: location.source, gpsAccuracyM: location.source === 'gps' ? location.accuracyM : null,
         photoMissingReason: photos.length ? null : missing, photoMissingMemo: photos.length ? null : missingMemo.trim() || null,
-        memo: memo.trim(), observedAt: new Date().toISOString(), terrain: terrainAt(location.lat, location.lng),
+        memo: memo.trim(), observedAt: observedAt ?? new Date().toISOString(), terrain: terrainAt(location.lat, location.lng),
       }, photos);
+      if (isTree && speciesId) countSpeciesUse(speciesId);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした');
@@ -92,7 +120,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         <button className={styles.btn} onClick={onClose}>やめる</button>
       </div>
       <p className={styles.sub}>
-        位置: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}（{location.source === 'gps' ? `現在地${location.accuracyM !== null ? `・精度 約${Math.round(location.accuracyM)}m` : ''}` : '地図で指定'}）
+        位置: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}（{location.source === 'gps' ? `${location.fromPhoto ? '写真の撮影時の GPS' : '現在地'}${location.accuracyM !== null ? `・精度 約${Math.round(location.accuracyM)}m` : ''}` : '地図で指定'}）
       </p>
       {location.source === 'gps' && location.accuracyM !== null && location.accuracyM > 30 && <p className={styles.warn}>GPS の精度が低めです（{Math.round(location.accuracyM)}m）。少し待つか、空の開けた所で記録すると正確になります</p>}
 
@@ -106,11 +134,20 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
       {isTree && (
         <>
           <p className={styles.label}>樹種</p>
-          <div className={styles.chips}>
-            {trees.map((s) => (
-              <button key={s.id} className={`${styles.chip} ${speciesId === s.id ? styles.on : ''}`} onClick={() => setSpeciesId(s.id)} aria-pressed={speciesId === s.id}>{s.name}</button>
-            ))}
-          </div>
+          {standTrees.length > 0 && (
+            <>
+              <p className={styles.sub}>この場所の林分（森林計画）の樹種</p>
+              <div className={styles.chips}>{standTrees.map(chip)}</div>
+            </>
+          )}
+          {frequent.length > 0 && (
+            <>
+              <p className={styles.sub}>よく使う</p>
+              <div className={styles.chips}>{frequent.map(chip)}</div>
+            </>
+          )}
+          {(standTrees.length > 0 || frequent.length > 0) && <p className={styles.sub}>ほかの樹種</p>}
+          <div className={styles.chips}>{restTrees.map(chip)}</div>
           {trees.length === 0 && <p className={styles.warn}>樹種の一覧がまだ端末にありません。電波のある所で地形探索を一度開いてください</p>}
           {other && <input className={styles.input} value={speciesText} onChange={(e) => setSpeciesText(e.target.value)} placeholder="樹種名（例: キハダ）" maxLength={60} />}
           <p className={styles.label}>太さ（胸高直径・任意）</p>
@@ -129,7 +166,10 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
       )}
 
       <p className={styles.label}>写真</p>
-      <input type="file" accept="image/*" capture="environment" multiple onChange={(e) => { void addPhotos(e.target.files); e.target.value = ''; }} />
+      <div className={styles.chips}>
+        <label className={styles.btn}>カメラで撮る<input type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ''; }} /></label>
+        <label className={styles.btn}>撮った写真を選ぶ<input type="file" accept="image/*" multiple hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ''; }} /></label>
+      </div>
       {photos.length > 0 && (
         <div className={styles.photos}>
           {photos.map((p, i) => urls[i] && <img key={p.id} src={urls[i]} alt={`写真 ${i + 1}`} />)}

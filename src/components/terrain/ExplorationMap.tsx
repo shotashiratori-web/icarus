@@ -39,7 +39,9 @@ import ContourLayer from './ContourLayer';
 import { useEnvironmentSpots, type SpotMarker } from './useEnvironmentSpots';
 import EnvironmentSpotRecordSheet, { type RecordLocation } from './EnvironmentSpotRecordSheet';
 import EnvironmentSpotDetailSheet from './EnvironmentSpotDetailSheet';
-import { KIND_CHOICES, type SpotKindChoice } from '../../environmentSpots/types';
+import { KIND_CHOICES, type PendingPhoto, type SpotKindChoice } from '../../environmentSpots/types';
+import { readPhotoMeta } from '../../environmentSpots/photoMeta';
+import { photoFromFile } from '../../environmentSpots/sync';
 import { aspectDeg as hydroAspectDeg, directionOf as hydroDirectionOf, LANDFORMS as HYDRO_LANDFORMS, twiValue as hydroTwiValue } from '../../terrain/hydro';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
@@ -280,6 +282,27 @@ export default function ExplorationMap({ entries }: Props) {
   const [spotKinds, setSpotKinds] = useState<SpotKindChoice[]>(KIND_CHOICES.map((k) => k.id));
   const [spotSpecies, setSpotSpecies] = useState<string>('all');
   const [recordLoc, setRecordLoc] = useState<RecordLocation | null>(null);
+  // 撮った写真から記録（山から戻ってから）: 写真の撮影時の GPS と日時を使う
+  const [recordInit, setRecordInit] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+  const recordFromPhotos = async (files: FileList | null) => {
+    setPhotoMsg(null);
+    if (!files || files.length === 0) return;
+    const list = Array.from(files).slice(0, 10);
+    try {
+      const meta = await readPhotoMeta(list[0]);
+      const photos: PendingPhoto[] = [];
+      for (const f of list) photos.push(await photoFromFile(f));
+      if (meta.lat === null || meta.lng === null) {
+        setPhotoMsg('この写真には位置情報がありません。地図で木の場所をタップ →「ここを記録」→「撮った写真を選ぶ」で記録してください');
+        return;
+      }
+      setRecordInit({ photos, observedAt: meta.takenAt });
+      setRecordLoc({ lat: meta.lat, lng: meta.lng, source: 'gps', accuracyM: meta.accuracyM, fromPhoto: true });
+    } catch (e) {
+      setPhotoMsg(e instanceof Error ? e.message : '写真を読めませんでした');
+    }
+  };
   const [selectedSpot, setSelectedSpot] = useState<string | null>(null);
   const kindOf = (m: SpotMarker): SpotKindChoice => (m.envType === 'tree' ? (m.lifeState as SpotKindChoice) : m.envType);
   const visibleSpots = useMemo(() => (showSpots ? envSpots.markers.filter((m) => spotKinds.includes(kindOf(m)) && (spotSpecies === 'all' || m.treeSpeciesId === spotSpecies)) : []), [showSpots, envSpots.markers, spotKinds, spotSpecies]);
@@ -525,7 +548,7 @@ export default function ExplorationMap({ entries }: Props) {
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
   useEffect(() => {
     setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng), head: headOf(p.lat, p.lng) } : p));
-  }, [describePoint]);
+  }, [describePoint, headOf]);
 
   // ---- 現在地 ----
   const stopGps = () => {
@@ -828,7 +851,9 @@ export default function ExplorationMap({ entries }: Props) {
           species={envSpots.species}
           terrainAt={terrainAt}
           onSave={async (b, ph) => { await envSpots.record(b, ph); }}
-          onClose={() => setRecordLoc(null)}
+          onClose={() => { setRecordLoc(null); setRecordInit(null); }}
+          initialPhotos={recordInit?.photos}
+          observedAt={recordInit?.observedAt ?? null}
         />
       )}
       {selectedMarker && !recordLoc && (
@@ -1114,8 +1139,10 @@ export default function ExplorationMap({ entries }: Props) {
             <h3 className={styles.h}>環境スポット（現地の記録）</h3>
             <div className={styles.row}>
               <button className={`${styles.btn} ${styles.primary}`} disabled={!pos} onClick={() => pos && setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>現在地で記録</button>
+              <label className={styles.btn}>撮った写真から記録<input type="file" accept="image/*" multiple hidden onChange={(e) => { void recordFromPhotos(e.target.files); e.target.value = ''; }} /></label>
             </div>
-            {!pos && <p className={styles.sub}>現在地を表示すると記録できます。地図をタップして「ここを記録」でも記録できます</p>}
+            {!pos && <p className={styles.sub}>その場では「現在地で記録」。山から戻ってからは「撮った写真から記録」（写真の撮影時の位置と日時を使う）か、地図をタップして「ここを記録」</p>}
+            {photoMsg && <p className={styles.warn}>{photoMsg}</p>}
             {unsentSpots > 0 && <p className={styles.sub}>この端末の未送信 {unsentSpots} 件（電波のある所で自動的に送信します）</p>}
             {envSpots.remoteError && <p className={styles.sub}>{envSpots.remoteError}</p>}
 

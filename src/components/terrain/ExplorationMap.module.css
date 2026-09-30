@@ -543,3 +543,10 @@
   color: var(--color-text-sub);
   font-size: var(--font-size-xs);
 }
+
+/* ファイル選択をボタンの見た目で（label.btn） */
+label.btn {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
