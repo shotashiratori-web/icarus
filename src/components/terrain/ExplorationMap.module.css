@@ -527,3 +527,19 @@
     align-items: flex-start;
   }
 }
+
+/* 地点情報の見出し: 樹種を一番上に大きく */
+.probeHead {
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.probeSpecies {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.probeNote {
+  color: var(--color-text-sub);
+  font-size: var(--font-size-xs);
+}

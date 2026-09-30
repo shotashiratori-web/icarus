@@ -11,7 +11,7 @@ import {
 } from '../../terrain/areaStore';
 import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
 import {
-  anyForestLayer, describeForest, FOREST_CLASS, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
+  anyForestLayer, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
   type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import {
@@ -100,6 +100,8 @@ const fmtDate = (iso: string) => {
 
 // 環境スポットの色（種類・生死）。ミズナラは金色の縁
 const SPOT_COLORS: Record<SpotKindChoice, string> = { alive: '#2e7d32', snag: '#a1887f', fallen: '#5d4037', terrain: '#546e7a', other: '#9e9e9e' };
+
+interface ProbeHead { species: string | null; note: string | null; vegetation: string | null; spots: string[] }
 
 type PanelTab = 'search' | 'view' | 'record' | 'settings';
 const PANEL_TABS: { id: PanelTab; label: string }[] = [
@@ -194,7 +196,7 @@ export default function ExplorationMap({ entries }: Props) {
   const [base, setBase] = useState<Base>('offline');
   const [panelOpen, setPanelOpen] = useState(() => initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
-  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[] } | null>(null);
+  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [watching, setWatching] = useState(false);
   const [follow, setFollow] = useState(true);
@@ -459,7 +461,6 @@ export default function ExplorationMap({ entries }: Props) {
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
     if (loaded.hydro) lines.push(...describeHydro(manifest, loaded.hydro, i));
-    if (loaded.forest) lines.push(...describeForest(loaded.forest, i));
     if (showHistory) {
       // この地点を探索範囲（線から探索幅）に含むセッションを全部出す（日付・目的・歩いた人・対象の結果）
       const near = visibleHistory.filter((e) => e.track && distanceToTrackM(lat, lng, e.track) <= coverageWidth);
@@ -504,10 +505,26 @@ export default function ExplorationMap({ entries }: Props) {
     return snap;
   }, [loaded, manifest]);
 
-  const onMapClick = useCallback((lat: number, lng: number) => setProbe({ lat, lng, lines: describePoint(lat, lng) }), [describePoint]);
+  // 地点情報の見出し: 樹種（林分の 1〜3 位）・植生・近くの環境スポットを一番上に大きく
+  const headOf = useCallback((lat: number, lng: number): ProbeHead | undefined => {
+    if (!loaded || !manifest) return undefined;
+    const { x, y } = latLngToGrid(manifest, lat, lng);
+    const i = cellIndex(loaded.grid, x, y);
+    const fh = loaded.forest && i !== null ? forestHeadline(loaded.forest, i) : null;
+    const ky = 111320, kx = 111320 * Math.cos((lat * Math.PI) / 180);
+    const near = envSpots.markers
+      .map((m) => ({ m, d: Math.hypot((m.lat - lat) * ky, (m.lng - lng) * kx) }))
+      .filter((x_) => x_.d <= 50)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 3)
+      .map(({ m, d }) => `${m.label}${m.envType === 'tree' ? `（${({ alive: '生木', snag: '立枯れ', fallen: '倒木', na: '' } as const)[m.lifeState]}）` : ''} 約${Math.max(1, Math.round(d))}m`);
+    if (!fh?.species && !fh?.vegetation && near.length === 0) return undefined;
+    return { species: fh?.species ?? null, note: fh?.note ?? null, vegetation: fh?.vegetation ?? null, spots: near };
+  }, [loaded, manifest, envSpots.markers]);
+  const onMapClick = useCallback((lat: number, lng: number) => setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) }), [describePoint, headOf]);
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
   useEffect(() => {
-    setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng) } : p));
+    setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng), head: headOf(p.lat, p.lng) } : p));
   }, [describePoint]);
 
   // ---- 現在地 ----
@@ -1172,6 +1189,14 @@ export default function ExplorationMap({ entries }: Props) {
       {probe && (
         <div className={styles.probe} role="status">
           <button className={styles.probeClose} onClick={() => setProbe(null)} aria-label="閉じる">×</button>
+          {probe.head && (
+            <div className={styles.probeHead}>
+              {probe.head.species && <div className={styles.probeSpecies}>樹種 {probe.head.species}</div>}
+              {probe.head.note && <div className={styles.probeNote}>{probe.head.note}</div>}
+              {probe.head.vegetation && <div>植生 {probe.head.vegetation}</div>}
+              {probe.head.spots.length > 0 && <div>近くの環境スポット: {probe.head.spots.join('、')}</div>}
+            </div>
+          )}
           {probe.lines.map((l) => <div key={l}>{l}</div>)}
           <div className={styles.probeActions}>
             <button className={styles.btn} onClick={() => { setRecordLoc({ lat: probe.lat, lng: probe.lng, source: 'map', accuracyM: null }); setProbe(null); }}>ここを記録</button>
