@@ -1280,6 +1280,11 @@ export default function ExplorationMap({ entries }: Props) {
           <div className={styles.sub}>{coordText(probe.lat, probe.lng)}（Googleマップを開いた時だけ座標が Google に渡ります）</div>
         </div>
       )}
+      {envSpots.notice && (
+        <div className={`${styles.notice} ${envSpots.notice.kind === 'ok' ? styles.noticeOk : envSpots.notice.kind === 'warn' ? styles.noticeWarn : ''}`} role="status" onClick={envSpots.clearNotice}>
+          {envSpots.notice.kind === 'ok' ? '✓ ' : ''}{envSpots.notice.text}
+        </div>
+      )}
       {status && <div className={styles.toast}>{status}</div>}
       {!status && watching && !pos && !gpsError && <div className={styles.toast}>現在地を取得中…</div>}
     </div>

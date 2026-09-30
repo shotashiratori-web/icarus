@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchEnvironmentSpots, fetchEnvSpecies } from '../../api/environmentSpotsApi';
 import { TokenExpiredError } from '../../api/icarusApi';
-import { listPendingObservations, listPendingSpots, listRemoteSpots, loadSpecies, saveRemoteSpots, saveSpecies } from '../../environmentSpots/store';
+import { getPendingObservation, getPendingSpot, listPendingObservations, listPendingSpots, listRemoteSpots, loadSpecies, saveRemoteSpots, saveSpecies } from '../../environmentSpots/store';
 import { resumeSpotPending, submitObservation, submitSpot } from '../../environmentSpots/submit';
 import { saveNewObservation, saveNewSpot } from '../../environmentSpots/sync';
 import type {
@@ -9,6 +9,12 @@ import type {
 } from '../../environmentSpots/types';
 
 // 地形探索の環境スポット（S3）。表示するのは サーバーの記録（圏外用に端末へ写し）＋ 端末の未送信（自分がまだ送れていないもの）
+
+export interface SpotNotice {
+  text: string;
+  kind: 'info' | 'ok' | 'warn';
+  at: number;
+}
 
 export interface SpotMarker {
   key: string;
@@ -35,6 +41,14 @@ export function useEnvironmentSpots(idToken: string | null, bbox: [number, numbe
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingSpot[]>([]);
   const [pendingObs, setPendingObs] = useState<PendingObservation[]>([]);
+  // 送信の結果を画面に出す（保存 → 送信中 → 送信しました／未送信）
+  const [notice, setNotice] = useState<SpotNotice | null>(null);
+  const notify = useCallback((text: string, kind: SpotNotice['kind']) => setNotice({ text, kind, at: Date.now() }), []);
+  useEffect(() => {
+    if (!notice || notice.kind === 'info') return;
+    const t = setTimeout(() => setNotice((n) => (n && n.at === notice.at ? null : n)), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const refreshLocal = useCallback(async () => {
     setPending(await listPendingSpots().catch(() => []));
@@ -71,10 +85,23 @@ export function useEnvironmentSpots(idToken: string | null, bbox: [number, numbe
 
   const resume = useCallback(async () => {
     if (!idToken) return;
+    const before = [
+      ...(await listPendingSpots().catch(() => [] as PendingSpot[])).filter((p) => p.stage !== 'registered').map((p) => `s:${p.id}`),
+      ...(await listPendingObservations().catch(() => [] as PendingObservation[])).filter((o) => o.stage !== 'registered').map((o) => `o:${o.id}`),
+    ];
     await resumeSpotPending(idToken);
+    if (before.length) {
+      let sent = 0;
+      for (const k of before) {
+        const id = k.slice(2);
+        const st = k.startsWith('s:') ? (await getPendingSpot(id))?.stage : (await getPendingObservation(id))?.stage;
+        if (st === 'registered') sent++;
+      }
+      if (sent) notify(`未送信だった ${sent} 件を送信しました`, 'ok');
+    }
     await refreshLocal();
     await refreshRemote();
-  }, [idToken, refreshLocal, refreshRemote]);
+  }, [idToken, refreshLocal, refreshRemote, notify]);
   useEffect(() => {
     const onOnline = () => void resume();
     window.addEventListener('online', onOnline);
@@ -85,16 +112,37 @@ export function useEnvironmentSpots(idToken: string | null, bbox: [number, numbe
   const record = useCallback(async (body: PendingSpot['body'], photos: PendingPhoto[]) => {
     const p = await saveNewSpot(body, photos);
     await refreshLocal();
-    void submitSpot(p.id, idToken).finally(() => void refreshLocal().then(() => refreshRemote()));
+    const label = body.envType === 'tree' ? (body.treeSpeciesText || species.find((s) => s.id === body.treeSpeciesId)?.name || '樹木') : body.envType === 'terrain' ? '地形' : 'その他';
+    notify('端末に保存しました。送信中…', 'info');
+    void submitSpot(p.id, idToken)
+      .catch(() => false)
+      .then(async () => {
+        const after = await getPendingSpot(p.id).catch(() => undefined);
+        if (after?.stage === 'registered') notify(`送信しました（環境スポット: ${label}）`, 'ok');
+        else if (after?.lastError && !after.lastError.retryable) notify(`送信できませんでした: ${after.lastError.message}`, 'warn');
+        else notify('未送信です。電波のある所で自動的に送信します（記録と写真は端末に保存済み）', 'warn');
+      })
+      .finally(() => void refreshLocal().then(() => refreshRemote()));
     return p;
-  }, [idToken, refreshLocal, refreshRemote]);
+  }, [idToken, refreshLocal, refreshRemote, notify, species]);
 
   const observe = useCallback(async (target: { spotId: string | null; pendingSpotId: string | null }, input: ObservationInput) => {
     const o = await saveNewObservation(target, input);
     await refreshLocal();
-    void submitObservation(o.id, idToken).finally(() => void refreshLocal().then(() => refreshRemote()));
+    const tgt = input.targetSpeciesId ? species.find((s) => s.id === input.targetSpeciesId)?.name ?? '' : input.targetText ?? '';
+    const res = { found: 'あり', not_found: 'なし', not_checked: '見ていない' }[input.result];
+    notify('観察を端末に保存しました。送信中…', 'info');
+    void submitObservation(o.id, idToken)
+      .catch(() => false)
+      .then(async () => {
+        const after = await getPendingObservation(o.id).catch(() => undefined);
+        if (after?.stage === 'registered') notify(`送信しました（観察: ${tgt} ${res}）`, 'ok');
+        else if (after?.lastError && !after.lastError.retryable) notify(`送信できませんでした: ${after.lastError.message}`, 'warn');
+        else notify('観察は未送信です。電波のある所で自動的に送信します', 'warn');
+      })
+      .finally(() => void refreshLocal().then(() => refreshRemote()));
     return o;
-  }, [idToken, refreshLocal, refreshRemote]);
+  }, [idToken, refreshLocal, refreshRemote, notify, species]);
 
   const speciesName = useCallback((id: string | null) => species.find((s) => s.id === id)?.name ?? null, [species]);
 
@@ -118,5 +166,5 @@ export function useEnvironmentSpots(idToken: string | null, bbox: [number, numbe
     return out;
   }, [remote, pending, speciesName]);
 
-  return { species, markers, pendingObs, remoteAsOf, remoteError, record, observe, refreshRemote, refreshLocal, resume };
+  return { species, markers, pendingObs, remoteAsOf, remoteError, record, observe, refreshRemote, refreshLocal, resume, notice, clearNotice: () => setNotice(null) };
 }
