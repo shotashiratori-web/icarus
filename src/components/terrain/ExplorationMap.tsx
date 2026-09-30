@@ -910,6 +910,8 @@ export default function ExplorationMap({ entries }: Props) {
         />
       )}
       {/* 地図の上のボタンは 1 か所にまとめる（現在地・進行方向・記録） */}
+      {/* 地点情報・記録・詳細を開いている間はボタンを隠す（スマホで地点情報の見出しと閉じるボタンに重なるため） */}
+      {!probe && !recordLoc && !selectedMarker && (
       <div className={styles.toolbar}>
         <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={toggleGps} aria-pressed={watching}>{watching ? '現在地 ON' : '現在地'}</button>
         {(pos || headingMode) && (
@@ -919,6 +921,7 @@ export default function ExplorationMap({ entries }: Props) {
           <button className={styles.tool} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
         )}
       </div>
+      )}
       {headingAsk && (
         <div className={styles.headingAsk} role="dialog" aria-label="進行方向モード">
           <p>地図を向いている方向に合わせるため、方向センサーを使用します。</p>

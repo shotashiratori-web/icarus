@@ -79,10 +79,11 @@ describe('EnvironmentSpotDetailSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'なし' }));
     expect(save).toBeDisabled(); // 対象が無い
     fireEvent.click(screen.getByRole('button', { name: 'マイタケ' }));
+    fireEvent.click(screen.getByRole('button', { name: /記録時と同じ/ })); // 山から戻ってから: 記録時（写真の撮影日時）の観察にする
     fireEvent.click(save);
     await waitFor(() => expect(onObserve).toHaveBeenCalledTimes(1));
     expect(onObserve.mock.calls[0][0]).toEqual({ spotId: 's1', pendingSpotId: null });
-    expect(onObserve.mock.calls[0][1]).toMatchObject({ targetSpeciesId: 'target-maitake', targetText: '', result: 'not_found', foundStage: null });
+    expect(onObserve.mock.calls[0][1]).toMatchObject({ targetSpeciesId: 'target-maitake', targetText: '', result: 'not_found', foundStage: null, observedAt: '2026-09-29T00:12:00Z' });
   });
 });
 

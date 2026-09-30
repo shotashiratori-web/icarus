@@ -25,6 +25,13 @@ type Props = {
 
 interface Row { key: string; observedAt: string; target: string; result: ObsResult; foundStage: FoundStage | null; memo: string; by: string; device: boolean; updatedAt: string | null }
 
+// datetime-local の値（端末のタイムゾーン）
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  const z = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+};
+
 const fmt = (iso: string) => {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -38,6 +45,8 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
   const [result, setResult] = useState<ObsResult | null>(null);
   const [stage, setStage] = useState<FoundStage | null>(null);
   const [memo, setMemo] = useState('');
+  // 観察日時: 既定は今。山から戻ってから入れる時は「記録時と同じ（写真の撮影日時）」か日時を選ぶ
+  const [obsAt, setObsAt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -113,10 +122,10 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
     setError(null);
     try {
       await onObserve({ spotId: marker.spotId, pendingSpotId: marker.spotId ? null : marker.pendingId }, {
-        observedAt: new Date().toISOString(), targetSpeciesId: targetId, targetText: targetId ? '' : targetText.trim(),
+        observedAt: obsAt ?? new Date().toISOString(), targetSpeciesId: targetId, targetText: targetId ? '' : targetText.trim(),
         result, foundStage: result === 'found' ? stage : null, memo: memo.trim(),
       });
-      setAdding(false); setTargetId(null); setTargetText(''); setResult(null); setStage(null); setMemo('');
+      setAdding(false); setTargetId(null); setTargetText(''); setResult(null); setStage(null); setMemo(''); setObsAt(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした');
     } finally {
@@ -125,6 +134,7 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
   };
 
   const lifeState = s?.lifeState ?? p?.body.lifeState ?? marker.lifeState;
+  const spotObservedAt = s?.observedAt ?? p?.body.observedAt ?? null;
   const loc = s ? { src: s.locationSource, acc: s.gpsAccuracyM } : p ? { src: p.body.locationSource, acc: p.body.gpsAccuracyM ?? null } : null;
   const terrain = (s?.terrain ?? p?.body.terrain ?? null) as Record<string, unknown> | null;
 
@@ -252,6 +262,20 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
               </div>
             </>
           )}
+          <p className={styles.label}>いつ見ましたか</p>
+          <div className={styles.chips}>
+            <button className={`${styles.chip} ${obsAt === null ? styles.on : ''}`} onClick={() => setObsAt(null)}>今</button>
+            {spotObservedAt && (
+              <button className={`${styles.chip} ${obsAt === spotObservedAt ? styles.on : ''}`} onClick={() => setObsAt(spotObservedAt)}>記録時と同じ（{fmt(spotObservedAt)}）</button>
+            )}
+          </div>
+          <input
+            className={styles.input}
+            type="datetime-local"
+            aria-label="観察日時"
+            value={toLocalInput(obsAt ?? new Date().toISOString())}
+            onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) setObsAt(d.toISOString()); }}
+          />
           <p className={styles.label}>メモ（任意）</p>
           <input className={styles.input} value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={1000} />
           {error && <p className={styles.warn}>{error}</p>}
