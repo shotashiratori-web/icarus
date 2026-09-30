@@ -1,5 +1,5 @@
 import { TokenExpiredError } from '../api/icarusApi';
-import { addSpotObservation, createEnvironmentSpot, SpotApiError, SpotNetworkError } from '../api/environmentSpotsApi';
+import { addEnvironmentSpotPhotos, addSpotObservation, createEnvironmentSpot, SpotApiError, SpotNetworkError } from '../api/environmentSpotsApi';
 import { createOrReuseAsset, finalizeAsset } from '../api/photoAssetApi';
 import {
   getPendingObservation, getPendingSpot, putPendingObservation, putPendingSpot, updatePendingObservation, updatePendingSpot,
@@ -95,6 +95,32 @@ export function syncSpot(id: string, idToken: string): Promise<PendingSpot> {
   return once(`spot:${id}`, () => runSpot(id, idToken));
 }
 
+// 写真 1 枚: POST /assets（requestId = 写真の id で冪等）→ R2 へ PUT → finalize。assetId を返す
+async function uploadPhoto(ph: PendingPhoto, idToken: string): Promise<string> {
+  if (!ph.data) throw new SpotRejectedError('LOCAL_PHOTO_MISSING', '端末の写真が見つかりません');
+  if ((await sha256Hex(ph.data)) !== ph.sha256) throw new SpotRejectedError('LOCAL_PHOTO_CORRUPTED', '端末の写真が保存時と一致しません');
+  const created = await createOrReuseAsset({
+    requestId: ph.id, fileHash: ph.sha256, originalFilename: ph.name, mimeType: ph.type, sizeBytes: ph.bytes,
+    width: null, height: null, takenAt: null, exifGpsLat: null, exifGpsLng: null,
+  }, idToken);
+  if (created.uploadRequired) {
+    if (!created.presignedUploadUrl) throw new SpotApiError(502, 'NO_PRESIGNED_URL', '写真の送り先が発行されませんでした');
+    await putToR2(created.presignedUploadUrl, ph.data, ph.type);
+    await finalizeAsset(created.assetId, idToken);
+  }
+  return created.assetId;
+}
+
+// 登録済みスポットへ写真を追加（訂正と同じく端末に保存せず、電波のある時だけ）。requestId で冪等
+export async function addPhotosToSpot(spotId: string, files: File[], idToken: string): Promise<string[]> {
+  const photos = [];
+  for (const f of files) photos.push(await photoFromFile(f));
+  const assetIds = [];
+  for (const ph of photos) assetIds.push(await uploadPhoto(ph, idToken));
+  await addEnvironmentSpotPhotos(spotId, { requestId: crypto.randomUUID(), assetIds }, idToken);
+  return assetIds;
+}
+
 async function runSpot(id: string, idToken: string): Promise<PendingSpot> {
   let p = await getPendingSpot(id);
   if (!p) throw new SpotRejectedError('PENDING_NOT_FOUND', '端末に記録がありません');
@@ -104,18 +130,8 @@ async function runSpot(id: string, idToken: string): Promise<PendingSpot> {
     if (p.stage === 'saved') {
       for (const ph of p.photos) {
         if (ph.assetId) continue;
-        if (!ph.data) throw new SpotRejectedError('LOCAL_PHOTO_MISSING', '端末の写真が見つかりません');
-        if ((await sha256Hex(ph.data)) !== ph.sha256) throw new SpotRejectedError('LOCAL_PHOTO_CORRUPTED', '端末の写真が保存時と一致しません');
-        const created = await createOrReuseAsset({
-          requestId: ph.id, fileHash: ph.sha256, originalFilename: ph.name, mimeType: ph.type, sizeBytes: ph.bytes,
-          width: null, height: null, takenAt: null, exifGpsLat: null, exifGpsLng: null,
-        }, idToken);
-        if (created.uploadRequired) {
-          if (!created.presignedUploadUrl) throw new SpotApiError(502, 'NO_PRESIGNED_URL', '写真の送り先が発行されませんでした');
-          await putToR2(created.presignedUploadUrl, ph.data, ph.type);
-          await finalizeAsset(created.assetId, idToken);
-        }
-        p = (await updatePendingSpot(id, (cur) => ({ photos: cur.photos.map((x) => (x.id === ph.id ? { ...x, assetId: created.assetId } : x)) })))!;
+        const assetId = await uploadPhoto(ph, idToken);
+        p = (await updatePendingSpot(id, (cur) => ({ photos: cur.photos.map((x) => (x.id === ph.id ? { ...x, assetId } : x)) })))!;
       }
       p = (await updatePendingSpot(id, { stage: 'photos_uploaded', lastError: null }))!;
     }

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { editErrorMessage, fetchEnvironmentSpot, patchEnvironmentSpot, patchSpotObservation } from '../../api/environmentSpotsApi';
+import { editErrorMessage, fetchEnvironmentSpot, patchEnvironmentSpot, patchSpotObservation, SpotNetworkError } from '../../api/environmentSpotsApi';
 import EnvironmentSpotEditForm from './EnvironmentSpotEditForm';
+import { addPhotosToSpot } from '../../environmentSpots/sync';
 import {
   LIFE_LABEL, PHOTO_MISSING_LABEL, RESULT_LABEL, STAGE_LABEL,
   type EnvSpeciesItem, type EnvironmentSpot, type FoundStage, type ObsResult, type ObservationInput, type PendingObservation,
@@ -32,6 +33,16 @@ const toLocalInput = (iso: string) => {
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
 };
 
+const MAX_SPOT_PHOTOS = 10;
+
+// 写真の追加は端末に保存しないので、失敗したら電波のある所で選び直してもらう
+const photoAddError = (e: unknown) => {
+  if (e instanceof SpotNetworkError || (e instanceof Error && e.name === 'PhotoUploadFailedError' && !(e as { code?: string }).code)) {
+    return '通信できませんでした。写真の追加は電波のある所でもう一度選んでください（端末には保存しません）';
+  }
+  return editErrorMessage(e);
+};
+
 const fmt = (iso: string) => {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -52,7 +63,9 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
   const [editing, setEditing] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [archiveReason, setArchiveReason] = useState('');
-  const [obsEdit, setObsEdit] = useState<{ id: string; updatedAt: string; result: ObsResult; stage: FoundStage | null; memo: string; reason: string } | null>(null);
+  const [obsEdit, setObsEdit] = useState<{ id: string; updatedAt: string; result: ObsResult; stage: FoundStage | null; memo: string; observedAt: string; reason: string } | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editMsg, setEditMsg] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
@@ -64,6 +77,24 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
     return () => { cancelled = true; };
   }, [marker.spotId, idToken, reload]);
   const afterEdit = () => { setReload((n) => n + 1); onChanged?.(); };
+
+  // 登録済みスポットへ写真を追加（訂正と同じく電波のある時だけ・端末に保存しない）
+  const addPhotos = async (fileList: FileList | null) => {
+    const files = fileList ? Array.from(fileList) : []; // await より前に取り出す（input を空にすると FileList も空になる）
+    if (!detail || !idToken || files.length === 0) return;
+    if (detail.photos.length + files.length > MAX_SPOT_PHOTOS) { setPhotoMsg({ ok: false, text: `写真は ${MAX_SPOT_PHOTOS} 枚までです（いま ${detail.photos.length} 枚）` }); return; }
+    setPhotoBusy(true);
+    setPhotoMsg(null);
+    try {
+      await addPhotosToSpot(detail.id, files, idToken);
+      setPhotoMsg({ ok: true, text: `写真を ${files.length} 枚追加しました` });
+      afterEdit();
+    } catch (e) {
+      setPhotoMsg({ ok: false, text: photoAddError(e) });
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   const archiveSpot = async () => {
     if (!detail || !idToken) return;
@@ -87,6 +118,7 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
       const st = obsEdit.result === 'found' ? obsEdit.stage : null;
       if ((orig?.foundStage ?? null) !== st) changes.foundStage = st;
       if ((orig?.memo ?? '') !== obsEdit.memo.trim()) changes.memo = obsEdit.memo.trim();
+      if (orig && Date.parse(orig.observedAt) !== Date.parse(obsEdit.observedAt)) changes.observedAt = obsEdit.observedAt;
     }
     if (Object.keys(changes).length === 0) { setEditMsg('変更がありません'); return; }
     try {
@@ -164,6 +196,12 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
           )}
           {s.photos.length > 0 && !s.photos[0].thumbnailUrl && <p className={styles.sub}>写真 {s.photos.length} 枚（電波のある所で表示）</p>}
           {s.photos.length === 0 && s.photoMissingReason && <p className={styles.sub}>写真なし（{PHOTO_MISSING_LABEL[s.photoMissingReason]}{s.photoMissingMemo ? `: ${s.photoMissingMemo}` : ''}）</p>}
+          {s.status === 'active' && s.photos.length < MAX_SPOT_PHOTOS && (
+            <div className={styles.actions}>
+              <label className={styles.btn} aria-disabled={photoBusy}>{photoBusy ? '写真を送信中…' : '写真を追加'}<input type="file" accept="image/*" multiple hidden disabled={photoBusy} onChange={(e) => { void addPhotos(e.target.files); e.target.value = ''; }} /></label>
+            </div>
+          )}
+          {photoMsg && <p className={photoMsg.ok ? styles.sub : styles.warn}>{photoMsg.text}</p>}
         </>
       )}
       {p && !s && <p className={styles.sub}>写真 {p.photos.length} 枚{p.photos.length === 0 && p.body.photoMissingReason ? `（なし: ${PHOTO_MISSING_LABEL[p.body.photoMissingReason]}）` : ''}</p>}
@@ -203,7 +241,7 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
               <span>
                 {r.target}：<b>{RESULT_LABEL[r.result]}</b>{r.foundStage ? `（${STAGE_LABEL[r.foundStage]}）` : ''}{r.memo ? `・${r.memo}` : ''}<br /><small>{r.by}</small>
                 {!r.device && r.updatedAt && obsEdit?.id !== r.key && (
-                  <> <button className={styles.chip} onClick={() => setObsEdit({ id: r.key, updatedAt: r.updatedAt!, result: r.result, stage: r.foundStage, memo: r.memo, reason: '' })}>訂正</button></>
+                  <> <button className={styles.chip} onClick={() => setObsEdit({ id: r.key, updatedAt: r.updatedAt!, result: r.result, stage: r.foundStage, memo: r.memo, observedAt: r.observedAt, reason: '' })}>訂正</button></>
                 )}
               </span>
             </div>
@@ -219,6 +257,18 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
                     {(Object.keys(STAGE_LABEL) as FoundStage[]).map((st) => (
                       <button key={st} className={`${styles.chip} ${obsEdit.stage === st ? styles.on : ''}`} onClick={() => setObsEdit({ ...obsEdit, stage: obsEdit.stage === st ? null : st })}>{STAGE_LABEL[st]}</button>
                     ))}
+                  </div>
+                )}
+                <input
+                  className={styles.input}
+                  type="datetime-local"
+                  aria-label="観察日時の訂正"
+                  value={toLocalInput(obsEdit.observedAt)}
+                  onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) setObsEdit({ ...obsEdit, observedAt: d.toISOString() }); }}
+                />
+                {spotObservedAt && (
+                  <div className={styles.chips}>
+                    <button className={styles.chip} onClick={() => setObsEdit({ ...obsEdit, observedAt: spotObservedAt })}>記録時と同じ（{fmt(spotObservedAt)}）</button>
                   </div>
                 )}
                 <input className={styles.input} value={obsEdit.memo} onChange={(e) => setObsEdit({ ...obsEdit, memo: e.target.value })} placeholder="メモ" maxLength={1000} />

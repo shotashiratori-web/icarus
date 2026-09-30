@@ -87,4 +87,74 @@ describe('EnvironmentSpotDetailSheet の訂正・無効化', () => {
     expect(patch.url).toMatch(/\/spot-observations\/o1$/);
     expect(patch.body).toMatchObject({ changes: { result: 'not_found' }, reason: '探したが無かった', expectedUpdatedAt: 'OU1' });
   });
+
+  it('5. 観察の日時を訂正できる（家で入力して保存時刻になった時）。日時だけ変えたら observedAt だけを送る', async () => {
+    const calls = mockFetch();
+    render(<EnvironmentSpotDetailSheet marker={marker} species={SPECIES} pendingObs={[]} idToken="tok" onObserve={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole('button', { name: '訂正' })[1]);
+    fireEvent.click(screen.getByRole('button', { name: /^記録時と同じ/ }));
+    fireEvent.click(screen.getByRole('button', { name: '訂正を送信' }));
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    const patch = calls.find((c) => c.method === 'PATCH')!;
+    expect(patch.body.changes).toEqual({ observedAt: '2026-09-29T00:12:00Z' });
+  });
+
+  it('6. 日時入力で訂正（端末の時刻 → ISO）', async () => {
+    const calls = mockFetch();
+    render(<EnvironmentSpotDetailSheet marker={marker} species={SPECIES} pendingObs={[]} idToken="tok" onObserve={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole('button', { name: '訂正' })[1]);
+    fireEvent.change(screen.getByLabelText('観察日時の訂正'), { target: { value: '2026-09-30T09:09' } });
+    fireEvent.click(screen.getByRole('button', { name: '訂正を送信' }));
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    const patch = calls.find((c) => c.method === 'PATCH')!;
+    expect(patch.body.changes).toEqual({ observedAt: new Date('2026-09-30T09:09').toISOString() });
+  });
+});
+
+describe('EnvironmentSpotDetailSheet の写真の追加', () => {
+  const jpeg = () => new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'IMG_1.jpg', { type: 'image/jpeg' });
+
+  it('7. 写真を選ぶと /assets → R2 → finalize → POST /environment-spots/:id/photos の順で送り、詳細を取り直す', async () => {
+    const calls: { url: string; method: string; body: unknown }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: typeof init?.body === 'string' ? JSON.parse(init.body) : null });
+      if (method === 'GET') return new Response(JSON.stringify({ item: spot }));
+      if (url.endsWith('/assets')) return new Response(JSON.stringify({ assetId: 'a-new', assetStatus: 'pending', uploadRequired: true, presignedUploadUrl: 'https://r2.example/put' }));
+      if (method === 'PUT') return new Response('', { status: 200 });
+      if (url.endsWith('/finalize')) return new Response(JSON.stringify({ assetStatus: 'ready' }));
+      return new Response(JSON.stringify({ outcome: 'applied', added: ['a-new'] }));
+    });
+    const onChanged = vi.fn();
+    const { container } = render(<EnvironmentSpotDetailSheet marker={marker} species={SPECIES} pendingObs={[]} idToken="tok" onObserve={vi.fn()} onClose={vi.fn()} onChanged={onChanged} />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [jpeg()] } });
+    expect(await screen.findByText('写真を 1 枚追加しました')).toBeInTheDocument();
+    const posts = calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url.replace(/^https:\/\/[^/]+/, '')}`);
+    expect(posts).toEqual(['POST /assets', 'PUT /put', 'POST /assets/a-new/finalize', 'POST /environment-spots/s1/photos']);
+    const add = calls.find((c) => c.url.endsWith('/photos'))!;
+    expect(add.body).toMatchObject({ assetIds: ['a-new'] });
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('8. 圏外では送らず、端末にも保存しないと伝える', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if ((init?.method ?? 'GET') === 'GET') return new Response(JSON.stringify({ item: spot }));
+      throw new TypeError('Failed to fetch');
+    });
+    const { container } = render(<EnvironmentSpotDetailSheet marker={marker} species={SPECIES} pendingObs={[]} idToken="tok" onObserve={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.change(container.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [jpeg()] } });
+    expect(await screen.findByText(/写真の追加は電波のある所で/)).toBeInTheDocument();
+  });
+
+  it('9. 無効化されたスポット・10 枚あるスポットには「写真を追加」を出さない', () => {
+    const archived = { ...marker, remote: { ...spot, status: 'archived' } } as SpotMarker;
+    const { unmount } = render(<EnvironmentSpotDetailSheet marker={archived} species={SPECIES} pendingObs={[]} idToken={null} onObserve={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText('写真を追加')).toBeNull();
+    unmount();
+    const full = { ...marker, remote: { ...spot, photos: Array.from({ length: 10 }, (_, i) => ({ assetId: `a${i}`, thumbnailUrl: null, detailUrl: null })) } } as unknown as SpotMarker;
+    render(<EnvironmentSpotDetailSheet marker={full} species={SPECIES} pendingObs={[]} idToken={null} onObserve={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText('写真を追加')).toBeNull();
+  });
 });

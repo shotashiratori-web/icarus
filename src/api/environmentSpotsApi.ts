@@ -70,6 +70,11 @@ export async function addSpotObservation(spotId: string, body: ObservationInput 
   return (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(spotId)}/observations`, { method: 'POST', body: JSON.stringify(body) }, idToken)).json();
 }
 
+// 登録済みスポットへの写真の追加（先に /assets で登録・アップロード済みの assetId を渡す）
+export async function addEnvironmentSpotPhotos(spotId: string, body: { requestId: string; assetIds: string[] }, idToken: string): Promise<{ outcome: string; added?: string[] }> {
+  return (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(spotId)}/photos`, { method: 'POST', body: JSON.stringify(body) }, idToken)).json();
+}
+
 // 訂正（共通の編集契約: requestId・expectedUpdatedAt・changes・reason）。訂正は端末に保存せず、電波のある時だけ
 export interface EditRequest {
   requestId: string;
