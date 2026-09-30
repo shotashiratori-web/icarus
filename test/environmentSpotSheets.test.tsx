@@ -120,3 +120,22 @@ describe('樹種を選びやすく・撮った写真から記録', () => {
     expect(JSON.parse(localStorage.getItem('icarus:spot-species-usage')!)['tree-mizunara']).toBe(1);
   });
 });
+
+describe('現在地のまま古い写真で記録しない（自宅の位置で登録された実例）', () => {
+  it('5. 写真が 30 分以上前で位置が現在地なら警告して保存できない。座標を入れると地図指定で保存', async () => {
+    const onSave = vi.fn(async (..._a: unknown[]) => undefined);
+    render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 10 }} species={SPECIES} terrainAt={(lat) => ({ at: lat })} onSave={onSave} onClose={vi.fn()} observedAt="2026-09-30T00:14:16.000Z" />);
+    fireEvent.click(screen.getByRole('button', { name: '生木' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ミズナラ' }));
+    fireEvent.click(screen.getByRole('button', { name: '暗い' }));
+    const save = screen.getByRole('button', { name: '端末に保存して送信' });
+    expect(save).toBeDisabled();
+    expect(screen.getByText('木の場所ではない可能性があります', { exact: false })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('木の座標 例: 43.05435, 140.78771'), { target: { value: '43.05435, 140.78771' } });
+    fireEvent.click(screen.getByRole('button', { name: 'この座標にする' }));
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ lat: 43.05435, lng: 140.78771, locationSource: 'map', gpsAccuracyM: null, observedAt: '2026-09-30T00:14:16.000Z', terrain: { at: 43.05435 } });
+  });
+});
