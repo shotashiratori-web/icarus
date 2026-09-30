@@ -38,7 +38,7 @@ import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import ContourLayer from './ContourLayer';
 import { APP_BUILD } from '../../appBuild';
 import { useEnvironmentSpots, type SpotMarker } from './useEnvironmentSpots';
-import EnvironmentSpotRecordSheet, { type RecordLocation } from './EnvironmentSpotRecordSheet';
+import EnvironmentSpotRecordSheet, { NO_GPS_HINT, type RecordLocation } from './EnvironmentSpotRecordSheet';
 import EnvironmentSpotDetailSheet from './EnvironmentSpotDetailSheet';
 import { KIND_CHOICES, type PendingPhoto, type SpotKindChoice } from '../../environmentSpots/types';
 import { readPhotoMeta } from '../../environmentSpots/photoMeta';
@@ -875,7 +875,8 @@ export default function ExplorationMap({ entries }: Props) {
       {placeWait && !recordLoc && (
         <div className={styles.placeBanner} role="dialog" aria-label="写真の場所を指定">
           <b>写真に位置情報がありません</b>
-          <p className={styles.sub}>iPhone は写真を渡す時に位置情報を外すことがあります。地図で木の場所をタップするか、座標を入力してください（写真{placeWait.photos.length}枚{placeWait.observedAt ? `・撮影 ${fmtDate(placeWait.observedAt)}` : ''}は保ったまま）</p>
+          <p className={styles.sub}>地図で木の場所をタップするか、座標を入力してください（写真{placeWait.photos.length}枚{placeWait.observedAt ? `・撮影 ${fmtDate(placeWait.observedAt)}` : ''}は保ったまま）</p>
+          <p className={styles.sub}>{NO_GPS_HINT}</p>
           <div className={styles.row}>
             <input className={styles.coordInput} value={coordValue} onChange={(e) => setCoordValue(e.target.value)} placeholder="43.05435, 140.78771" inputMode="decimal" />
             <button className={styles.btn} onClick={placeByText}>この座標</button>

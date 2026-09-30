@@ -28,6 +28,9 @@ type Props = {
   observedAt?: string | null; // 撮った写真から記録する時は撮影日時
 };
 
+// iPhone は写真ライブラリから Web へ写真を渡す時に位置情報を外す。「ファイル」から選ぶと元の写真（位置つき）が渡る
+export const NO_GPS_HINT = '写真に位置情報が残っていません（iPhone は写真ライブラリから渡す時に位置を外します）。位置も使いたい時は、写真アプリで写真を「共有 → “ファイル”に保存」してから、ここで「ファイルを選択」で選んでください。';
+
 // 林分の樹種名（森林計画）→ 樹種マスタ（名前か別表記が一致するもの）
 function matchSpecies(names: string[], trees: EnvSpeciesItem[]): EnvSpeciesItem[] {
   const out: EnvSpeciesItem[] = [];
@@ -43,6 +46,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   const [coordValue, setCoordValue] = useState('');
   const [coordError, setCoordError] = useState<string | null>(null);
   const [hereOk, setHereOk] = useState(false);
+  const [photoNoGps, setPhotoNoGps] = useState(false);
   const [kind, setKind] = useState<SpotKindChoice | null>(null);
   const [speciesId, setSpeciesId] = useState<string | null>(null);
   const [speciesText, setSpeciesText] = useState('');
@@ -99,15 +103,22 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   if (dbhNum !== null && !(Number.isInteger(dbhNum) && dbhNum >= 1 && dbhNum <= 400)) problems.push('太さは 1〜400 の整数（cm）');
   if (photos.length === 0 && !missing) problems.push('写真を撮るか、写真が無い理由を選んでください');
 
-  const addPhotos = async (files: FileList | null) => {
-    if (!files) return;
+  const addPhotos = async (fileList: FileList | null) => {
+    // 選択欄は読み取り後すぐに空に戻す（同じ写真を選び直せるように）。FileList はその時に空になるので、最初に配列へ控える
+    // （以前は撮影日時を読む時点で空になっていて、記録日時が保存時刻・古い写真の警告も出なかった）
+    const files = fileList ? Array.from(fileList) : [];
+    if (files.length === 0) return;
     setError(null);
     try {
       const add: PendingPhoto[] = [];
-      for (const f of Array.from(files)) add.push(await photoFromFile(f));
-      if (!photoTakenAt && files.length > 0) {
-        const meta = await readPhotoMeta(files[0]);
-        if (meta.takenAt) setPhotoTakenAt(meta.takenAt);
+      for (const f of files) add.push(await photoFromFile(f));
+      const meta = await readPhotoMeta(files[0]);
+      if (!photoTakenAt && meta.takenAt) setPhotoTakenAt(meta.takenAt);
+      // 写真に撮影時の位置が残っていれば（「ファイル」から選んだ元の写真など）、現在地ではなく写真の位置を使う
+      if (meta.lat !== null && meta.lng !== null && !(loc.source === 'gps' && loc.fromPhoto)) {
+        setLoc({ lat: meta.lat, lng: meta.lng, source: 'gps', accuracyM: meta.accuracyM, fromPhoto: true });
+      } else if (meta.lat === null && meta.takenAt && Date.now() - Date.parse(meta.takenAt) > 30 * 60 * 1000) {
+        setPhotoNoGps(true);
       }
       setPhotos((cur) => [...cur, ...add].slice(0, 10));
       setMissing(null);
@@ -147,6 +158,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         位置: {loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}（{loc.source === 'gps' ? `${loc.fromPhoto ? '写真の撮影時の GPS' : '現在地'}${loc.accuracyM !== null ? `・精度 約${Math.round(loc.accuracyM)}m` : ''}` : '地図で指定'}）
       </p>
       <p className={styles.sub}>記録日時: {photoTakenAt ? `${new Date(photoTakenAt).toLocaleString('ja-JP')}（写真の撮影日時）` : '保存した時刻'}</p>
+      {photoNoGps && loc.source !== 'map' && !loc.fromPhoto && <p className={styles.sub}>{NO_GPS_HINT}</p>}
       {staleHere && !hereOk && (
         <div className={styles.warnBox}>
           <p className={styles.warn}>写真は {new Date(photoTakenAt!).toLocaleString('ja-JP')} の撮影です。位置は「現在地」なので、木の場所ではない可能性があります</p>
