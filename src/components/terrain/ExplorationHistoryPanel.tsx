@@ -202,7 +202,7 @@ export default function ExplorationHistoryPanel(p: Props) {
           ))}
           <button className={styles.btn} onClick={() => setTargets((ts) => [...ts, { target: '', result: 'unknown' }])}>＋ 対象を追加</button>
           <label className={styles.field}><span>メモ</span><input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} /></label>
-          <label className={styles.field}><span>使った仮説（その日に地図を絞った条件を、この探索に固定して残す）</span>
+          <label className={styles.field}><span>使った仮説（任意。あとで「帰ってから」の欄で付けてもよい）</span>
             <select value={hypId} onChange={(e) => setHypId(e.target.value)} aria-label="使った仮説">
               <option value="">なし</option>
               {orderHypotheses(hyps, draft.exploredOnManual ?? draft.preview.exploredOn).map((h) => <option key={h.id} value={h.id}>{hypLabel(h, draft.preview.exploredOn)}</option>)}
@@ -246,8 +246,9 @@ export default function ExplorationHistoryPanel(p: Props) {
       )}
 
       {serverEntries.length > 0 && (
-        <details className={styles.details}>
-          <summary className={styles.sub}>登録済みの探索に仮説を付ける・外す</summary>
+        <div className={styles.form} aria-label="探索に使った仮説を付ける">
+          <h3 className={styles.h}>帰ってから: 探索に使った仮説を付ける</h3>
+          <p className={styles.sub}>山では地図を見ることに集中し、仮説は帰宅後にここで付けられます</p>
           <label className={styles.field}><span>探索</span>
             <select value={attachSession} onChange={(e) => { setAttachSession(e.target.value); setAttachMsg(null); const en = serverEntries.find((x) => x.sessionId === e.target.value); setAttachHyp(en?.hypothesis?.id ?? ''); }} aria-label="仮説を付ける探索">
               <option value="">選んでください</option>
@@ -270,7 +271,7 @@ export default function ExplorationHistoryPanel(p: Props) {
           )}
           {attachMsg && <p className={attachMsg.ok ? styles.sub : styles.warn}>{attachMsg.text}</p>}
           <p className={styles.sub}>付けた仮説は、その時点の内容がそのまま残ります（あとで端末の仮説を直しても変わりません）。付け替え・外しは履歴に残ります</p>
-        </details>
+        </div>
       )}
 
       <div className={styles.row}>
