@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Circle, CircleMarker, ImageOverlay, MapContainer, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../../context/AuthContext';
@@ -49,7 +49,7 @@ import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize
 import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import {
-  buildTargetExploration, describeTargetAt, DEFAULT_POINT_RADIUS_M, renderTargetExploration, stateAreasKm2, STATE_LABEL, STATE_LABEL_NO_TARGET,
+  buildTargetExploration, describeTargetAt, spotTargetStatus, targetKeys, type SpotTargetStatus, DEFAULT_POINT_RADIUS_M, renderTargetExploration, stateAreasKm2, STATE_LABEL, STATE_LABEL_NO_TARGET,
   type ExplorationState, type PointEvidence, type TargetSpec, type TrackEvidence,
 } from '../../terrain/targetExploration';
 import {
@@ -146,6 +146,12 @@ const fmtDate = (iso: string) => {
 
 // 環境スポットの色（種類・生死）。ミズナラは金色の縁
 const SPOT_COLORS: Record<SpotKindChoice, string> = { alive: '#2e7d32', snag: '#a1887f', fallen: '#5d4037', terrain: '#546e7a', other: '#9e9e9e' };
+
+// 対象の観察があるスポットの輪と印（色だけに頼らない: 見つかった=緑の実線＋✓、見つからず=赤の破線＋×）
+const SPOT_TARGET_STYLE: Record<SpotTargetStatus, { color: string; dash?: string; mark: string; label: string }> = {
+  found: { color: '#1b5e20', mark: '✓', label: '見つかった' },
+  notFound: { color: '#c62828', dash: '5 4', mark: '×', label: '見つからず' },
+};
 
 interface ProbeHead { species: string | null; note: string | null; vegetation: string | null; spots: string[] }
 
@@ -432,6 +438,26 @@ export default function ExplorationMap({ entries }: Props) {
   }, [entries, envSpots.markers, envSpots.pendingObs, envSpots.species, period]);
   const te = useMemo(() => (manifest ? buildTargetExploration(manifest, target, trackEvidence, pointEvidence, coverageWidth, DEFAULT_POINT_RADIUS_M) : null), [manifest, target, trackEvidence, pointEvidence, coverageWidth]);
   const stateAreas = useMemo(() => (manifest && te && loaded ? stateAreasKm2(manifest, te, (i) => loaded.grid.terrain[i * 4 + 3] > 0) : null), [manifest, te, loaded]);
+  // 対象を選んでいる時だけ、その対象の観察がある環境スポットを強調（色だけに頼らず輪＋印）
+  const spotStatus = useMemo(() => {
+    const out = new Map<string, SpotTargetStatus>();
+    if (!target) return out;
+    const keys = targetKeys(target);
+    const nameOfSpecies = (id: string | null) => envSpots.species.find((sp) => sp.id === id)?.name ?? '';
+    for (const mk of envSpots.markers) {
+      const obs: { name: string; result: string }[] = [];
+      for (const o of mk.remote?.observations ?? []) {
+        if (o.status === 'active' && inPeriod(o.observedAt.slice(0, 10), period, new Date())) obs.push({ name: o.target || o.targetText || nameOfSpecies(o.targetSpeciesId), result: o.result });
+      }
+      for (const o of envSpots.pendingObs) {
+        if (o.stage === 'registered' || !((o.spotId && mk.spotId === o.spotId) || (o.pendingSpotId && mk.pendingId === o.pendingSpotId))) continue;
+        if (inPeriod(o.input.observedAt.slice(0, 10), period, new Date())) obs.push({ name: o.input.targetSpeciesId ? nameOfSpecies(o.input.targetSpeciesId) : o.input.targetText ?? '', result: o.input.result });
+      }
+      const st = spotTargetStatus(keys, obs);
+      if (st) out.set(mk.key, st);
+    }
+    return out;
+  }, [target, envSpots.markers, envSpots.pendingObs, envSpots.species, period]);
   const treePoints = useMemo(() => envSpots.markers.map((mk) => ({ lat: mk.lat, lng: mk.lng, treeSpeciesId: mk.treeSpeciesId })), [envSpots.markers]);
   const treeCounts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -1003,6 +1029,21 @@ export default function ExplorationMap({ entries }: Props) {
             eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); setSelectedSpot(m.key); } }}
           />
         ))}
+        {visibleSpots.map((m) => {
+          const st = spotStatus.get(m.key);
+          if (!st) return null;
+          return (
+            <Fragment key={`${m.key}-target`}>
+              <CircleMarker center={[m.lat, m.lng]} radius={14} pathOptions={{ color: SPOT_TARGET_STYLE[st].color, weight: 3, dashArray: SPOT_TARGET_STYLE[st].dash, fill: false, interactive: false }} />
+              <Marker
+                position={[m.lat, m.lng]}
+                interactive={false}
+                keyboard={false}
+                icon={L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [-6, 24], html: `<span class="${styles.spotBadge}" style="background:${SPOT_TARGET_STYLE[st].color}" aria-label="${SPOT_TARGET_STYLE[st].label}">${SPOT_TARGET_STYLE[st].mark}</span>` })}
+              />
+            </Fragment>
+          );
+        })}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
             <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}</Popup>
