@@ -5,6 +5,7 @@ import {
   getRemoteTrack, listPending, listRemoteSessions, saveRemoteSessions, saveRemoteTrack,
 } from '../../exploration/pendingStore';
 import { resumeExplorationPending, submitExploration } from '../../exploration/submit';
+import type { HypothesisSnapshot } from '../../terrain/hypothesis';
 import { displayStatus, type DisplayStatus, type ExplorationSession, type PendingExploration, type Purpose, type TargetResult, type TrackSegments } from '../../exploration/types';
 
 // 地形探索の探索履歴レイヤー（Stage 2 Web）。表示するのは:
@@ -23,6 +24,8 @@ export interface HistoryEntry {
   distanceM: number;
   track: TrackSegments | null;
   status: DisplayStatus; // サーバーの記録は 'registered'
+  updatedAt: string | null; // サーバーの記録の楽観ロック用（端末のものは null）
+  hypothesis: HypothesisSnapshot | null; // S4b: この探索に使った仮説
 }
 
 export function useExplorationHistory(idToken: string | null, areaId: string | null) {
@@ -102,7 +105,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
     const out: HistoryEntry[] = remote.map((s) => ({
       key: `s:${s.id}`, origin: 'server', sessionId: s.id, pendingId: null, exploredOn: s.exploredOn, explorerNames: s.explorerNames,
       purpose: s.purpose, targets: s.targets.map((t) => ({ target: t.target, result: t.result })), distanceM: s.distanceM,
-      track: tracks[s.id] ?? null, status: 'registered',
+      track: tracks[s.id] ?? null, status: 'registered', updatedAt: s.updatedAt, hypothesis: s.hypothesis ?? null,
     }));
     const serverShas = new Set(remote.map((s) => s.gpxSha256));
     for (const p of pending) {
@@ -110,7 +113,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
       out.push({
         key: `p:${p.id}`, origin: 'device', sessionId: p.sessionId, pendingId: p.id, exploredOn: p.exploredOnManual ?? p.preview.exploredOn,
         explorerNames: p.explorerNames, purpose: p.purpose, targets: p.targets.map((t) => ({ target: t.target, result: t.result })),
-        distanceM: p.preview.distanceM, track: p.preview.track, status: displayStatus(p),
+        distanceM: p.preview.distanceM, track: p.preview.track, status: displayStatus(p), updatedAt: null, hypothesis: p.hypothesis ?? null,
       });
     }
     return out.sort((a, b) => (b.exploredOn ?? '').localeCompare(a.exploredOn ?? ''));

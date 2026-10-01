@@ -1012,6 +1012,7 @@ export default function ExplorationMap({ entries }: Props) {
               <b>{e.exploredOn ?? '日付なし'}・{PURPOSE_LABEL[e.purpose]}</b><br />
               {e.explorerNames.join('、') || '歩いた人未記入'}・{e.distanceM >= 1000 ? `${(e.distanceM / 1000).toFixed(1)}km` : `${Math.round(e.distanceM)}m`}<br />
               {e.targets.map((t) => `${t.target}: ${RESULT_LABEL[t.result]}`).join('、') || '対象未記入'}
+              {e.hypothesis && <><br />仮説「{e.hypothesis.name}」（{e.hypothesis.conditionText.join(' かつ ')}）</>}
               {e.origin === 'device' && <><br />この端末のみ（{e.status === 'registered' ? '登録済み' : '未登録'}）</>}
             </Popup>
           </Polyline>
@@ -1434,6 +1435,7 @@ export default function ExplorationMap({ entries }: Props) {
               period={period}
               onPeriodChange={setPeriod}
               exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
+              idToken={idToken}
             />
 
               </>

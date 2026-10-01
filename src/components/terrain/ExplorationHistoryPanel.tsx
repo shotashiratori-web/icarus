@@ -1,6 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clearFailure, finalizeDraft, LocalGpxError, saveNewExploration } from '../../exploration/sync';
 import { deletePending } from '../../exploration/pendingStore';
+import { listHypotheses } from '../../exploration/hypothesisStore';
+import { ExplorationApiError, ExplorationNetworkError, patchExplorationSession } from '../../api/explorationApi';
+import type { HypothesisSnapshot } from '../../terrain/hypothesis';
 import {
   displayStatus, PURPOSE_LABEL, PURPOSES, RESULT_LABEL, STATUS_LABEL,
   type PendingExploration, type Purpose, type TargetResult,
@@ -26,9 +29,22 @@ interface Props {
   period: PeriodFilter;
   onPeriodChange: (v: PeriodFilter) => void;
   exploredKm2: number | null;
+  idToken: string | null;
 }
 
 interface TargetRow { target: string; result: TargetResult }
+
+// 仮説の保存日（JST）。探索日と同じ日の仮説を上に出す
+const jstDate = (iso: string) => new Date(Date.parse(iso) + 9 * 3600 * 1000).toISOString().slice(0, 10);
+export function orderHypotheses(list: HypothesisSnapshot[], exploredOn: string | null): HypothesisSnapshot[] {
+  return [...list].sort((a, b) => {
+    const sa = exploredOn && jstDate(a.savedAt) === exploredOn ? 1 : 0;
+    const sb = exploredOn && jstDate(b.savedAt) === exploredOn ? 1 : 0;
+    return sb - sa || b.savedAt.localeCompare(a.savedAt);
+  });
+}
+const hypLabel = (h: HypothesisSnapshot, exploredOn: string | null) =>
+  `${h.name}（${jstDate(h.savedAt)}${exploredOn && jstDate(h.savedAt) === exploredOn ? '・この日' : ''}・${h.target?.name ?? '対象なし'}）`;
 
 const fmtDist = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`);
 
@@ -43,6 +59,14 @@ export default function ExplorationHistoryPanel(p: Props) {
   const [targets, setTargets] = useState<TargetRow[]>([{ target: 'マイタケ', result: 'not_found' }]);
   const [busy, setBusy] = useState(false);
   const [dateFor, setDateFor] = useState<Record<string, string>>({});
+  // S4b: 使った仮説（端末の仮説から選ぶ。既定は なし）
+  const [hyps, setHyps] = useState<HypothesisSnapshot[]>([]);
+  const [hypId, setHypId] = useState('');
+  const [attachSession, setAttachSession] = useState('');
+  const [attachHyp, setAttachHyp] = useState('');
+  const [attachMsg, setAttachMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  useEffect(() => { listHypotheses().then(setHyps, () => setHyps([])); }, [draft, attachSession]);
 
   // ① GPX を選んだら、入力より先に端末へ原本を保存する（下書き）
   const onFile = async (file: File | undefined) => {
@@ -62,6 +86,7 @@ export default function ExplorationHistoryPanel(p: Props) {
       setMemo('');
       setDate('');
       setTargets([{ target: 'マイタケ', result: 'not_found' }]);
+      setHypId('');
     } catch (e) {
       setNotice(e instanceof LocalGpxError ? `${e.message}（保存していません）` : 'GPX を読み込めませんでした（保存していません）');
     } finally {
@@ -85,6 +110,7 @@ export default function ExplorationHistoryPanel(p: Props) {
         memo: memo.trim(),
         targets: targets.filter((t) => t.target.trim()).map((t) => ({ target: t.target.trim(), result: t.result, memo: '' })),
         exploredOnManual: needsDate ? date : null,
+        hypothesis: hyps.find((h) => h.id === hypId) ?? null,
       });
       setDraft(null);
       await p.history.send(draft.id);
@@ -104,6 +130,31 @@ export default function ExplorationHistoryPanel(p: Props) {
     const d = dateFor[rec.id];
     await clearFailure(rec.id, d ? { exploredOnManual: d } : {});
     await p.history.send(rec.id);
+  };
+
+  const serverEntries = p.history.entries.filter((e) => e.origin === 'server' && e.sessionId && e.updatedAt).slice(0, 20);
+  const attachEntry = serverEntries.find((e) => e.sessionId === attachSession) ?? null;
+  const attach = async () => {
+    if (!attachEntry || !p.idToken) return;
+    setAttaching(true);
+    setAttachMsg(null);
+    try {
+      const current = attachEntry.hypothesis?.id ?? '';
+      if (current === attachHyp) { setAttachMsg({ ok: true, text: '変更はありません' }); return; }
+      const next = attachHyp ? hyps.find((h) => h.id === attachHyp) ?? null : null;
+      await patchExplorationSession(attachEntry.sessionId!, { requestId: crypto.randomUUID(), expectedUpdatedAt: attachEntry.updatedAt!, changes: { hypothesis: next } }, p.idToken);
+      setAttachMsg({ ok: true, text: next ? `仮説「${next.name}」を付けました` : '仮説を外しました' });
+      await p.history.refreshRemote();
+    } catch (e) {
+      setAttachMsg({
+        ok: false,
+        text: e instanceof ExplorationNetworkError ? '通信できませんでした。電波のある所でもう一度保存してください'
+          : e instanceof ExplorationApiError && e.status === 409 ? '他の人が先にこの探索を更新しました。少し待ってから選び直してください'
+            : e instanceof Error ? e.message : '保存できませんでした',
+      });
+    } finally {
+      setAttaching(false);
+    }
   };
 
   const local = p.history.pending;
@@ -151,6 +202,12 @@ export default function ExplorationHistoryPanel(p: Props) {
           ))}
           <button className={styles.btn} onClick={() => setTargets((ts) => [...ts, { target: '', result: 'unknown' }])}>＋ 対象を追加</button>
           <label className={styles.field}><span>メモ</span><input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} /></label>
+          <label className={styles.field}><span>使った仮説（その日に地図を絞った条件を、この探索に固定して残す）</span>
+            <select value={hypId} onChange={(e) => setHypId(e.target.value)} aria-label="使った仮説">
+              <option value="">なし</option>
+              {orderHypotheses(hyps, draft.exploredOnManual ?? draft.preview.exploredOn).map((h) => <option key={h.id} value={h.id}>{hypLabel(h, draft.preview.exploredOn)}</option>)}
+            </select>
+          </label>
           <div className={styles.row}>
             <button className={`${styles.btn} ${styles.primary}`} onClick={() => void onSubmit()} disabled={busy}>送信する（圏外なら電波が戻った時に自動）</button>
             <button className={styles.btn} onClick={() => void discardDraft()} disabled={busy}>取り消す</button>
@@ -186,6 +243,34 @@ export default function ExplorationHistoryPanel(p: Props) {
             );
           })}
         </div>
+      )}
+
+      {serverEntries.length > 0 && (
+        <details className={styles.details}>
+          <summary className={styles.sub}>登録済みの探索に仮説を付ける・外す</summary>
+          <label className={styles.field}><span>探索</span>
+            <select value={attachSession} onChange={(e) => { setAttachSession(e.target.value); setAttachMsg(null); const en = serverEntries.find((x) => x.sessionId === e.target.value); setAttachHyp(en?.hypothesis?.id ?? ''); }} aria-label="仮説を付ける探索">
+              <option value="">選んでください</option>
+              {serverEntries.map((e) => <option key={e.sessionId!} value={e.sessionId!}>{e.exploredOn ?? '日付なし'}・{PURPOSE_LABEL[e.purpose]}・{fmtDist(e.distanceM)}{e.hypothesis ? `・仮説「${e.hypothesis.name}」` : ''}</option>)}
+            </select>
+          </label>
+          {attachEntry && (
+            <>
+              <label className={styles.field}><span>仮説</span>
+                <select value={attachHyp} onChange={(e) => setAttachHyp(e.target.value)} aria-label="付ける仮説">
+                  <option value="">なし（外す）</option>
+                  {attachEntry.hypothesis && !hyps.some((h) => h.id === attachEntry.hypothesis!.id) && (
+                    <option value={attachEntry.hypothesis.id}>{attachEntry.hypothesis.name}（いま付いているもの・この端末には無い）</option>
+                  )}
+                  {orderHypotheses(hyps, attachEntry.exploredOn).map((h) => <option key={h.id} value={h.id}>{hypLabel(h, attachEntry.exploredOn)}</option>)}
+                </select>
+              </label>
+              <button className={styles.btn} disabled={attaching || !p.idToken} onClick={() => void attach()}>この内容で保存（電波のある時だけ）</button>
+            </>
+          )}
+          {attachMsg && <p className={attachMsg.ok ? styles.sub : styles.warn}>{attachMsg.text}</p>}
+          <p className={styles.sub}>付けた仮説は、その時点の内容がそのまま残ります（あとで端末の仮説を直しても変わりません）。付け替え・外しは履歴に残ります</p>
+        </details>
       )}
 
       <div className={styles.row}>

@@ -1,3 +1,4 @@
+import type { HypothesisSnapshot } from '../terrain/hypothesis';
 import { WORKER_URL } from '../config';
 import { TokenExpiredError } from './icarusApi';
 import type { ExplorationSession, Purpose, TargetInput } from '../exploration/types';
@@ -69,6 +70,7 @@ export interface CreateSessionBody {
   targets: TargetInput[];
   source?: 'upload' | 'yamap_import';
   importBatchId?: string;
+  hypothesis?: HypothesisSnapshot;
 }
 
 export async function createExplorationSession(body: CreateSessionBody, idToken: string): Promise<{ outcome: 'applied' | 'alreadyApplied' | 'duplicate'; item: ExplorationSession }> {
@@ -86,6 +88,14 @@ export async function listExplorationSessions(params: Record<string, string>, id
 export async function fetchExplorationTrack(sessionId: string, idToken: string): Promise<[number, number][][]> {
   const raw = (await (await request(`${EXPLORATION_URL}/sessions/${encodeURIComponent(sessionId)}/track`, { method: 'GET' }, idToken)).json()) as number[][][];
   return raw.map((seg) => seg.map((p) => [p[0], p[1]] as [number, number]));
+}
+
+// 探索の記録の訂正（共通の編集契約）。S4b では仮説の付け替え・外す（null）に使う。端末には保存しない（電波のある時だけ）
+export async function patchExplorationSession(
+  sessionId: string, body: { requestId: string; expectedUpdatedAt: string; changes: Record<string, unknown> }, idToken: string,
+): Promise<{ outcome: string; updatedAt?: string }> {
+  const res = await request(`${EXPLORATION_URL}/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, idToken);
+  return res.json();
 }
 
 export async function fetchExplorationSession(sessionId: string, idToken: string): Promise<ExplorationSession> {

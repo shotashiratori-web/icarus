@@ -282,3 +282,24 @@ describe('失敗の扱い', () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe('S4b: 使った仮説', () => {
+  it('2c. 下書きで選んだ仮説を端末に持ち、登録の時にそのまま送る。選ばなければ送らない', async () => {
+    const hyp = { schema: 'icarus.hypothesis/v1', id: 'h1', name: '舞茸A', savedAt: '2026-09-19T22:00:00Z', target: { speciesId: 'target-maitake', name: 'マイタケ' }, areaId: 'a', data: { terrainVersion: 'v1' }, params: { coverageWidthM: 50, pointRadiusM: 50, pxM: 21 }, conditions: {}, conditionText: [], summary: { matchKm2: 1 }, app: { build: 'x' } } as never;
+    const bodies: Record<string, unknown>[] = [];
+    const orig = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (i, init) => {
+      if (String(i).endsWith('/exploration/sessions') && init?.method === 'POST') bodies.push(JSON.parse(String(init.body)));
+      return orig(i, init);
+    });
+    const a = await saveNewExploration({ ...input(), explorerNames: [], purpose: 'unknown', targets: [] }, false);
+    await finalizeDraft(a.record.id, { explorerNames: ['翔大'], purpose: 'maitake', memo: '', targets: [], hypothesis: hyp });
+    expect((await getPending(a.record.id))!.hypothesis).toMatchObject({ name: '舞茸A' });
+    await syncPending(a.record.id, 'tok');
+    const b = await saveNewExploration({ ...input(gpx('2026-09-21T23:30:00Z', 43.2)), explorerNames: [], purpose: 'unknown', targets: [] }, false);
+    await finalizeDraft(b.record.id, { explorerNames: ['翔大'], purpose: 'maitake', memo: '', targets: [] });
+    await syncPending(b.record.id, 'tok');
+    expect(bodies[0].hypothesis).toMatchObject({ schema: 'icarus.hypothesis/v1', name: '舞茸A', data: { terrainVersion: 'v1' } });
+    expect('hypothesis' in bodies[1]).toBe(false);
+  });
+});

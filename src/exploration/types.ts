@@ -1,4 +1,5 @@
 // Exploration History（Stage 2 Web）の型。設計: icarus/docs/architecture/icarus_exploration_history_stage2_final_design.md
+import type { HypothesisSnapshot } from '../terrain/hypothesis';
 
 export type Purpose = 'maitake' | 'mushroom' | 'sansai' | 'scouting' | 'other' | 'unknown';
 export const PURPOSE_LABEL: Record<Purpose, string> = {
@@ -78,6 +79,8 @@ export interface PendingExploration {
   // 過去分の一括取り込み（admin）は 'yamap_import' と取り込みの回。古い記録には無い（= 'upload'）
   source?: 'upload' | 'yamap_import';
   importBatchId?: string | null;
+  // S4b: この探索に使った仮説のスナップショット（端末の仮説のコピー。付けなければ無し）
+  hypothesis?: HypothesisSnapshot | null;
   stage: PendingStage;
   sessionId: string | null;
   lastError: PendingError | null;
@@ -119,4 +122,5 @@ export interface ExplorationSession {
   updatedAt: string;
   targets: ExplorationTarget[];
   fieldLogEventIds: string[];
+  hypothesis?: HypothesisSnapshot | null; // S4b。古い API の応答には無い
 }

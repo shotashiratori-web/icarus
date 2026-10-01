@@ -63,7 +63,7 @@ export async function saveNewExploration(input: NewExplorationInput, ready = tru
 export { LocalGpxError };
 
 // 下書き（GPX を選んだ直後に保存したもの）に入力内容を入れて、送信できる状態にする
-export async function finalizeDraft(id: string, meta: Pick<NewExplorationInput, 'explorerNames' | 'purpose' | 'memo' | 'targets'> & { exploredOnManual?: string | null }): Promise<PendingExploration | undefined> {
+export async function finalizeDraft(id: string, meta: Pick<NewExplorationInput, 'explorerNames' | 'purpose' | 'memo' | 'targets'> & { exploredOnManual?: string | null; hypothesis?: PendingExploration['hypothesis'] }): Promise<PendingExploration | undefined> {
   const cur = await getPending(id);
   if (!cur) return undefined;
   if (cur.stage !== 'saved') return cur; // 送信が始まったものは入力内容を変えない（登録内容と端末の記録がずれないように）
@@ -73,6 +73,7 @@ export async function finalizeDraft(id: string, meta: Pick<NewExplorationInput, 
     memo: meta.memo,
     targets: meta.targets.map((t) => ({ ...t, requestId: crypto.randomUUID() })),
     exploredOnManual: meta.exploredOnManual ?? cur.exploredOnManual,
+    hypothesis: meta.hypothesis ?? null,
     ready: true,
     lastError: null,
   });
@@ -149,6 +150,7 @@ async function runStages(id: string, idToken: string): Promise<PendingExploratio
             ...(p.exploredOnManual ? { exploredOn: p.exploredOnManual } : {}),
             targets: p.targets,
             ...(p.source === 'yamap_import' ? { source: 'yamap_import' as const, ...(p.importBatchId ? { importBatchId: p.importBatchId } : {}) } : {}),
+            ...(p.hypothesis ? { hypothesis: p.hypothesis } : {}),
           }, idToken);
         } catch (e) {
           // 原本がサーバーに無い（消えた・別環境）→ ① からやり直す（1 回だけ）
