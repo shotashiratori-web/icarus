@@ -10,9 +10,15 @@ export const DEFAULT_COVERAGE_WIDTH: CoverageWidth = 50;
 
 // 軌跡から widthM 以内の格子を 1 にした配列（利用範囲の格子と同じ大きさ）
 export function buildCoverageMask(m: TerrainManifest, tracks: [number, number][][][], widthM: number): Uint8Array {
+  const mask = new Uint8Array(m.grid.width * m.grid.height);
+  for (const segments of tracks) forEachCellNearTrack(m, segments, widthM, (i) => { mask[i] = 1; });
+  return mask;
+}
+
+// 1 本の軌跡（複数の区間）から widthM 以内の格子ごとに visit を呼ぶ（同じ格子に複数回呼ぶことがある）
+export function forEachCellNearTrack(m: TerrainManifest, segments: [number, number][][], widthM: number, visit: (i: number) => void): void {
   const W = m.grid.width;
   const H = m.grid.height;
-  const mask = new Uint8Array(W * H);
   const R = Math.max(0.5, widthM / m.grid.pxM);
   const Ri = Math.ceil(R);
   const R2 = R * R;
@@ -27,25 +33,22 @@ export function buildCoverageMask(m: TerrainManifest, tracks: [number, number][]
       for (let dx = -Ri; dx <= Ri; dx++) {
         const X = cx + dx;
         if (X < 0 || X >= W || dx * dx + dy * dy > R2) continue;
-        mask[Y * W + X] = 1;
+        visit(Y * W + X);
       }
     }
   };
-  for (const segments of tracks) {
-    for (const seg of segments) {
-      let prev: { x: number; y: number } | null = null;
-      for (const [lat, lng] of seg) {
-        const g = latLngToGrid(m, lat, lng);
-        if (!prev) stamp(g.x, g.y);
-        else {
-          const steps = Math.max(1, Math.ceil(Math.hypot(g.x - prev.x, g.y - prev.y)));
-          for (let k = 1; k <= steps; k++) stamp(prev.x + ((g.x - prev.x) * k) / steps, prev.y + ((g.y - prev.y) * k) / steps);
-        }
-        prev = g;
+  for (const seg of segments) {
+    let prev: { x: number; y: number } | null = null;
+    for (const [lat, lng] of seg) {
+      const g = latLngToGrid(m, lat, lng);
+      if (!prev) stamp(g.x, g.y);
+      else {
+        const steps = Math.max(1, Math.ceil(Math.hypot(g.x - prev.x, g.y - prev.y)));
+        for (let k = 1; k <= steps; k++) stamp(prev.x + ((g.x - prev.x) * k) / steps, prev.y + ((g.y - prev.y) * k) / steps);
       }
+      prev = g;
     }
   }
-  return mask;
 }
 
 // 点から軌跡までの最短距離（m、局所的な平面近似）

@@ -30,7 +30,7 @@ import type { FieldLogEntry } from '../../types/zukan';
 import {
   displayedSourceLabel, gpsRemembered, initialPanelOpen, insideBounds, locationPermission, rememberGps, shouldAutoLocate,
 } from '../../terrain/initialView';
-import { buildCoverageMask, DEFAULT_COVERAGE_WIDTH, distanceToTrackM, inPeriod, type CoverageWidth, type PeriodFilter } from '../../terrain/coverage';
+import { buildCoverageMask, COVERAGE_WIDTHS_M, DEFAULT_COVERAGE_WIDTH, distanceToTrackM, inPeriod, type CoverageWidth, type PeriodFilter } from '../../terrain/coverage';
 import { EXPLORED_COLOR } from '../../terrain/render';
 import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/types';
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
@@ -48,6 +48,16 @@ import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terr
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
+import {
+  buildTargetExploration, describeTargetAt, DEFAULT_POINT_RADIUS_M, renderTargetExploration, stateAreasKm2, STATE_LABEL, STATE_LABEL_NO_TARGET,
+  type ExplorationState, type PointEvidence, type TargetSpec, type TrackEvidence,
+} from '../../terrain/targetExploration';
+import {
+  buildSnapshot, compileHypothesis, computeMatch, describeConditions, GROUP_LABEL, NO_HYPOTHESIS_CONDITIONS, renderMatch, suggestName,
+  type HypothesisConditions, type HypothesisSnapshot,
+} from '../../terrain/hypothesis';
+import { deleteHypothesis, listHypotheses, saveHypothesis } from '../../exploration/hypothesisStore';
+import HypothesisPanel from './HypothesisPanel';
 import styles from './ExplorationMap.module.css';
 
 // 地形探索（Exploration Mode Stage 1）。Field Map のモードの 1 つ。地図は通常モードと別に持つ（通常モードを変えない）。
@@ -94,8 +104,41 @@ async function decodeForestPkg(pkg: AreaPackage): Promise<{ forest: ForestData |
   }
 }
 
+// 格子の大きさの画像を作り、object URL を返す（作り直すたびに前の URL を捨てる）
+function useGridOverlay(width: number, height: number, draw: ((out: Uint8ClampedArray) => void) | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  const canvas = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!draw || !width || !height) {
+      setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      return;
+    }
+    const cv = canvas.current ?? (canvas.current = document.createElement('canvas'));
+    cv.width = width;
+    cv.height = height;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(width, height);
+    draw(img.data);
+    ctx.putImageData(img, 0, 0);
+    let revoked = false;
+    cv.toBlob((blob) => {
+      if (!blob || revoked) return;
+      const u = URL.createObjectURL(blob);
+      setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return u; });
+    });
+    return () => { revoked = true; };
+  }, [width, height, draw]);
+  return url;
+}
+
 const pct = (n: number) => `${n}%`;
 const km2 = (v: number) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)} km²`;
+// Field Log の日付（2026/9/30・2026-09-30 など）→ YYYY-MM-DD
+const ymd = (d: string | null | undefined): string | null => {
+  const m = (d ?? '').match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : null;
+};
 const fmtDate = (iso: string) => {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -345,6 +388,57 @@ export default function ExplorationMap({ entries }: Props) {
 
   const stats = useMemo(() => (manifest && loaded && cc ? candidateStats(manifest, loaded.grid, cc, coverage) : null), [manifest, loaded, cc, coverage]);
 
+  // ---- S4a: 探す対象・対象ごとの探索実績・条件を重ねる（AND）・仮説（端末） ----
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const [hyp, setHyp] = useState<HypothesisConditions>(NO_HYPOTHESIS_CONDITIONS);
+  const [terrainUse, setTerrainUse] = useState({ candidate: false, dem: false });
+  const [showTargetLayer, setShowTargetLayer] = useState(true);
+  const [showMatch, setShowMatch] = useState(true);
+  const [savedHyps, setSavedHyps] = useState<HypothesisSnapshot[]>([]);
+  const [hypNote, setHypNote] = useState<string | null>(null);
+  useEffect(() => { listHypotheses().then(setSavedHyps, () => undefined); }, []);
+  const targetList = useMemo(() => envSpots.species.filter((sp) => sp.kind === 'target').sort((a, b) => a.sortOrder - b.sortOrder), [envSpots.species]);
+  const treeList = useMemo(() => envSpots.species.filter((sp) => sp.kind === 'tree'), [envSpots.species]);
+  const target = useMemo<TargetSpec | null>(() => {
+    const t = targetList.find((x) => x.id === targetId);
+    return t ? { speciesId: t.id, name: t.name, aliases: t.aliases } : null;
+  }, [targetList, targetId]);
+  // 対象を変えたら重ねた条件は白紙（舞茸の条件をほかの種にそのまま使わない）
+  const chooseTarget = (id: string | null) => {
+    setTargetId(id);
+    setHyp(NO_HYPOTHESIS_CONDITIONS);
+    setTerrainUse({ candidate: false, dem: false });
+    setHypNote(null);
+  };
+  const trackEvidence = useMemo<TrackEvidence[]>(() => visibleHistory.map((e) => ({ segments: e.track!, exploredOn: e.exploredOn, targets: e.targets })), [visibleHistory]);
+  const pointEvidence = useMemo<PointEvidence[]>(() => {
+    const out: PointEvidence[] = [];
+    for (const e of entries) if (Number.isFinite(e.lat) && Number.isFinite(e.lng) && inPeriod(ymd(e.date), period, new Date())) out.push({ lat: e.lat, lng: e.lng, name: e.foodName, result: 'found', date: ymd(e.date) });
+    const nameOfSpecies = (id: string | null) => envSpots.species.find((sp) => sp.id === id)?.name ?? '';
+    for (const mk of envSpots.markers) {
+      for (const o of mk.remote?.observations ?? []) {
+        if (o.status !== 'active' || (o.result !== 'found' && o.result !== 'not_found')) continue;
+        if (!inPeriod(o.observedAt.slice(0, 10), period, new Date())) continue;
+        out.push({ lat: mk.lat, lng: mk.lng, name: o.target || o.targetText || nameOfSpecies(o.targetSpeciesId), result: o.result, date: o.observedAt.slice(0, 10) });
+      }
+    }
+    for (const o of envSpots.pendingObs) {
+      if (o.stage === 'registered' || (o.input.result !== 'found' && o.input.result !== 'not_found')) continue;
+      const mk = envSpots.markers.find((x) => (o.spotId && x.spotId === o.spotId) || (o.pendingSpotId && x.pendingId === o.pendingSpotId));
+      if (!mk || !inPeriod(o.input.observedAt.slice(0, 10), period, new Date())) continue;
+      out.push({ lat: mk.lat, lng: mk.lng, name: o.input.targetSpeciesId ? nameOfSpecies(o.input.targetSpeciesId) : o.input.targetText ?? '', result: o.input.result, date: o.input.observedAt.slice(0, 10) });
+    }
+    return out;
+  }, [entries, envSpots.markers, envSpots.pendingObs, envSpots.species, period]);
+  const te = useMemo(() => (manifest ? buildTargetExploration(manifest, target, trackEvidence, pointEvidence, coverageWidth, DEFAULT_POINT_RADIUS_M) : null), [manifest, target, trackEvidence, pointEvidence, coverageWidth]);
+  const stateAreas = useMemo(() => (manifest && te && loaded ? stateAreasKm2(manifest, te, (i) => loaded.grid.terrain[i * 4 + 3] > 0) : null), [manifest, te, loaded]);
+  const treePoints = useMemo(() => envSpots.markers.map((mk) => ({ lat: mk.lat, lng: mk.lng, treeSpeciesId: mk.treeSpeciesId })), [envSpots.markers]);
+  const treeCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const mk of envSpots.markers) if (mk.treeSpeciesId) c[mk.treeSpeciesId] = (c[mk.treeSpeciesId] ?? 0) + 1;
+    return c;
+  }, [envSpots.markers]);
+
   // ---- 候補の着色（条件・表示が変わるたびに作り直す） ----
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -455,6 +549,58 @@ export default function ExplorationMap({ entries }: Props) {
   }, [hydro, manifest, terrainCond, showStreams]);
   const toggleIn = <T,>(list: T[], v: T, on: boolean) => (on ? [...list, v] : list.filter((x) => x !== v));
 
+  // ---- S4a: 条件を重ねる（グループ内 OR・グループ間 AND）。地形は下の探索条件・地形の条件をそのまま使う ----
+  const hypEffective = useMemo<HypothesisConditions>(() => ({
+    ...hyp,
+    terrain: terrainUse.candidate || (terrainUse.dem && anyTerrainCondition(terrainCond))
+      ? { candidate: terrainUse.candidate ? conditions : null, dem: terrainUse.dem && anyTerrainCondition(terrainCond) ? terrainCond : null }
+      : null,
+  }), [hyp, terrainUse, conditions, terrainCond]);
+  const matchCtx = useMemo(() => (manifest && loaded ? { m: manifest, grid: loaded.grid, forest, hydro, te, trees: treePoints, today: new Date() } : null), [manifest, loaded, forest, hydro, te, treePoints]);
+  const compiledHyp = useMemo(() => (matchCtx ? compileHypothesis(matchCtx, hypEffective) : null), [matchCtx, hypEffective]);
+  const matchResult = useMemo(() => (matchCtx && compiledHyp && compiledHyp.groups.length ? computeMatch(matchCtx, compiledHyp) : null), [matchCtx, compiledHyp]);
+  const forestYears = useMemo(() => ({
+    forestPlan: forest ? [forest.sources.kokuyu?.year && `国有林 ${forest.sources.kokuyu.year}`, forest.sources.minyu?.year && `民有林 ${forest.sources.minyu.year}`].filter(Boolean).join('・') || null : null,
+    vegetation: forest?.sources.veg?.years ? forest.sources.veg.years.join('〜') : null,
+  }), [forest]);
+  const stateLabelFor = useCallback((st: ExplorationState) => (target ? STATE_LABEL[st] : STATE_LABEL_NO_TARGET[st] ?? STATE_LABEL[st]), [target]);
+  const conditionText = useMemo(() => describeConditions(hypEffective, target, forestYears, stateLabelFor), [hypEffective, target, forestYears, stateLabelFor]);
+  const drawTarget = useMemo(() => (te && showTargetLayer && targetId ? (out: Uint8ClampedArray) => renderTargetExploration(te, out) : null), [te, showTargetLayer, targetId]);
+  const targetUrl = useGridOverlay(manifest?.grid.width ?? 0, manifest?.grid.height ?? 0, drawTarget);
+  const drawMatch = useMemo(() => (matchResult && showMatch ? (out: Uint8ClampedArray) => renderMatch(matchResult.mask, out) : null), [matchResult, showMatch]);
+  const matchUrl = useGridOverlay(manifest?.grid.width ?? 0, manifest?.grid.height ?? 0, drawMatch);
+
+  const saveCurrentHypothesis = async (name: string) => {
+    if (!manifest || !matchResult || !te) throw new Error('条件を 1 つ以上選んでください');
+    const snap = buildSnapshot({
+      id: crypto.randomUUID(), name, now: new Date(), target: target ? { speciesId: target.speciesId, name: target.name } : null,
+      m: manifest, forest, hydroPresent: !!hydro,
+      evidence: {
+        period, purposeFilter, tracks: te.counts.tracks, foundTracks: te.counts.foundTracks, notFoundTracks: te.counts.notFoundTracks,
+        foundPoints: te.counts.foundPoints, notFoundPoints: te.counts.notFoundPoints, latestExploredOn: te.counts.latest,
+        confirmedTrees: hypEffective.confirmedTrees ? treeCounts[hypEffective.confirmedTrees.treeSpeciesId] ?? 0 : 0,
+      },
+      coverageWidthM: coverageWidth, pointRadiusM: DEFAULT_POINT_RADIUS_M,
+      conditions: hypEffective, conditionText, result: matchResult, appBuild: APP_BUILD,
+    });
+    await saveHypothesis(snap);
+    setSavedHyps(await listHypotheses());
+  };
+  const loadHypothesis = (h: HypothesisSnapshot) => {
+    setTargetId(h.target?.speciesId ?? null);
+    const c = h.conditions;
+    setHyp({ ...c, terrain: null });
+    if (c.terrain?.candidate) { setConditions(c.terrain.candidate); setPresetId(matchPreset(c.terrain.candidate)); }
+    if (c.terrain?.dem) setTerrainCond(c.terrain.dem);
+    setTerrainUse({ candidate: !!c.terrain?.candidate, dem: !!c.terrain?.dem });
+    if ((COVERAGE_WIDTHS_M as readonly number[]).includes(h.params.coverageWidthM)) setCoverageWidth(h.params.coverageWidthM as CoverageWidth);
+    setShowMatch(true);
+    const notes: string[] = [];
+    if (h.data.terrainVersion !== manifest?.version) notes.push(`保存時の地形データ（${h.data.terrainVersion}）と今の版（${manifest?.version}）が違うため、面積が保存時と変わることがあります`);
+    if (h.params.pointRadiusM !== DEFAULT_POINT_RADIUS_M) notes.push(`保存時の点の範囲は ${h.params.pointRadiusM}m（今は ${DEFAULT_POINT_RADIUS_M}m）`);
+    setHypNote(notes.length ? notes.join('。') : null);
+  };
+
   const toggleForest = (k: Exclude<keyof ForestLayers, 'vegMizunara'>) => (e: React.ChangeEvent<HTMLInputElement>) => setForestLayers((l) => ({ ...l, [k]: e.target.checked }));
   const toggleCommunity = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForestLayers((l) => ({ ...l, vegMizunara: e.target.checked ? [...l.vegMizunara, name] : l.vegMizunara.filter((n) => n !== name) }));
@@ -508,6 +654,13 @@ export default function ExplorationMap({ entries }: Props) {
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
     if (loaded.hydro) lines.push(...describeHydro(manifest, loaded.hydro, i));
+    // S4a: 重ねた条件のグループごとの ✓／✗（どこで外れたかが分かるように）
+    if (compiledHyp && compiledHyp.groups.length) {
+      const r = compiledHyp.test(i);
+      const all = compiledHyp.groups.every((g) => r[g] === true);
+      lines.unshift(`重ねた条件 ${all ? 'すべて満たす' : '満たさない'}：${compiledHyp.groups.map((g) => `${GROUP_LABEL[g]}${r[g] ? '✓' : '✗'}`).join(' ')}`);
+    }
+    if (targetId) lines.push(...describeTargetAt(target, trackEvidence, pointEvidence, coverageWidth, DEFAULT_POINT_RADIUS_M, lat, lng, distanceToTrackM));
     if (showHistory) {
       // この地点を探索範囲（線から探索幅）に含むセッションを全部出す（日付・目的・歩いた人・対象の結果）
       const near = visibleHistory.filter((e) => e.track && distanceToTrackM(lat, lng, e.track) <= coverageWidth);
@@ -519,7 +672,7 @@ export default function ExplorationMap({ entries }: Props) {
       if (near.length > 5) lines.push(`ほか ${near.length - 5} 件`);
     }
     return lines;
-  }, [loaded, manifest, cc, coverage, showHistory, visibleHistory, coverageWidth]);
+  }, [loaded, manifest, cc, coverage, showHistory, visibleHistory, coverageWidth, compiledHyp, targetId, target, trackEvidence, pointEvidence]);
 
   // 記録時の地形の値（terrain_json）。端末の地形パッケージから計算し、version とデータの年を付ける
   const terrainAt = useCallback((lat: number, lng: number): Record<string, unknown> | null => {
@@ -615,6 +768,8 @@ export default function ExplorationMap({ entries }: Props) {
     const abc = (['A', 'B', 'C'] as const).filter((k) => show[k]).join('');
     if (abc) out.push(`候補 ${abc}`);
     if (hydro && anyTerrainCondition(terrainCond)) out.push(`地形 ${summarizeTerrain(terrainCond)}${terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)}km²）` : ''}`);
+    if (target) out.push(`対象 ${target.name}`);
+    if (matchResult && showMatch) out.push(`重ねた条件 ${matchResult.matchKm2 < 1 ? matchResult.matchKm2.toFixed(2) : matchResult.matchKm2.toFixed(1)}km²`);
     if (anyForestLayer(forestLayers)) out.push('森林');
     if (showContours) out.push('等高線');
     if (showStreams) out.push('沢');
@@ -624,7 +779,7 @@ export default function ExplorationMap({ entries }: Props) {
     if (fieldLogFilter !== 'none') out.push('Field Log');
     if (showSpots && visibleSpots.length) out.push('環境スポット');
     return out;
-  }, [show, hydro, terrainCond, terrainMatchKm2, forestLayers, showContours, showStreams, showHistory, visibleHistory.length, fieldLogFilter, showSpots, visibleSpots.length]);
+  }, [target, matchResult, showMatch, show, hydro, terrainCond, terrainMatchKm2, forestLayers, showContours, showStreams, showHistory, visibleHistory.length, fieldLogFilter, showSpots, visibleSpots.length]);
   // 地図を最小に: 陰影・道・現在地・探索履歴・環境スポットだけ残す
   const minimizeMap = () => {
     setShow((sh) => ({ ...sh, A: false, B: false, C: false, ridge: false, sun: false }));
@@ -633,6 +788,8 @@ export default function ExplorationMap({ entries }: Props) {
     setShowContours(false);
     setShowStreams(false);
     setFieldLogFilter('none');
+    setShowMatch(false);
+    setShowTargetLayer(false);
   };
 
   // ---- 進行方向モード: iPhone を向けている方向を画面の上にする（地図を回す）。方向センサーは押した時だけ許可を求める ----
@@ -807,6 +964,8 @@ export default function ExplorationMap({ entries }: Props) {
         {forestUrl && <ImageOverlay url={forestUrl} bounds={bounds} opacity={1} zIndex={4} attribution={FOREST_ATTRIBUTION} />}
         {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={1} zIndex={5} />}
         {hydroUrl && <ImageOverlay url={hydroUrl} bounds={bounds} opacity={1} zIndex={6} />}
+        {targetUrl && <ImageOverlay url={targetUrl} bounds={bounds} opacity={1} zIndex={7} />}
+        {matchUrl && <ImageOverlay url={matchUrl} bounds={bounds} opacity={1} zIndex={8} />}
         {showContours && contours && contours.version === manifest.version && <ContourLayer contours={contours.data} />}
         {roadGroups && show.road && (
           <>
@@ -957,6 +1116,39 @@ export default function ExplorationMap({ entries }: Props) {
           <div className={styles.panelBody}>
             {tab === 'search' && (
               <>
+            <HypothesisPanel
+              targets={targetList}
+              targetId={targetId}
+              onTarget={chooseTarget}
+              hyp={hyp}
+              onHyp={setHyp}
+              terrainUse={terrainUse}
+              onTerrainUse={setTerrainUse}
+              demAvailable={!!hydro}
+              demSummary={anyTerrainCondition(terrainCond) ? summarizeTerrain(terrainCond) : null}
+              candidateSummary={`傾斜 ${conditions.slopeMinDeg}° 以上・日射 上位 ${conditions.sunTopPct}%・尾根から約 ${Math.round(conditions.ridgeMaxM)}m`}
+              communities={communities}
+              forestAvailable={!!forest}
+              forestYears={forestYears}
+              trees={treeList}
+              treeCounts={treeCounts}
+              stateAreas={targetId ? stateAreas : null}
+              showTargetLayer={showTargetLayer}
+              onShowTargetLayer={setShowTargetLayer}
+              showMatch={showMatch}
+              onShowMatch={setShowMatch}
+              conditionText={conditionText}
+              match={matchResult}
+              missing={(compiledHyp?.missing ?? []).map((g) => GROUP_LABEL[g])}
+              saved={savedHyps}
+              suggestedName={suggestName(target, conditionText)}
+              onSave={saveCurrentHypothesis}
+              onLoad={loadHypothesis}
+              onDelete={async (id) => { await deleteHypothesis(id); setSavedHyps(await listHypotheses()); }}
+              terrainVersion={manifest.version}
+              pointRadiusM={DEFAULT_POINT_RADIUS_M}
+            />
+            {hypNote && <p className={styles.warn}>{hypNote}</p>}
             <h3 className={styles.h}>探索条件</h3>
             <select className={styles.select} value={presetId} onChange={(e) => choosePreset(e.target.value)} aria-label="探索のプリセット">
               {SPECIES_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
