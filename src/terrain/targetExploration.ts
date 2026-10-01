@@ -185,3 +185,15 @@ export function describeTargetAt(
   const parts = Object.entries(by).map(([k, v]) => `${k} ${v.n}回${v.last ? `（最終 ${v.last}）` : ''}`);
   return [`${head}: ${parts.length ? parts.join('・') : STATE_LABEL.unexplored}`];
 }
+
+// 環境スポットのマーカーの強調（S4a）: 対象を選んだ時だけ、その対象の観察（日時ごと）から決める。
+// 最新で上書きしない。1 回でも「あり」なら見つかった、次に「なし」。対象の観察が無ければ null（従来表示）。
+// ほかの種の結果は混ぜない。履歴はタップした詳細でそのまま全部見られる
+export type SpotTargetStatus = 'found' | 'notFound';
+export function spotTargetStatus(keys: Set<string> | null, obs: { name: string; result: string }[]): SpotTargetStatus | null {
+  if (!keys) return null;
+  const mine = obs.filter((o) => nameMatches(keys, o.name));
+  if (mine.some((o) => o.result === 'found')) return 'found';
+  if (mine.some((o) => o.result === 'not_found')) return 'notFound';
+  return null;
+}

@@ -7,7 +7,7 @@ import {
   type HypothesisConditions, type MatchContext,
 } from '../src/terrain/hypothesis';
 import {
-  buildTargetExploration, STATE_CODE, STATE_LABEL, trackResultFor, targetKeys, type PointEvidence, type TargetSpec, type TrackEvidence,
+  buildTargetExploration, spotTargetStatus, STATE_CODE, STATE_LABEL, trackResultFor, targetKeys, type PointEvidence, type TargetSpec, type TrackEvidence,
 } from '../src/terrain/targetExploration';
 import type { TerrainGrid, TerrainManifest } from '../src/terrain/types';
 
@@ -222,5 +222,22 @@ describe('仮説のスナップショット（hypothesis_json）', () => {
     const n = normalizeConditions({ ...NO_HYPOTHESIS_CONDITIONS, terrain: { candidate: null, dem: null }, access: { roadWithinM: null, trailWithinM: null } });
     expect(n.terrain).toBeNull();
     expect(n.access).toBeNull();
+  });
+});
+
+describe('環境スポットの強調（対象の観察）', () => {
+  const k = targetKeys(MAITAKE);
+  it('17. 対象を選んでいなければ強調しない。対象の観察が無ければ従来表示', () => {
+    expect(spotTargetStatus(null, [{ name: 'マイタケ', result: 'not_found' }])).toBeNull();
+    expect(spotTargetStatus(k, [])).toBeNull();
+    expect(spotTargetStatus(k, [{ name: 'マイタケ', result: 'not_checked' }])).toBeNull();
+  });
+  it('18. ほかの種の結果は混ぜない（ナラタケ あり は マイタケ では無関係）', () => {
+    expect(spotTargetStatus(k, [{ name: 'ナラタケ', result: 'found' }, { name: 'マイタケ', result: 'not_found' }])).toBe('notFound');
+    expect(spotTargetStatus(k, [{ name: 'ナラタケ', result: 'found' }])).toBeNull();
+  });
+  it('19. 最新で上書きしない: 1 回でも あり なら見つかった（後で なし があっても）', () => {
+    expect(spotTargetStatus(k, [{ name: 'まいたけ', result: 'found' }, { name: 'マイタケ', result: 'not_found' }])).toBe('found');
+    expect(spotTargetStatus(k, [{ name: 'マイタケ', result: 'not_found' }, { name: '舞茸', result: 'not_found' }])).toBe('notFound');
   });
 });

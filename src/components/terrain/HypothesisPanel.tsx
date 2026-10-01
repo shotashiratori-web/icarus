@@ -93,6 +93,7 @@ export default function HypothesisPanel(p: Props) {
               ))}
             </div>
           )}
+          {target && <p className={styles.sub}>環境スポット: 緑の輪＋✓ = {target.name}あり（1 回でも）、赤の破線＋× = {target.name}なし。ほかの種の結果は含みません。タップで観察の履歴を全部見られます</p>}
           {target && <p className={styles.sub}>見つかった（地点）は Field Log・観察の地点から {p.pointRadiusM}m。地点の無い「見つかった」探索は軌跡として別に塗ります</p>}
         </>
       )}
