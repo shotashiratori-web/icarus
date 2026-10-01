@@ -604,3 +604,45 @@ label.btn {
 .noticeWarn {
   background: #b26a00;
 }
+
+/* S4a 探す対象・条件を重ねる・仮説 */
+.label {
+  margin: var(--space-2) 0 2px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.condText {
+  margin: var(--space-1) 0;
+  padding: var(--space-1) var(--space-2);
+  border-left: 3px solid rgb(216, 27, 96);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.hypRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.hypRow > div {
+  flex: 1;
+  min-width: 0;
+}
