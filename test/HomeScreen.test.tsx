@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import HomeScreen from '../src/screens/HomeScreen';
+import { FIELD_LOG_D1_ENABLED_STAFF } from '../src/config';
 import { mockUseAuth } from './testAuth';
 import type { FieldObservation, WorkLogItem } from '../src/types/fieldLog';
 import type { AuthState } from '../src/context/AuthContext';
@@ -251,5 +252,26 @@ describe('HomeScreen: Home IA整理 v1', () => {
     expect(await screen.findByText('最近の記録')).toBeInTheDocument();
     expect(screen.getByText('最近のフィールド')).toBeInTheDocument();
     expect(screen.getByText('最近の加工・作業')).toBeInTheDocument();
+  });
+});
+
+// ホームの「🌲 環境を記録」（Field Log 環境記録の入口）。D1 経路の人だけに出し、押すと 環境 を選んだ送信画面を開く
+describe('HomeScreen: 🌲 環境を記録', () => {
+  beforeEach(() => {
+    fetchRecentFieldObservations.mockReset().mockResolvedValue([]);
+    fetchRecentWorkLogs.mockReset().mockResolvedValue([]);
+  });
+  it('D1 経路の人には出て、押すと subjectType=環境 で Field Log 送信画面へ', async () => {
+    authMock.current = mockUseAuth({ userEmail: FIELD_LOG_D1_ENABLED_STAFF[0] });
+    const go = vi.fn();
+    render(<HomeScreen go={go} />);
+    await userEvent.click(screen.getByRole('button', { name: /環境を記録/ }));
+    expect(go).toHaveBeenCalledWith({ name: 'foodLog', subjectType: '環境' });
+  });
+  it('一般スタッフ（D1 経路でない人）には出さない', () => {
+    authMock.current = mockUseAuth({ userEmail: 'staff@test.invalid' });
+    render(<HomeScreen go={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /環境を記録/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /フィールドを記録/ })).toBeInTheDocument();
   });
 });
