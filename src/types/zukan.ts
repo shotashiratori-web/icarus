@@ -21,7 +21,14 @@ export interface FieldLogEntry {
   imageExpired?: boolean;
   // 大分類（キノコ・植物…）。地形探索モードで Field Log を絞るのに使う。古いキャッシュには無い（Exploration Mode Stage 1）
   largeCategory?: string;
+  // Field Log 環境記録（icarus_field_log_environment_capture_design.md）。古いキャッシュには無い（= 食材）
+  subjectType?: string | null;
+  assetId?: string | null; // 写真の Asset（ready の時だけ）。Environment Spot にする時に同じ写真を結び付ける
+  environmentSpotId?: string | null; // Environment Spot にした先（まだなら null）
 }
+
+// 環境の記録か（木・倒木・地形など）。食材と混ぜないために使う
+export const isEnvironmentEntry = (e: { subjectType?: string | null }) => e.subjectType === '環境';
 
 interface FieldLogGeoJsonFeature {
   type: 'Feature';
@@ -40,6 +47,9 @@ interface FieldLogGeoJsonFeature {
     eventId?: string;
     takenAt?: string;
     largeCategory?: string;
+    subjectType?: string | null;
+    assetId?: string | null;
+    environmentSpotId?: string | null;
   };
 }
 

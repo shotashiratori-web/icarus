@@ -12,6 +12,7 @@ import {
   getPhaseOptions,
   HARVESTED_OPTIONS,
   MAX_PHOTOS,
+  ENVIRONMENT_LARGE_CATEGORY,
   type PhotoEntry,
   type CommonFields,
   type FoodCandidate,
@@ -30,9 +31,13 @@ import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { buildFieldLogId } from '../types/zukan';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
+import { loadSpecies } from '../environmentSpots/store';
 import styles from './FoodLogScreen.module.css';
 
 // Unit D: Worker+D1新経路の許可対象アカウントかどうか。ここをtrueにする条件を無くせば全員が既存GAS経路へ戻る
+// 樹種の候補（環境スポットの樹種マスタを端末に読み込めない時の予備）
+const DEFAULT_TREE_NAMES = ['ミズナラ', 'ブナ', 'イタヤカエデ', 'シナノキ', 'ハリギリ', 'ハルニレ', 'カツラ', 'トドマツ', 'カラマツ', 'シラカンバ'];
+
 function isFieldLogD1Enabled(userEmail: string): boolean {
   const normalized = userEmail.trim().toLowerCase();
   return FIELD_LOG_D1_ENABLED_STAFF.some((e) => e.toLowerCase() === normalized);
@@ -73,6 +78,16 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
   const [openFoodDropdownId, setOpenFoodDropdownId] = useState<string | null>(null);
   const [expandedDateId, setExpandedDateId] = useState<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
+  // 記録の種類（Field Log 環境記録、icarus_field_log_environment_capture_design.md §1）。
+  // 環境は D1 経路の人だけ（一般スタッフの GAS 経路には v1 では出さない）。毎回 食材 から始める
+  const isEnv = common.subjectType === '環境';
+  const [treeNames, setTreeNames] = useState<string[]>(DEFAULT_TREE_NAMES);
+  useEffect(() => {
+    loadSpecies().then((list) => {
+      const names = (list ?? []).filter((x) => x.kind === 'tree' && !x.isUnknown && !x.isOther && x.status === 'active').sort((a, b) => a.sortOrder - b.sortOrder).map((x) => x.name);
+      if (names.length) setTreeNames(names);
+    }, () => undefined);
+  }, []);
   const batchCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -255,6 +270,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
   const commonErrors = (): string[] => {
     if (submitMode === 'individual') return []; // 一件ずつ送信では各写真側でチェックする
     const errs: string[] = [];
+    if (common.subjectType === '環境') return errs; // 環境は大分類（植物）固定・場所は任意（写真の位置を使う）
     if (!common.largeCategory) errs.push('大分類');
     if (!common.place.trim())  errs.push('場所');
     return errs;
@@ -262,6 +278,11 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
 
   const photoErrors = (p: PhotoEntry): string[] => {
     const errs: string[] = [];
+    if (common.subjectType === '環境') {
+      if (!p.food.trim()) errs.push('名前');
+      if (!p.base64)      errs.push('写真');
+      return errs;
+    }
     if (!p.food.trim()) errs.push('食材名');
     if (!p.phase)       errs.push('フェーズ');
     if (!p.base64)      errs.push('写真');
@@ -341,8 +362,9 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
           // Field Log D1 Data Parity Audit（2026-09-21）P0対応。phaseは常にこの写真自身の値
           // （まとめて送信でも共通項目ではなく写真ごと）。harvestedはcommonFieldsForに揃える
           // （まとめて送信＝共通設定の値、一件ずつ送信＝この写真自身の値）
-          phase: photos[i].phase,
-          harvested: cf.harvested,
+          phase: isEnv ? '' : photos[i].phase,
+          harvested: isEnv ? '不明' : cf.harvested,
+          ...(isEnv ? { subjectType: '環境' as const } : {}),
           latitude: photos[i].gps?.lat,
           longitude: photos[i].gps?.lng,
           takenAt: photos[i].takenAt,
@@ -389,6 +411,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
             recordedAt,
             eventId: d1Payload.eventId,
             takenAt: d1Payload.takenAt ?? '',
+            ...(isEnv ? { subjectType: '環境', largeCategory: ENVIRONMENT_LARGE_CATEGORY } : {}),
           });
         }
       } else {
@@ -543,8 +566,37 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
             onChange={handleFileChange}
           />
 
-          {/* 送信方法（写真が1枚以上あるときだけ表示） */}
-          {photos.length > 0 && (
+          {/* 記録の種類（D1 経路の人だけ）。環境 = 木・倒木・地形など。帰宅後に Environment Spot にする */}
+          {isFieldLogD1Enabled(userEmail) && (
+            <fieldset className={styles.fieldset}>
+              <legend className={styles.fieldLabel}>記録の種類</legend>
+              <div className={styles.segmented}>
+                {(['食材', '環境'] as const).map((t) => (
+                  <label key={t} className={`${styles.segItem} ${(common.subjectType ?? '食材') === t ? styles.segActive : ''}`}>
+                    <input
+                      type="radio"
+                      name="subjectType"
+                      checked={(common.subjectType ?? '食材') === t}
+                      onChange={() => {
+                        if (t === '環境') {
+                          setCommon(c => ({ ...c, subjectType: '環境', largeCategory: ENVIRONMENT_LARGE_CATEGORY, harvested: '不明' }));
+                          setSubmitMode('batch');
+                        } else {
+                          setCommon(c => ({ ...c, subjectType: '食材', largeCategory: '' }));
+                        }
+                      }}
+                      className={styles.hidden}
+                    />
+                    {t === '環境' ? '🌲 環境（木・倒木・地形）' : '食材'}
+                  </label>
+                ))}
+              </div>
+              {isEnv && <p className={styles.photoHint}>写真と名前（樹種など）だけで送れます。Sheets・Notion には送らず、帰宅後に地形探索の「記録」タブで Environment Spot にできます</p>}
+            </fieldset>
+          )}
+
+          {/* 送信方法（写真が1枚以上あるときだけ表示。環境はまとめて送信だけ） */}
+          {photos.length > 0 && !isEnv && (
             <fieldset className={styles.fieldset}>
               <legend className={styles.fieldLabel}>送信方法</legend>
               <div className={styles.segmented}>
@@ -582,6 +634,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
             <div className={styles.commonSection}>
               <p className={styles.commonSectionTitle}>共通設定（全 {photos.length} 枚に適用）</p>
 
+              {!isEnv && (
               <label className={styles.fieldLabel}>
                 大分類 <span className={styles.required}>*</span>
                 <select
@@ -593,9 +646,10 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
                   {LARGE_CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </label>
+              )}
 
               <label className={styles.fieldLabel}>
-                場所 <span className={styles.required}>*</span>
+                場所 {isEnv ? <span className={styles.photoHint}>（任意）</span> : <span className={styles.required}>*</span>}
                 <input
                   type="text"
                   className={styles.textInput}
@@ -605,6 +659,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
                 />
               </label>
 
+              {!isEnv && (
               <fieldset className={styles.fieldset}>
                 <legend className={styles.fieldLabel}>採取有無</legend>
                 <div className={styles.segmented}>
@@ -623,6 +678,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
                   ))}
                 </div>
               </fieldset>
+              )}
             </div>
           )}
         </main>
@@ -665,9 +721,11 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
           {photos.map((p, i) => {
             const errs = photoErrors(p);
             const showErr = validationAttempted && errs.length > 0;
-            const cardCandidates = p.food.length > 0
-              ? foodCandidates.filter(c => c.name.toLowerCase().includes(p.food.toLowerCase())).slice(0, 8)
-              : [];
+            const cardCandidates: FoodCandidate[] = isEnv
+              ? treeNames.filter(n => !p.food || n.includes(p.food)).slice(0, 8).map(n => ({ name: n, category: '樹種' }))
+              : p.food.length > 0
+                ? foodCandidates.filter(c => c.name.toLowerCase().includes(p.food.toLowerCase())).slice(0, 8)
+                : [];
             const isLast = i === photos.length - 1;
 
             return (
@@ -700,12 +758,12 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
                 </div>
 
                 <label className={styles.fieldLabel}>
-                  食材名 <span className={styles.required}>*</span>
+                  {isEnv ? '名前（樹種など）' : '食材名'} <span className={styles.required}>*</span>
                   <div className={styles.autocompleteWrap}>
                     <input
                       type="text"
                       className={styles.textInput}
-                      placeholder="例: ウド、行者ニンニク"
+                      placeholder={isEnv ? '例: ミズナラ、倒木' : '例: ウド、行者ニンニク'}
                       value={p.food}
                       onChange={e => {
                         updatePhoto(p.localId, 'food', e.target.value);
@@ -734,6 +792,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
                   </div>
                 </label>
 
+                {!isEnv && (
                 <label className={styles.fieldLabel}>
                   フェーズ <span className={styles.required}>*</span>
                   <select
@@ -745,6 +804,7 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
                     {phaseOptions.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </label>
+                )}
 
                 {!isLast && (p.food.trim() || p.phase) && (
                   <button type="button" className={styles.applyRestBtn} onClick={() => applyToRest(i)}>
@@ -997,9 +1057,18 @@ export default function FoodLogScreen({ go, editItemId }: Props) {
         <main className={styles.confirmMain}>
           {submitMode === 'batch' && (
             <dl className={styles.confirmCommon}>
-              <dt>大分類</dt> <dd>{common.largeCategory}</dd>
-              <dt>場所</dt>   <dd>{common.place}</dd>
-              <dt>採取</dt>   <dd>{common.harvested}</dd>
+              {isEnv ? (
+                <>
+                  <dt>種類</dt> <dd>🌲 環境（Sheets・Notion には送りません）</dd>
+                  <dt>場所</dt> <dd>{common.place || '（写真の位置）'}</dd>
+                </>
+              ) : (
+                <>
+                  <dt>大分類</dt> <dd>{common.largeCategory}</dd>
+                  <dt>場所</dt>   <dd>{common.place}</dd>
+                  <dt>採取</dt>   <dd>{common.harvested}</dd>
+                </>
+              )}
             </dl>
           )}
           {photos.map((p, i) => (

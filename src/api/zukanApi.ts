@@ -37,7 +37,7 @@ export async function fetchFieldLogEntries(idToken: string): Promise<FieldLogEnt
 
   return json.features.map((f) => {
     const [lng, lat] = f.geometry.coordinates;
-    const { foodName, place, date, memo, photoUrl, thumbnailUrl, notionUrl, elevation, kigo, recordedAt, eventId, takenAt, largeCategory } = f.properties;
+    const { foodName, place, date, memo, photoUrl, thumbnailUrl, notionUrl, elevation, kigo, recordedAt, eventId, takenAt, largeCategory, subjectType, assetId, environmentSpotId } = f.properties;
     return {
       id: buildFieldLogId(date, lat, lng, recordedAt),
       foodName, place, date, memo, photoUrl, notionUrl, elevation, kigo, lat, lng,
@@ -46,6 +46,9 @@ export async function fetchFieldLogEntries(idToken: string): Promise<FieldLogEnt
       eventId: eventId || '',
       takenAt: takenAt || '',
       ...(largeCategory ? { largeCategory } : {}),
+      ...(subjectType ? { subjectType } : {}),
+      ...(assetId ? { assetId } : {}),
+      ...(environmentSpotId ? { environmentSpotId } : {}),
     };
   });
 }

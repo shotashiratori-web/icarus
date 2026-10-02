@@ -26,6 +26,8 @@ type Props = {
   onClose: () => void;
   initialPhotos?: PendingPhoto[]; // 撮った写真から記録する時
   observedAt?: string | null; // 撮った写真から記録する時は撮影日時
+  // Field Log（環境）から Spot にする時: 元の記録・名前から推定した樹種・写真の縮小（Asset は端末に原本が無い）
+  fromFieldLog?: { eventId: string; name: string; speciesId: string | null; thumbnailUrl: string | null } | null;
 };
 
 // 写真に撮影時の位置が無い時（カメラの位置情報がオフだった・スクリーンショットなど）の案内。
@@ -42,14 +44,15 @@ function matchSpecies(names: string[], trees: EnvSpeciesItem[]): EnvSpeciesItem[
   return out;
 }
 
-export default function EnvironmentSpotRecordSheet({ location, species, terrainAt, onSave, onClose, initialPhotos, observedAt }: Props) {
+export default function EnvironmentSpotRecordSheet({ location, species, terrainAt, onSave, onClose, initialPhotos, observedAt, fromFieldLog = null }: Props) {
   const [loc, setLoc] = useState<RecordLocation>(location);
   const [coordValue, setCoordValue] = useState('');
   const [coordError, setCoordError] = useState<string | null>(null);
   const [hereOk, setHereOk] = useState(false);
   const [photoNoGps, setPhotoNoGps] = useState(false);
-  const [kind, setKind] = useState<SpotKindChoice | null>(null);
-  const [speciesId, setSpeciesId] = useState<string | null>(null);
+  // Field Log から: 樹種が分かれば「生木」を仮に選ぶ（生死は帰宅後に見直す）
+  const [kind, setKind] = useState<SpotKindChoice | null>(fromFieldLog?.speciesId ? 'alive' : null);
+  const [speciesId, setSpeciesId] = useState<string | null>(fromFieldLog?.speciesId ?? null);
   const [speciesText, setSpeciesText] = useState('');
   const [dbh, setDbh] = useState('');
   const [decay, setDecay] = useState<number | null>(null);
@@ -58,7 +61,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   const [photoTakenAt, setPhotoTakenAt] = useState<string | null>(observedAt ?? null);
   const [missing, setMissing] = useState<PhotoMissingReason | null>(null);
   const [missingMemo, setMissingMemo] = useState('');
-  const [memo, setMemo] = useState('');
+  const [memo, setMemo] = useState(fromFieldLog && !fromFieldLog.speciesId ? fromFieldLog.name : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,6 +143,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         lat: loc.lat, lng: loc.lng, locationSource: loc.source, gpsAccuracyM: loc.source === 'gps' ? loc.accuracyM : null,
         photoMissingReason: photos.length ? null : missing, photoMissingMemo: photos.length ? null : missingMemo.trim() || null,
         memo: memo.trim(), observedAt: photoTakenAt ?? new Date().toISOString(), terrain: terrainAt(loc.lat, loc.lng),
+        ...(fromFieldLog ? { fieldLogEventId: fromFieldLog.eventId } : {}),
       }, photos);
       if (isTree && speciesId) countSpeciesUse(speciesId);
       onClose();
@@ -152,13 +156,14 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   return (
     <section className={styles.sheet} role="dialog" aria-label="環境スポットを記録">
       <div className={styles.head}>
-        <h3>環境スポットを記録</h3>
+        <h3>{fromFieldLog ? `Field Log「${fromFieldLog.name}」を Spot にする` : '環境スポットを記録'}</h3>
         <button className={styles.btn} onClick={onClose}>やめる</button>
       </div>
+      {fromFieldLog && <p className={styles.sub}>写真・位置・日時は Field Log から引き継ぎます（Field Log は変わりません）。生死・胸高直径・腐朽度を確認してください</p>}
       <p className={styles.sub}>
         位置: {loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}（{loc.source === 'gps' ? `${loc.fromPhoto ? '写真の撮影時の GPS' : '現在地'}${loc.accuracyM !== null ? `・精度 約${Math.round(loc.accuracyM)}m` : ''}` : '地図で指定'}）
       </p>
-      <p className={styles.sub}>記録日時: {photoTakenAt ? `${new Date(photoTakenAt).toLocaleString('ja-JP')}（写真の撮影日時）` : '保存した時刻'}</p>
+      <p className={styles.sub}>記録日時: {photoTakenAt ? `${new Date(photoTakenAt).toLocaleString('ja-JP')}（${fromFieldLog ? 'Field Log の撮影日時' : '写真の撮影日時'}）` : '保存した時刻'}</p>
       {photoNoGps && loc.source !== 'map' && !loc.fromPhoto && <p className={styles.sub}>{NO_GPS_HINT}</p>}
       {staleHere && !hereOk && (
         <div className={styles.warnBox}>
@@ -231,7 +236,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
       </div>
       {photos.length > 0 && (
         <div className={styles.photos}>
-          {photos.map((p, i) => urls[i] && <img key={p.id} src={urls[i]} alt={`写真 ${i + 1}`} />)}
+          {photos.map((p, i) => (urls[i] ? <img key={p.id} src={urls[i]} alt={`写真 ${i + 1}`} /> : p.assetId && fromFieldLog?.thumbnailUrl ? <img key={p.id} src={fromFieldLog.thumbnailUrl} alt={`Field Log の写真 ${i + 1}`} /> : null))}
           <button className={styles.btn} onClick={() => setPhotos([])}>写真を外す</button>
         </div>
       )}

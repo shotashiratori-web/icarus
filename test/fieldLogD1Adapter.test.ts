@@ -206,3 +206,18 @@ describe('fieldLogD1Adapter.submit', () => {
     );
   });
 });
+
+// Field Log 環境記録（icarus_field_log_environment_capture_design.md §1）
+describe('fieldLogD1Adapter.submit: 記録の種類', () => {
+  beforeEach(() => {
+    submitFieldLogD1.mockReset();
+    submitFieldLogD1.mockResolvedValue({ eventId: 'event-1', requestId: 'req-1', photoUrl: '', duplicate: false });
+  });
+  it('環境は subjectType を API へ渡す。古い保留データ（指定なし）は食材のまま', async () => {
+    const adapter = await getAdapter();
+    await adapter!.submit({ ...BASE_PAYLOAD, hasPhoto: false, subjectType: '環境' }, 'tok');
+    expect(submitFieldLogD1.mock.calls[0][0]).toMatchObject({ subjectType: '環境' });
+    await adapter!.submit({ ...BASE_PAYLOAD, hasPhoto: false }, 'tok');
+    expect(submitFieldLogD1.mock.calls[1][0].subjectType).toBeUndefined();
+  });
+});

@@ -26,7 +26,9 @@ import { CUSTOM_PRESET_ID, SPECIES_PRESETS, matchPreset, presetById } from '../.
 import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
 import { describeRoad, groupByClass, indexRoads, nearestRoad, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
 import type { RoadLine, TerrainAreaSummary, TerrainGrid } from '../../terrain/types';
-import type { FieldLogEntry } from '../../types/zukan';
+import { isEnvironmentEntry, type FieldLogEntry } from '../../types/zukan';
+import { addEnvironmentSpotPhotos, editErrorMessage } from '../../api/environmentSpotsApi';
+import { nearbySpots, parseTakenAt, selectEnvCaptures, speciesFromName as speciesFromNameOf } from '../../environmentSpots/fieldLogCapture';
 import {
   displayedSourceLabel, gpsRemembered, initialPanelOpen, insideBounds, locationPermission, rememberGps, shouldAutoLocate,
 } from '../../terrain/initialView';
@@ -377,6 +379,42 @@ export default function ExplorationMap({ entries }: Props) {
     }
   };
   const [selectedSpot, setSelectedSpot] = useState<string | null>(null);
+  // ---- Field Log（環境）→ Environment Spot（帰宅後。icarus_field_log_environment_capture_design.md §3） ----
+  // まだ Spot にしていない環境の記録を候補に出す。Spot にしたものは地図にも候補にも出さない（Spot と二重に見えないように）
+  const [promotedIds, setPromotedIds] = useState<Set<string>>(new Set());
+  const envCaptures = useMemo(() => selectEnvCaptures(entries, promotedIds), [entries, promotedIds]);
+  // 近くの既存 Spot（30m 以内）がある時は、人が「この木／別の木」を決める（近いから同じ木とは推定しない）
+  const [promoteAsk, setPromoteAsk] = useState<{ entry: FieldLogEntry; near: { marker: SpotMarker; d: number }[] } | null>(null);
+  const [promoteFrom, setPromoteFrom] = useState<FieldLogEntry | null>(null);
+  const [promoteMsg, setPromoteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const speciesFromName = (name: string) => speciesFromNameOf(name, envSpots.species);
+  const startPromote = (e: FieldLogEntry) => {
+    setPromoteMsg(null);
+    const near = nearbySpots(e, envSpots.markers.filter((m) => m.origin === 'server' && m.spotId)).map(({ spot, d }) => ({ marker: spot, d }));
+    if (near.length) setPromoteAsk({ entry: e, near });
+    else openPromoteSheet(e);
+  };
+  const openPromoteSheet = (e: FieldLogEntry) => {
+    setPromoteAsk(null);
+    setPromoteFrom(e);
+    // 写真は同じ Asset を Spot にも結び付ける（複製しない）。端末に原本は無いので data は null
+    const photos: PendingPhoto[] = e.assetId ? [{ id: crypto.randomUUID(), name: `${e.foodName || 'field-log'}.jpg`, type: 'image/jpeg', data: null, bytes: 0, sha256: '', assetId: e.assetId }] : [];
+    setRecordInit({ photos, observedAt: parseTakenAt(e.takenAt) });
+    setRecordLoc({ lat: e.lat, lng: e.lng, source: 'gps', accuracyM: null, fromPhoto: true });
+  };
+  const sameTree = async (e: FieldLogEntry, m: SpotMarker) => {
+    if (!idToken || !m.spotId) return;
+    if (!e.assetId) { setPromoteMsg({ ok: false, text: 'この Field Log の写真は Spot に結び付けられない形式です（古い写真）。「別の木」で Spot にするか、写真を付けずに詳細から関連させてください' }); return; }
+    try {
+      await addEnvironmentSpotPhotos(m.spotId, { requestId: crypto.randomUUID(), assetIds: [e.assetId], fieldLogEventId: e.eventId }, idToken);
+      setPromotedIds((s) => new Set(s).add(e.eventId));
+      setPromoteAsk(null);
+      setPromoteMsg({ ok: true, text: `「${m.label}」に写真を追加しました（Spot は増やしていません）` });
+      void envSpots.refreshRemote();
+    } catch (err) {
+      setPromoteMsg({ ok: false, text: editErrorMessage(err) });
+    }
+  };
   const kindOf = (m: SpotMarker): SpotKindChoice => (m.envType === 'tree' ? (m.lifeState as SpotKindChoice) : m.envType);
   const visibleSpots = useMemo(() => (showSpots ? envSpots.markers.filter((m) => spotKinds.includes(kindOf(m)) && (spotSpecies === 'all' || m.treeSpeciesId === spotSpecies)) : []), [showSpots, envSpots.markers, spotKinds, spotSpecies]);
   const selectedMarker = envSpots.markers.find((m) => m.key === selectedSpot) ?? null;
@@ -419,7 +457,7 @@ export default function ExplorationMap({ entries }: Props) {
   const trackEvidence = useMemo<TrackEvidence[]>(() => visibleHistory.map((e) => ({ segments: e.track!, exploredOn: e.exploredOn, targets: e.targets })), [visibleHistory]);
   const pointEvidence = useMemo<PointEvidence[]>(() => {
     const out: PointEvidence[] = [];
-    for (const e of entries) if (Number.isFinite(e.lat) && Number.isFinite(e.lng) && inPeriod(ymd(e.date), period, new Date())) out.push({ lat: e.lat, lng: e.lng, name: e.foodName, result: 'found', date: ymd(e.date) });
+    for (const e of entries) if (!isEnvironmentEntry(e) && Number.isFinite(e.lat) && Number.isFinite(e.lng) && inPeriod(ymd(e.date), period, new Date())) out.push({ lat: e.lat, lng: e.lng, name: e.foodName, result: 'found', date: ymd(e.date) });
     const nameOfSpecies = (id: string | null) => envSpots.species.find((sp) => sp.id === id)?.name ?? '';
     for (const mk of envSpots.markers) {
       for (const o of mk.remote?.observations ?? []) {
@@ -654,7 +692,7 @@ export default function ExplorationMap({ entries }: Props) {
   const [species, setSpecies] = useState<string>(ALL_SPECIES);
   const categoryPoints = useMemo(() => {
     if (fieldLogFilter === 'none') return [];
-    return entries.filter((e) => fieldLogFilter === 'all' || e.largeCategory === fieldLogFilter);
+    return entries.filter((e) => !isEnvironmentEntry(e) && (fieldLogFilter === 'all' || e.largeCategory === fieldLogFilter));
   }, [entries, fieldLogFilter]);
   const species_ = useMemo(() => speciesOptions(categoryPoints), [categoryPoints]);
   const activeSpecies = species === ALL_SPECIES || species_.some((o) => o.key === species) ? species : ALL_SPECIES;
@@ -1045,6 +1083,15 @@ export default function ExplorationMap({ entries }: Props) {
             </Fragment>
           );
         })}
+        {showSpots && envCaptures.map((e) => (
+          <Marker
+            key={`env-${e.eventId}`}
+            position={[e.lat, e.lng]}
+            icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<span class="${styles.envCapture}" aria-label="環境の記録（未整理）">🌲</span>` })}
+          >
+            <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<br />「記録」タブの「Spot にする候補」から整理できます</Popup>
+          </Marker>
+        ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
             <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}</Popup>
@@ -1086,15 +1133,35 @@ export default function ExplorationMap({ entries }: Props) {
           {photoMsg && <p className={styles.warn}>{photoMsg}</p>}
         </div>
       )}
+      {promoteAsk && !recordLoc && (
+        <div className={styles.placeBanner} role="dialog" aria-label="同じ木か確認">
+          <b>近くに Environment Spot があります</b>
+          <p className={styles.sub}>Field Log「{promoteAsk.entry.foodName}」は、この木ですか？（近いから同じ木とは限りません。ミズナラ A/B は約 50m で別の木でした）</p>
+          {promoteAsk.near.map(({ marker, d }) => (
+            <div key={marker.key} className={styles.row}>
+              <button className={styles.btn} onClick={() => void sameTree(promoteAsk.entry, marker)}>この木です: {marker.label}（約{Math.max(1, Math.round(d))}m）</button>
+            </div>
+          ))}
+          <div className={styles.row}>
+            <button className={`${styles.btn} ${styles.primary}`} onClick={() => openPromoteSheet(promoteAsk.entry)}>別の木（新しい Spot）</button>
+            <button className={styles.btn} onClick={() => setPromoteAsk(null)}>やめる</button>
+          </div>
+          {promoteMsg && !promoteMsg.ok && <p className={styles.warn}>{promoteMsg.text}</p>}
+        </div>
+      )}
       {recordLoc && (
         <EnvironmentSpotRecordSheet
           location={recordLoc}
           species={envSpots.species}
           terrainAt={terrainAt}
-          onSave={async (b, ph) => { await envSpots.record(b, ph); }}
-          onClose={() => { setRecordLoc(null); setRecordInit(null); }}
+          onSave={async (b, ph) => {
+            await envSpots.record(b, ph);
+            if (promoteFrom) setPromotedIds((s) => new Set(s).add(promoteFrom.eventId));
+          }}
+          onClose={() => { setRecordLoc(null); setRecordInit(null); setPromoteFrom(null); }}
           initialPhotos={recordInit?.photos}
           observedAt={recordInit?.observedAt ?? null}
+          fromFieldLog={promoteFrom ? { eventId: promoteFrom.eventId, name: promoteFrom.foodName, speciesId: speciesFromName(promoteFrom.foodName), thumbnailUrl: promoteFrom.thumbnailUrl || promoteFrom.photoUrl || null } : null}
         />
       )}
       {selectedMarker && !recordLoc && (
@@ -1422,6 +1489,17 @@ export default function ExplorationMap({ entries }: Props) {
             {photoMsg && <p className={styles.warn}>{photoMsg}</p>}
             {unsentSpots > 0 && <p className={styles.sub}>この端末の未送信 {unsentSpots} 件（電波のある所で自動的に送信します）</p>}
             {envSpots.remoteError && <p className={styles.sub}>{envSpots.remoteError}</p>}
+
+            <h3 className={styles.h}>帰ってから: Spot にする候補（Field Log の 🌲 環境）{envCaptures.length ? ` ${envCaptures.length}件` : ''}</h3>
+            {envCaptures.length === 0 && <p className={styles.sub}>まだ Spot にしていない環境の記録はありません。山では Field Log の「記録の種類」で 🌲 環境 を選んで送れます</p>}
+            {envCaptures.slice(0, 20).map((e) => (
+              <div key={e.eventId} className={styles.captureRow}>
+                {(e.thumbnailUrl || e.photoUrl) && !e.imageExpired ? <img src={e.thumbnailUrl || e.photoUrl} alt="" /> : <span className={styles.captureNoImg}>🌲</span>}
+                <span className={styles.captureText}><b>{e.foodName || '名前なし'}</b><br /><small>{(parseTakenAt(e.takenAt) ? fmtDate(parseTakenAt(e.takenAt)!) : e.date)}{e.place ? `・${e.place}` : ''}</small></span>
+                <button className={styles.btn} onClick={() => startPromote(e)}>Spot にする</button>
+              </div>
+            ))}
+            {promoteMsg && <p className={promoteMsg.ok ? styles.sub : styles.warn}>{promoteMsg.text}</p>}
 
             <ExplorationHistoryPanel
               history={history}

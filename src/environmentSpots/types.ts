@@ -101,6 +101,8 @@ export interface SpotCreateBody {
   memo: string;
   observedAt: string;
   terrain?: Record<string, unknown> | null;
+  // Field Log（環境）から Spot にした時の元の記録。Field Log は変えず関連（evidenceOf）だけ残る
+  fieldLogEventId?: string | null;
 }
 
 export interface ObservationInput {
