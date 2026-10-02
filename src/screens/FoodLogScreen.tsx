@@ -26,7 +26,7 @@ import { UNSUPPORTED_MEDIA_TYPE_DESCRIPTION } from '../submission/errorMapping';
 import * as queueDB from '../submission/queueDB';
 import type { FoodLogSubmissionPayload } from '../submission/adapters/foodLogAdapter';
 import type { FieldLogD1SubmissionPayload } from '../submission/adapters/fieldLogD1Adapter';
-import { FIELD_LOG_D1_ENABLED_STAFF, PHOTO_ASSET_R2_ENABLED } from '../config';
+import { isFieldLogD1Enabled, PHOTO_ASSET_R2_ENABLED } from '../config';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
 import { buildFieldLogId } from '../types/zukan';
 import type { Screen } from '../App';
@@ -34,14 +34,9 @@ import HomeButton from '../components/HomeButton';
 import { loadSpecies } from '../environmentSpots/store';
 import styles from './FoodLogScreen.module.css';
 
-// Unit D: Worker+D1新経路の許可対象アカウントかどうか。ここをtrueにする条件を無くせば全員が既存GAS経路へ戻る
 // 樹種の候補（環境スポットの樹種マスタを端末に読み込めない時の予備）
 const DEFAULT_TREE_NAMES = ['ミズナラ', 'ブナ', 'イタヤカエデ', 'シナノキ', 'ハリギリ', 'ハルニレ', 'カツラ', 'トドマツ', 'カラマツ', 'シラカンバ'];
 
-function isFieldLogD1Enabled(userEmail: string): boolean {
-  const normalized = userEmail.trim().toLowerCase();
-  return FIELD_LOG_D1_ENABLED_STAFF.some((e) => e.toLowerCase() === normalized);
-}
 
 // Photo Asset Architecture v1（Stage 1）。R2 Assetのmime_typeとして保存する値を決める。
 // file.typeはブラウザ/OSによって空文字やHEIC判定が不安定なことがあるため、既存のisHeicFile()
@@ -54,15 +49,16 @@ function resolveAssetMimeType(file: File): string {
 
 type Phase = 'photoSelect' | 'photoEdit' | 'confirm' | 'sending' | 'complete';
 
-type Props = { go: (s: Screen) => void; editItemId?: string };
+// subjectType: ホームの「🌲 環境を記録」から開いた時は 環境 を選んだ状態で始める（下書きがあれば下書きを優先）
+type Props = { go: (s: Screen) => void; editItemId?: string; subjectType?: '環境' };
 
-export default function FoodLogScreen({ go, editItemId }: Props) {
+export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: Props) {
   const { idToken, userEmail, authState, signInContainerRef, handleTokenExpired, signOut: authSignOut } = useAuth();
   const [phase, setPhase] = useState<Phase>('photoSelect');
   const initializedRef = useRef(false);
 
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
-  const [common, setCommon] = useState<CommonFields>(emptyCommonFields());
+  const [common, setCommon] = useState<CommonFields>(() => (startAs === '環境' ? { ...emptyCommonFields(), subjectType: '環境', largeCategory: ENVIRONMENT_LARGE_CATEGORY } : emptyCommonFields()));
   const [submitMode, setSubmitMode] = useState<SubmitMode>('batch');
   const [currentIdx, setCurrentIdx] = useState(0);
 

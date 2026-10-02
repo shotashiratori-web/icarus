@@ -59,7 +59,7 @@ export type Screen =
   | { name: 'record'; noteId: string | null }
   | { name: 'review'; noteId: string }
   | { name: 'list' }
-  | { name: 'foodLog'; editItemId?: string }
+  | { name: 'foodLog'; editItemId?: string; subjectType?: '環境' }
   // Submission Framework v1: 保留（送信できず再送待ち）の記録一覧。入口はHomeScreenの保留サマリー
   | { name: 'pendingList' }
   | { name: 'field' }
@@ -205,7 +205,7 @@ function AppRoutes() {
   if (screen.name === 'record')     return <RecordScreen noteId={screen.noteId} go={go} />;
   if (screen.name === 'review')     return <ReviewDetailScreen noteId={screen.noteId} go={go} />;
   if (screen.name === 'list')       return <NoteListScreen go={go} />;
-  if (screen.name === 'foodLog')    return <FoodLogScreen go={go} editItemId={screen.editItemId} />;
+  if (screen.name === 'foodLog')    return <FoodLogScreen key={screen.subjectType ?? 'food'} go={go} editItemId={screen.editItemId} subjectType={screen.subjectType} />;
   if (screen.name === 'pendingList') return <PendingListScreen go={go} />;
   if (screen.name === 'field')      return <FieldScreen go={go} />;
   if (screen.name === 'processing') return <ProcessingScreen go={go} />;

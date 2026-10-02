@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getAllNotes } from '../db/localDB';
 import { fetchRecentFieldObservations, fetchRecentWorkLogs } from '../api/fieldApi';
 import { useAuth } from '../context/AuthContext';
+import { isFieldLogD1Enabled } from '../config';
 import { useSubmissionQueue, selectCountsByEntity } from '../submission/queueStore';
 import { ENTITY_LABELS, type SubmissionEntity } from '../submission/types';
 import type { FieldObservation, WorkLogItem } from '../types/fieldLog';
@@ -12,7 +13,7 @@ import styles from './HomeScreen.module.css';
 type Props = { go: (s: Screen) => void };
 
 export default function HomeScreen({ go }: Props) {
-  const { authState, staffMe, signInContainerRef, idToken, authDiagnostic } = useAuth();
+  const { authState, staffMe, signInContainerRef, idToken, authDiagnostic, userEmail } = useAuth();
   const [recent, setRecent] = useState<WineNote[]>([]);
   const [recentObservations, setRecentObservations] = useState<FieldObservation[]>([]);
   const [recentProcessing, setRecentProcessing] = useState<WorkLogItem[]>([]);
@@ -71,6 +72,17 @@ export default function HomeScreen({ go }: Props) {
             <span className={styles.ctaLabel}>フィールドを記録</span>
             <span className={styles.ctaArrow}>→ 記録</span>
           </button>
+          {/* 山で木・倒木・地形を一発で残す（Field Log 🌲 環境。D1 経路の人だけ。帰宅後に Environment Spot にする） */}
+          {isFieldLogD1Enabled(userEmail ?? '') && (
+            <button
+              className={styles.cta}
+              onClick={() => go({ name: 'foodLog', subjectType: '環境' })}
+            >
+              <span className={styles.ctaIcon}>🌲</span>
+              <span className={styles.ctaLabel}>環境を記録（木・倒木・地形）</span>
+              <span className={styles.ctaArrow}>→ 記録</span>
+            </button>
+          )}
           <button
             className={styles.cta}
             onClick={() => go({ name: 'workForm', mode: 'create' })}
