@@ -157,7 +157,7 @@ export default function HomeScreen({ go }: Props) {
                       ) : (
                         <div className={styles.thumbPlaceholder}>🌿</div>
                       )}
-                      <p className={styles.thumbName}>{item.food}</p>
+                      <p className={styles.thumbName}>{item.subjectType === '環境' ? `🌲 ${item.food}` : item.food}</p>
                       <p className={styles.thumbDate}>{item.date.slice(5)}</p>
                     </div>
                   ))}

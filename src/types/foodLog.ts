@@ -35,10 +35,16 @@ export interface PhotoEntry {
 
 export type SubmitMode = 'batch' | 'individual';
 
+// 記録の種類: 食材（従来）／環境（木・倒木・地形など。Sheets・Notion へ送らず、帰宅後に Environment Spot にする）
+export type SubjectType = '食材' | '環境';
+export const ENVIRONMENT_LARGE_CATEGORY = '植物';
+
 export interface CommonFields {
   largeCategory: string;
   place: string;
   harvested: string;
+  // 古い下書きには無い（= 食材）
+  subjectType?: SubjectType;
 }
 
 export interface FoodCandidate {
@@ -123,7 +129,7 @@ export const HARVESTED_OPTIONS = ['あり', 'なし', '不明'] as const;
 export const MAX_PHOTOS = 5;
 
 export function emptyCommonFields(): CommonFields {
-  return { largeCategory: '', place: '', harvested: '不明' };
+  return { largeCategory: '', place: '', harvested: '不明', subjectType: '食材' };
 }
 
 export function emptyPhotoEntry(): PhotoEntry {

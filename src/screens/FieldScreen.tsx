@@ -135,7 +135,7 @@ export default function FieldScreen({ go }: Props) {
                     <div className={styles.photoPlaceholder}>🌿</div>
                   )}
                   <div className={styles.info}>
-                    <p className={styles.name}>{item.food || '名称未設定'}</p>
+                    <p className={styles.name}>{item.subjectType === '環境' ? '🌲 ' : ''}{item.food || '名称未設定'}</p>
                     <p className={styles.sub}>{[item.place, item.phase].filter(Boolean).join(' · ')}</p>
                     <p className={styles.date}>{item.date}</p>
                   </div>

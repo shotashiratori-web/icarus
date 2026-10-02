@@ -116,6 +116,8 @@ export interface FieldLogD1SubmitInput {
   // Photo Asset Architecture v1（Stage 1）。指定時、写真の実体はR2 Asset側にあり
   // photoUrlは''のまま送る（asset_linksが正本、Phase4原則）
   assetId?: string;
+  // 記録の種類（Field Log 環境記録）。'環境' は Sheets・Notion へ送らない。未指定は食材
+  subjectType?: '食材' | '環境';
 }
 
 export interface FieldLogD1SubmitResult {
@@ -157,6 +159,7 @@ export async function submitFieldLogD1(input: FieldLogD1SubmitInput, idToken: st
         phase: input.phase,
         harvested: input.harvested,
         assetId: input.assetId,
+        ...(input.subjectType === '環境' ? { subjectType: '環境' } : {}),
         clientVersion: 'icarus-web-unit-d',
       }),
     });

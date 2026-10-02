@@ -503,6 +503,12 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
         ) : (
           <h1 className={styles.foodName}>{shown.food || '無題'}</h1>
         )}
+        {(detail?.subject_type ?? entry.subjectType) === '環境' && !isEditing && (
+          <p className={styles.hintText}>
+            🌲 環境の記録（Sheets・Notion には送りません）。
+            {entry.environmentSpotId ? 'Environment Spot にしました。' : '地形探索の「記録」タブ →「Spot にする候補」から Environment Spot にできます。'}
+          </p>
+        )}
 
         {isEditing && form ? (
           <div className={styles.editMetaRow}>

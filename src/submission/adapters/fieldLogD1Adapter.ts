@@ -39,6 +39,8 @@ export interface FieldLogD1SubmissionPayload {
   assetOriginalBase64?: string;
   // 一度確定したら、同じrequestId/fileHashでR2 originalを再uploadし続けない
   assetId?: string;
+  // 記録の種類（Field Log 環境記録、icarus_field_log_environment_capture_design.md）。古い保留データには無い（= 食材）
+  subjectType?: '食材' | '環境';
 }
 
 registerAdapter<FieldLogD1SubmissionPayload, FieldLogD1SubmitResult>({
@@ -93,6 +95,7 @@ registerAdapter<FieldLogD1SubmissionPayload, FieldLogD1SubmitResult>({
       largeCategory: payload.largeCategory,
       phase: payload.phase,
       harvested: payload.harvested,
+      subjectType: payload.subjectType,
     }, idToken);
   },
   mapError: mapFieldLogD1Error,

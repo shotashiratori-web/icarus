@@ -14,7 +14,7 @@ import FieldMapControls from './FieldMapControls';
 import FieldMarker from './FieldMarker';
 import FitFieldBounds from './FitFieldBounds';
 import BottomSheet, { SNAP_FRACTION } from './BottomSheet';
-import type { FieldLogEntry } from '../types/zukan';
+import { isEnvironmentEntry, type FieldLogEntry } from '../types/zukan';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import FieldDataFreshness from '../components/FieldDataFreshness';
@@ -37,7 +37,7 @@ type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen
 
 export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   const {
-    entries, loadState, errorMessage, ensureLoaded, reload,
+    entries: allEntries, loadState, errorMessage, ensureLoaded, reload,
     dataAsOf, refreshState, silentRefresh, refreshIfStale, recheckImageExpiry,
     searchQuery, kigoFilter, setSearchQuery, setKigoFilter,
     listScrollTop, setListScrollTop, sheetSnap, setSheetSnap,
@@ -55,6 +55,10 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   };
   const [manageMode, setManageMode] = useState(false);
   const [showDupOnly, setShowDupOnly] = useState(false);
+  // 環境の記録（木・倒木・地形など）は食材と混ぜないため既定で出さない（icarus_field_log_environment_capture_design.md §2）
+  const [showEnv, setShowEnv] = useState(false);
+  const envCount = useMemo(() => allEntries.filter(isEnvironmentEntry).length, [allEntries]);
+  const entries = useMemo(() => (showEnv ? allEntries : allEntries.filter((e) => !isEnvironmentEntry(e))), [allEntries, showEnv]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -221,7 +225,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
       <main className={styles.main}>
         {mapMode === 'terrain' && (
           <Suspense fallback={<div className={styles.loading}>地形探索を読み込み中…</div>}>
-            <ExplorationMap entries={entries} />
+            <ExplorationMap entries={allEntries} />
           </Suspense>
         )}
 
@@ -264,6 +268,17 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
               }}
             />
 
+            {envCount > 0 && (
+              <button
+                type="button"
+                className={`${styles.envToggle} ${showEnv ? styles.envToggleOn : ''}`}
+                style={{ top: controlsHeight + 8 }}
+                onClick={() => setShowEnv((v) => !v)}
+                aria-pressed={showEnv}
+              >
+                🌲 環境の記録 {envCount}件{showEnv ? '（表示中）' : 'を表示'}
+              </button>
+            )}
             <MapContainer center={initialCenter} zoom={initialZoom} className={styles.mapWrap}>
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>'
