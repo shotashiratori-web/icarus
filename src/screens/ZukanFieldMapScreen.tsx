@@ -33,9 +33,10 @@ function loadMapMode(): MapMode {
   }
 }
 
-type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen };
+// openGpxDraftId: 「🌲 環境を記録」から YAMAP の GPX を選んだ時。地形探索の「記録」タブでその記録の入力を開く
+type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string };
 
-export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
+export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraftId }: Props) {
   const {
     entries: allEntries, loadState, errorMessage, ensureLoaded, reload,
     dataAsOf, refreshState, silentRefresh, refreshIfStale, recheckImageExpiry,
@@ -48,7 +49,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();
   const isAdmin = staffMe?.role === 'admin';
 
-  const [mapMode, setMapMode] = useState<MapMode>(() => (focusEntry ? 'normal' : loadMapMode()));
+  const [mapMode, setMapMode] = useState<MapMode>(() => (focusEntry ? 'normal' : openGpxDraftId ? 'terrain' : loadMapMode()));
   const switchMapMode = (m: MapMode) => {
     setMapMode(m);
     try { localStorage.setItem(MAP_MODE_KEY, m); } catch { /* 保存できなくても切り替えは有効 */ }
@@ -225,7 +226,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from }: Props) {
       <main className={styles.main}>
         {mapMode === 'terrain' && (
           <Suspense fallback={<div className={styles.loading}>地形探索を読み込み中…</div>}>
-            <ExplorationMap entries={allEntries} />
+            <ExplorationMap entries={allEntries} openGpxDraftId={openGpxDraftId} />
           </Suspense>
         )}
 

@@ -261,12 +261,12 @@ describe('HomeScreen: 🌲 環境を記録', () => {
     fetchRecentFieldObservations.mockReset().mockResolvedValue([]);
     fetchRecentWorkLogs.mockReset().mockResolvedValue([]);
   });
-  it('D1 経路の人には出て、押すと subjectType=環境 で Field Log 送信画面へ', async () => {
+  it('D1 経路の人には出て、押すと「🌲 環境を記録」（木の送信・YAMAP の GPX）へ', async () => {
     authMock.current = mockUseAuth({ userEmail: FIELD_LOG_D1_ENABLED_STAFF[0] });
     const go = vi.fn();
     render(<HomeScreen go={go} />);
     await userEvent.click(screen.getByRole('button', { name: /環境を記録/ }));
-    expect(go).toHaveBeenCalledWith({ name: 'foodLog', subjectType: '環境' });
+    expect(go).toHaveBeenCalledWith({ name: 'environmentHub' });
   });
   it('一般スタッフ（D1 経路でない人）には出さない', () => {
     authMock.current = mockUseAuth({ userEmail: 'staff@test.invalid' });
