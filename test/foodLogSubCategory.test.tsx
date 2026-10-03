@@ -48,3 +48,17 @@ describe('送信: 小分類を渡す', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('FoodLogScreen: 場所は任意', () => {
+  it('大分類だけ選べば、場所が空でも次へ進める', async () => {
+    loadFoodLogDraft.mockResolvedValue({ photos: [{ ...emptyPhotoEntry(), base64: 'AAAA' }], commonFields: emptyCommonFields(), submitMode: 'batch', currentPhotoIndex: 0 });
+    const { default: FoodLogScreen } = await import('../src/screens/FoodLogScreen');
+    render(<FoodLogScreen go={vi.fn()} />);
+    await screen.findByAltText('写真1');
+    const next = screen.getByRole('button', { name: /写真ごとの入力へ/ });
+    expect(next).toBeDisabled();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'キノコ' } });
+    expect(next).toBeEnabled();
+    expect(screen.queryByText(/未入力: .*場所/)).toBeNull();
+  });
+});

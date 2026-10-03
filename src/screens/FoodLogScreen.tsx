@@ -288,7 +288,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
     const errs: string[] = [];
     if (common.subjectType === '環境') return errs; // 環境は大分類（植物）固定・場所は任意（写真の位置を使う）
     if (!common.largeCategory) errs.push('大分類');
-    if (!common.place.trim())  errs.push('場所');
+    // 場所は任意（2026-10-04。写真の GPS で位置は残る。API・GAS も空を受け付ける）
     return errs;
   };
 
@@ -304,7 +304,6 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
     if (!p.base64)      errs.push('写真');
     if (submitMode === 'individual') {
       if (!p.largeCategory) errs.push('大分類');
-      if (!(p.place ?? '').trim()) errs.push('場所');
     }
     return errs;
   };
@@ -680,7 +679,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
               )}
 
               <label className={styles.fieldLabel}>
-                場所 {isEnv ? <span className={styles.photoHint}>（任意）</span> : <span className={styles.required}>*</span>}
+                場所 <span className={styles.photoHint}>（任意）</span>
                 <input
                   type="text"
                   className={styles.textInput}
@@ -1023,7 +1022,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
           {submitMode === 'individual' && (
             <>
               <label className={styles.fieldLabel}>
-                場所 <span className={styles.required}>*</span>
+                場所 <span className={styles.photoHint}>（任意）</span>
                 <input
                   type="text"
                   className={styles.textInput}
