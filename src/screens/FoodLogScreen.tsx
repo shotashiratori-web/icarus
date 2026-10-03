@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   resizeToJpeg, fetchGps, fetchFoodCandidates,
   extractExifDate, extractExifGps,
@@ -85,6 +86,22 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
     }, () => undefined);
   }, []);
   const batchCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // 写真をタップして全画面で確認する（入力中に何が写っているか見分けるため）。タップ・×・Esc で閉じる
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!zoomUrl) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoomUrl(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoomUrl]);
+  const zoomOverlay = zoomUrl && typeof document !== 'undefined' ? createPortal(
+    <div className={styles.zoomOverlay} role="dialog" aria-label="写真を拡大" onClick={() => setZoomUrl(null)}>
+      <img src={zoomUrl} alt="拡大した写真" className={styles.zoomImg} />
+      <button type="button" className={styles.zoomClose} aria-label="閉じる" onClick={(e) => { e.stopPropagation(); setZoomUrl(null); }}>×</button>
+    </div>,
+    document.body,
+  ) : null;
+  const zoomable = (url: string) => (url ? { onClick: () => setZoomUrl(url), role: 'button' as const, 'aria-label': '写真を拡大', style: { cursor: 'zoom-in' } } : {});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -512,6 +529,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
 
     return (
       <div className={styles.root}>
+        {zoomOverlay}
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => go({ name: 'home' })}>← 戻る</button>
           <span className={styles.headerTitle}>写真を選ぶ</span>
@@ -535,7 +553,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
           <div className={styles.photoGrid}>
             {photos.map((p, i) => (
               <div key={p.localId} className={styles.photoGridItem}>
-                <img src={p.previewUrl} alt={`写真${i + 1}`} className={styles.photoGridImg} />
+                <img src={p.previewUrl} alt={`写真${i + 1}`} className={styles.photoGridImg} {...zoomable(p.previewUrl)} />
                 <span className={styles.photoGridNum}>{i + 1}</span>
                 <button className={styles.photoGridDel} onClick={() => removePhoto(p.localId)}>✕</button>
                 {p.date && <span className={styles.photoGridDate}>{p.date.slice(5)}</span>}
@@ -551,7 +569,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
               </button>
             )}
           </div>
-          <p className={styles.photoHint}>最大 {MAX_PHOTOS} 枚 / 現在 {photos.length} 枚</p>
+          <p className={styles.photoHint}>最大 {MAX_PHOTOS} 枚 / 現在 {photos.length} 枚{photos.length > 0 ? '・写真をタップで拡大' : ''}</p>
 
           <input
             ref={fileInputRef}
@@ -704,6 +722,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
 
     return (
       <div className={styles.root}>
+        {zoomOverlay}
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => setPhase('photoSelect')}>← 共通</button>
           <span className={styles.headerTitle}>写真の入力（{photos.length}枚）</span>
@@ -731,7 +750,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
                 className={`${styles.batchCard} ${showErr ? styles.batchCardError : ''}`}
               >
                 <div className={styles.batchCardHead}>
-                  <img src={p.previewUrl} alt={`写真${i + 1}`} className={styles.batchCardThumb} />
+                  <img src={p.previewUrl} alt={`写真${i + 1}`} className={styles.batchCardThumb} {...zoomable(p.previewUrl)} />
                   <div className={styles.batchCardHeadInfo}>
                     <span className={styles.batchCardNum}>写真 {i + 1}</span>
                     {expandedDateId === p.localId ? (
@@ -850,6 +869,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
 
     return (
       <div className={styles.root}>
+        {zoomOverlay}
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => setPhase('photoSelect')}>← 共通</button>
           <span className={styles.headerTitle}>写真ごとの入力</span>
@@ -882,7 +902,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
         </div>
 
         <main className={styles.formMain}>
-          <img src={photo.previewUrl} alt="" className={styles.editPhotoPreview} />
+          <img src={photo.previewUrl} alt="" className={styles.editPhotoPreview} {...zoomable(photo.previewUrl)} />
 
           {/* 日付（EXIF から自動入力） */}
           <label className={styles.fieldLabel}>
@@ -1045,6 +1065,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
   if (phase === 'confirm') {
     return (
       <div className={styles.root}>
+        {zoomOverlay}
         <header className={styles.header}>
           <button className={styles.backBtn} onClick={() => setPhase('photoEdit')}>← 修正する</button>
           <span className={styles.headerTitle}>送信内容の確認</span>
@@ -1069,7 +1090,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
           )}
           {photos.map((p, i) => (
             <div key={p.localId} className={styles.confirmPhoto}>
-              <img src={p.previewUrl} alt="" className={styles.confirmThumb} />
+              <img src={p.previewUrl} alt="" className={styles.confirmThumb} {...zoomable(p.previewUrl)} />
               <div className={styles.confirmPhotoInfo}>
                 <p className={styles.confirmPhotoNum}>写真 {i + 1} {p.date && `· ${p.date}`}</p>
                 <p className={styles.confirmPhotoFood}>{p.food}</p>
