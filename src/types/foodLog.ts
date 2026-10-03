@@ -14,6 +14,7 @@ export interface PhotoEntry {
   takenAt?: string;
   // 「一件ずつ送信」モードでのみ使用（写真ごとに大分類・場所・採取有無を持つ）
   largeCategory?: string;
+  subCategory?: string; // 小分類（植物 → 山菜・野菜…）。未選択は送信時に 不明
   place?: string;
   harvested?: string;
   // PC一括写真送信の重複チェック用（元ファイルのSHA-256）。Photo Asset Architecture v1（R2経路）でも
@@ -41,6 +42,8 @@ export const ENVIRONMENT_LARGE_CATEGORY = '植物';
 
 export interface CommonFields {
   largeCategory: string;
+  // 小分類（Web 移行時に抜けていた。2026-10-04 回帰修正）。古い下書きには無い（= 不明）
+  subCategory?: string;
   place: string;
   harvested: string;
   // 古い下書きには無い（= 食材）
@@ -127,6 +130,13 @@ export function getPhaseOptions(largeCategory: string): readonly string[] {
 export const HARVESTED_OPTIONS = ['あり', 'なし', '不明'] as const;
 
 export const MAX_PHOTOS = 5;
+
+// 小分類の選択肢（field_option_values の sub_category、親=大分類）を読めない時の予備。マスタと同じ値
+export const SUB_CATEGORY_FALLBACK: Record<string, string[]> = {
+  植物: ['山菜', '野菜', '果樹', 'ハーブ', '野草'],
+  魚介: ['魚', '貝', '甲殻類', '頭足類'],
+  肉: ['熊'],
+};
 
 export function emptyCommonFields(): CommonFields {
   return { largeCategory: '', place: '', harvested: '不明', subjectType: '食材' };

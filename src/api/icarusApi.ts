@@ -57,6 +57,7 @@ export async function submitPhotoEntry(
         phase: photo.phase,
         place: common.place,
         largeCategory: common.largeCategory,
+        ...(common.subCategory ? { subCategory: common.subCategory } : {}),
         harvested: common.harvested,
         memo: photo.memo,
         photoBase64: photo.base64,
