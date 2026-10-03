@@ -76,7 +76,7 @@ export default function HomeScreen({ go }: Props) {
           {isFieldLogD1Enabled(userEmail ?? '') && (
             <button
               className={styles.cta}
-              onClick={() => go({ name: 'foodLog', subjectType: '環境' })}
+              onClick={() => go({ name: 'environmentHub' })}
             >
               <span className={styles.ctaIcon}>🌲</span>
               <span className={styles.ctaLabel}>環境を記録（木・倒木・地形）</span>

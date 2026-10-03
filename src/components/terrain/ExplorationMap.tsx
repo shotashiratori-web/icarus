@@ -65,7 +65,7 @@ import styles from './ExplorationMap.module.css';
 // 地形探索（Exploration Mode Stage 1）。Field Map のモードの 1 つ。地図は通常モードと別に持つ（通常モードを変えない）。
 // 「地形探索条件に合う場所」を出すだけで、発生を予測しない。設計: icarus_mushroom_sansai_exploration_mode_final_design.md
 
-type Props = { entries: FieldLogEntry[] };
+type Props = { entries: FieldLogEntry[]; openGpxDraftId?: string };
 
 type Base = 'offline' | 'hillshademap' | 'std' | 'seamlessphoto';
 type FieldLogFilter = 'キノコ' | '植物' | 'all' | 'none';
@@ -232,7 +232,7 @@ function Follow({ pos, follow, bounds }: { pos: [number, number] | null; follow:
   return null;
 }
 
-export default function ExplorationMap({ entries }: Props) {
+export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
   const { idToken, handleTokenExpired, staffMe } = useAuth();
 
   const [status, setStatus] = useState<string>('地形データを読み込み中…');
@@ -248,7 +248,7 @@ export default function ExplorationMap({ entries }: Props) {
   // 地図をすっきりさせるため、Field Log は最初は出さない（見るタブで選ぶ）
   const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>('none');
   const [base, setBase] = useState<Base>('offline');
-  const [panelOpen, setPanelOpen] = useState(() => initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
+  const [panelOpen, setPanelOpen] = useState(() => !!openGpxDraftId || initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -816,6 +816,7 @@ export default function ExplorationMap({ entries }: Props) {
   }, []);
   // ---- パネルのタブ（探す／見る／記録／設定）と「表示中」の要約 ----
   const [tab, setTab] = useState<PanelTab>(() => {
+    if (openGpxDraftId) return 'record'; // 「🌲 環境を記録」から GPX を選んだ時は記録タブで開く
     try {
       const v = localStorage.getItem(TAB_KEY);
       return PANEL_TABS.some((t) => t.id === v) ? (v as PanelTab) : 'search';
@@ -1514,6 +1515,7 @@ export default function ExplorationMap({ entries }: Props) {
               onPeriodChange={setPeriod}
               exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
               idToken={idToken}
+              openDraftId={openGpxDraftId}
             />
 
               </>

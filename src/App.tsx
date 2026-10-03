@@ -4,6 +4,7 @@ import RecordScreen from './screens/RecordScreen';
 import ReviewDetailScreen from './screens/ReviewDetailScreen';
 import NoteListScreen from './screens/NoteListScreen';
 import FoodLogScreen from './screens/FoodLogScreen';
+import EnvironmentHubScreen from './screens/EnvironmentHubScreen';
 import PendingListScreen from './screens/PendingListScreen';
 import FieldScreen from './screens/FieldScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
@@ -73,7 +74,8 @@ export type Screen =
   | { name: 'zukan' }
   // マップは唯一の入口（フィールドマップ統一方針）。詳細画面同様「どこから来たか」を持つハブ構造で、
   // 将来AI検索・関連料理等の入口が増えても、戻る操作は常にfromへ辿るだけで済む（Phase7A-2/7C要件）。
-  | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen }
+  | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string }
+  | { name: 'environmentHub' }
   | { name: 'zukanFieldDetail'; entry: FieldLogEntry; from: Screen }
   // Phase8: Wine Entity（Icarus最初の正式Entity。Food/Process/Dish/Producer等の将来Entityも同じ形の画面になる想定）
   | { name: 'wineList' }
@@ -223,9 +225,10 @@ function AppRoutes() {
   if (screen.name === 'daily') return <DailySubmitScreen go={go} />;
   if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;
   if (screen.name === 'zukan') return <ZukanTopScreen go={go} />;
+  if (screen.name === 'environmentHub') return <EnvironmentHubScreen go={go} />;
   if (screen.name === 'zukanFieldMap') return (
     <Suspense fallback={mapLoadingFallback}>
-      <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} />
+      <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} openGpxDraftId={screen.openGpxDraftId} />
     </Suspense>
   );
   if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} from={screen.from} />;

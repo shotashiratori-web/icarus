@@ -30,6 +30,7 @@ interface Props {
   onPeriodChange: (v: PeriodFilter) => void;
   exploredKm2: number | null;
   idToken: string | null;
+  openDraftId?: string; // この端末の下書き（GPX を選んだだけ）の入力を最初から開く
 }
 
 interface TargetRow { target: string; result: TargetResult }
@@ -67,6 +68,23 @@ export default function ExplorationHistoryPanel(p: Props) {
   const [attachMsg, setAttachMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [attaching, setAttaching] = useState(false);
   useEffect(() => { listHypotheses().then(setHyps, () => setHyps([])); }, [draft, attachSession]);
+  // 「🌲 環境を記録」から GPX を選んで来た時: その下書きの入力を開く（1 回だけ）
+  const openedRef = useRef<string | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!p.openDraftId || openedRef.current === p.openDraftId) return;
+    const r = p.history.pending.find((x) => x.id === p.openDraftId && !x.ready);
+    if (!r) return;
+    openedRef.current = p.openDraftId;
+    setDraft(r);
+    setNames(p.staffName);
+    setPurpose('maitake');
+    setMemo('');
+    setDate('');
+    setTargets([{ target: 'マイタケ', result: 'not_found' }]);
+    setHypId('');
+    setTimeout(() => formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 300);
+  }, [p.openDraftId, p.history.pending, p.staffName]);
 
   // ① GPX を選んだら、入力より先に端末へ原本を保存する（下書き）
   const onFile = async (file: File | undefined) => {
@@ -176,7 +194,7 @@ export default function ExplorationHistoryPanel(p: Props) {
       {notice && <p className={styles.warn}>{notice}</p>}
 
       {draft && (
-        <div className={styles.form} aria-label="探索の記録を入力">
+        <div className={styles.form} aria-label="探索の記録を入力" ref={formRef}>
           <p className={styles.sub}>
             端末に保存しました（未送信）: {draft.fileName}・{draft.preview.exploredOn ?? '日付なし'}・{fmtDist(draft.preview.distanceM)}・{draft.preview.pointCount}点
           </p>
