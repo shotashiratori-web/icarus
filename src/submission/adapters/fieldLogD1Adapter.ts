@@ -11,6 +11,7 @@ export interface FieldLogD1SubmissionPayload {
   place: string;
   memo: string;
   largeCategory: string;
+  subCategory?: string; // 小分類（古い保留データには無い = 不明）
   // Field Log D1 Data Parity Audit（2026-09-21）P0対応: 以前はFoodLogScreenで収集していても
   // ここに無く、Workerへ届かないまま握りつぶされていた（D1にもSheetsにも残らなかった）
   phase: string;
@@ -93,6 +94,7 @@ registerAdapter<FieldLogD1SubmissionPayload, FieldLogD1SubmitResult>({
       longitude: payload.longitude,
       takenAt: payload.takenAt,
       largeCategory: payload.largeCategory,
+      subCategory: payload.subCategory,
       phase: payload.phase,
       harvested: payload.harvested,
       subjectType: payload.subjectType,

@@ -109,6 +109,7 @@ export interface FieldLogD1SubmitInput {
   longitude?: number;
   takenAt?: string;
   largeCategory?: string;
+  subCategory?: string;
   // Field Log D1 Data Parity Audit（2026-09-21）P0対応。以前はここに無く、Webフォームで
   // 選択した値がWorkerへ一切届いていなかった
   phase?: string;
@@ -156,6 +157,7 @@ export async function submitFieldLogD1(input: FieldLogD1SubmitInput, idToken: st
         longitude: input.longitude,
         takenAt: input.takenAt,
         largeCategory: input.largeCategory,
+        ...(input.subCategory ? { subCategory: input.subCategory } : {}),
         phase: input.phase,
         harvested: input.harvested,
         assetId: input.assetId,
