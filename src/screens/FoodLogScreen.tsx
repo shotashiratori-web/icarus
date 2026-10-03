@@ -14,6 +14,7 @@ import {
   HARVESTED_OPTIONS,
   MAX_PHOTOS,
   ENVIRONMENT_LARGE_CATEGORY,
+  SUB_CATEGORY_FALLBACK,
   type PhotoEntry,
   type CommonFields,
   type FoodCandidate,
@@ -33,7 +34,10 @@ import { buildFieldLogId } from '../types/zukan';
 import type { Screen } from '../App';
 import HomeButton from '../components/HomeButton';
 import { loadSpecies } from '../environmentSpots/store';
+import { fetchFieldEditOptions } from '../api/fieldEntryEditApi';
 import styles from './FoodLogScreen.module.css';
+
+const SUB_OPTIONS_KEY = 'icarus:field-sub-category-options';
 
 // 樹種の候補（環境スポットの樹種マスタを端末に読み込めない時の予備）
 const DEFAULT_TREE_NAMES = ['ミズナラ', 'ブナ', 'イタヤカエデ', 'シナノキ', 'ハリギリ', 'ハルニレ', 'カツラ', 'トドマツ', 'カラマツ', 'シラカンバ'];
@@ -85,6 +89,22 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
       if (names.length) setTreeNames(names);
     }, () => undefined);
   }, []);
+  // 小分類の選択肢（既存マスタ。電波が無い・読めない時は予備の一覧）。端末に覚えておく
+  const [subOptions, setSubOptions] = useState<Record<string, string[]>>(() => {
+    try { const v = localStorage.getItem(SUB_OPTIONS_KEY); if (v) return JSON.parse(v) as Record<string, string[]>; } catch { /* 予備を使う */ }
+    return SUB_CATEGORY_FALLBACK;
+  });
+  useEffect(() => {
+    if (!idToken) return;
+    fetchFieldEditOptions(idToken).then((opts) => {
+      const m: Record<string, string[]> = {};
+      for (const o of opts.filter((x) => x.field === 'sub_category' && x.isActive && x.parentValue).sort((a, b) => a.sortOrder - b.sortOrder)) (m[o.parentValue!] ??= []).push(o.value);
+      if (Object.keys(m).length) {
+        setSubOptions(m);
+        try { localStorage.setItem(SUB_OPTIONS_KEY, JSON.stringify(m)); } catch { /* 覚えられなくても使える */ }
+      }
+    }, () => undefined);
+  }, [idToken]);
   const batchCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // 写真をタップして全画面で確認する（入力中に何が写っているか見分けるため）。タップ・×・Esc で閉じる
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
@@ -285,7 +305,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
     const errs: string[] = [];
     if (common.subjectType === '環境') return errs; // 環境は大分類（植物）固定・場所は任意（写真の位置を使う）
     if (!common.largeCategory) errs.push('大分類');
-    if (!common.place.trim())  errs.push('場所');
+    // 場所は任意（2026-10-04。写真の GPS で位置は残る。API・GAS も空を受け付ける）
     return errs;
   };
 
@@ -301,7 +321,6 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
     if (!p.base64)      errs.push('写真');
     if (submitMode === 'individual') {
       if (!p.largeCategory) errs.push('大分類');
-      if (!(p.place ?? '').trim()) errs.push('場所');
     }
     return errs;
   };
@@ -312,7 +331,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
   // 送信時に使う共通項目。一件ずつ送信では、その写真自身の値を使う。
   const commonFieldsFor = (p: PhotoEntry): CommonFields =>
     submitMode === 'individual'
-      ? { largeCategory: p.largeCategory ?? '', place: p.place ?? '', harvested: p.harvested ?? '不明' }
+      ? { largeCategory: p.largeCategory ?? '', subCategory: p.subCategory, place: p.place ?? '', harvested: p.harvested ?? '不明' }
       : common;
 
   // ── まとめて送信：一覧編集の補助 ─────────────────────────────
@@ -372,6 +391,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
           place: cf.place,
           memo: photos[i].memo,
           largeCategory: cf.largeCategory,
+          ...(!isEnv && cf.subCategory ? { subCategory: cf.subCategory } : {}),
           // Field Log D1 Data Parity Audit（2026-09-21）P0対応。phaseは常にこの写真自身の値
           // （まとめて送信でも共通項目ではなく写真ごと）。harvestedはcommonFieldsForに揃える
           // （まとめて送信＝共通設定の値、一件ずつ送信＝この写真自身の値）
@@ -654,16 +674,30 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
                 <select
                   className={styles.selectInput}
                   value={common.largeCategory}
-                  onChange={e => setCommon(c => ({ ...c, largeCategory: e.target.value }))}
+                  onChange={e => setCommon(c => ({ ...c, largeCategory: e.target.value, subCategory: undefined }))}
                 >
                   <option value="">選択してください</option>
                   {LARGE_CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </label>
               )}
+              {!isEnv && (subOptions[common.largeCategory]?.length ?? 0) > 0 && (
+                <label className={styles.fieldLabel}>
+                  小分類 <span className={styles.photoHint}>（任意）</span>
+                  <select
+                    className={styles.selectInput}
+                    aria-label="小分類"
+                    value={common.subCategory ?? ''}
+                    onChange={e => setCommon(c => ({ ...c, subCategory: e.target.value || undefined }))}
+                  >
+                    <option value="">選ばない（不明）</option>
+                    {subOptions[common.largeCategory].map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </label>
+              )}
 
               <label className={styles.fieldLabel}>
-                場所 {isEnv ? <span className={styles.photoHint}>（任意）</span> : <span className={styles.required}>*</span>}
+                場所 <span className={styles.photoHint}>（任意）</span>
                 <input
                   type="text"
                   className={styles.textInput}
@@ -973,10 +1007,24 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
               <select
                 className={styles.selectInput}
                 value={photo.largeCategory ?? ''}
-                onChange={e => updatePhoto(photo.localId, 'largeCategory', e.target.value)}
+                onChange={e => { updatePhoto(photo.localId, 'largeCategory', e.target.value); updatePhoto(photo.localId, 'subCategory', undefined); }}
               >
                 <option value="">選択してください</option>
                 {LARGE_CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+          )}
+          {submitMode === 'individual' && (subOptions[photo.largeCategory ?? '']?.length ?? 0) > 0 && (
+            <label className={styles.fieldLabel}>
+              小分類 <span className={styles.photoHint}>（任意）</span>
+              <select
+                className={styles.selectInput}
+                aria-label="小分類"
+                value={photo.subCategory ?? ''}
+                onChange={e => updatePhoto(photo.localId, 'subCategory', e.target.value || undefined)}
+              >
+                <option value="">選ばない（不明）</option>
+                {subOptions[photo.largeCategory ?? ''].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </label>
           )}
@@ -994,7 +1042,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
           {submitMode === 'individual' && (
             <>
               <label className={styles.fieldLabel}>
-                場所 <span className={styles.required}>*</span>
+                場所 <span className={styles.photoHint}>（任意）</span>
                 <input
                   type="text"
                   className={styles.textInput}
@@ -1081,7 +1129,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
                 </>
               ) : (
                 <>
-                  <dt>大分類</dt> <dd>{common.largeCategory}</dd>
+                  <dt>大分類</dt> <dd>{common.largeCategory}{common.subCategory ? ` / ${common.subCategory}` : ''}</dd>
                   <dt>場所</dt>   <dd>{common.place}</dd>
                   <dt>採取</dt>   <dd>{common.harvested}</dd>
                 </>
@@ -1096,7 +1144,7 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
                 <p className={styles.confirmPhotoFood}>{p.food}</p>
                 <p className={styles.confirmPhotoSub}>{p.phase}{p.memo ? ` / ${p.memo.slice(0, 20)}` : ''}</p>
                 {submitMode === 'individual' && (
-                  <p className={styles.confirmPhotoSub}>{p.largeCategory} · {p.place} · 採取{p.harvested ?? '不明'}</p>
+                  <p className={styles.confirmPhotoSub}>{p.largeCategory}{p.subCategory ? ` / ${p.subCategory}` : ''} · {p.place} · 採取{p.harvested ?? '不明'}</p>
                 )}
                 {p.gps && <p className={styles.confirmPhotoGps}>📍 GPS あり</p>}
               </div>
