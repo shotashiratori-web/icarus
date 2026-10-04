@@ -1,4 +1,5 @@
 import type { TerrainManifest } from './types';
+import { displaySpeciesName, standRanks } from './forestSpecies';
 
 // 森林レイヤー（Species Exploration / Maitake v1 S1）。build_area.py の forest.py が作る。
 // forest.png: R・G = 林分番号（16 bit、0 = なし）、B = 植生番号（0 = なし）。forest.json: 林分の表・植生の表・出典。
@@ -67,10 +68,13 @@ export function forestFromPixels(m: TerrainManifest, rgba: Uint8ClampedArray, wi
 
 // ---- 表示するレイヤー（すべて独立。1〜3 位を 1 色に潰さない） ----
 export interface ForestLayers {
+  // 森林計画の任意樹種（2026-10-04、設計 icarus_forest_any_species_layer_final_design.md）。
+  // species = 個別種の表示名またはグループ名（カンバ類など）。mz1〜mz3 は「選んだ樹種の 1〜3 位」（名前は互換のため）
+  species: string | null;
   mz1: boolean;
   mz2: boolean;
   mz3: boolean;
-  kokuyuNoMizunara: boolean;
+  kokuyuNoMizunara: boolean; // 国有林で選んだ樹種なし（樹種を選んでいない時はミズナラ）
   broadleafUnknown: boolean;
   larch: boolean;
   todo: boolean;
@@ -79,11 +83,12 @@ export interface ForestLayers {
 }
 
 export const NO_FOREST_LAYERS: ForestLayers = {
+  species: null,
   mz1: false, mz2: false, mz3: false, kokuyuNoMizunara: false, broadleafUnknown: false, larch: false, todo: false, vegMizunara: [], vegOther: false,
 };
 
 export const anyForestLayer = (l: ForestLayers) =>
-  l.mz1 || l.mz2 || l.mz3 || l.kokuyuNoMizunara || l.broadleafUnknown || l.larch || l.todo || l.vegOther || l.vegMizunara.length > 0;
+  (!!l.species && (l.mz1 || l.mz2 || l.mz3)) || l.kokuyuNoMizunara || l.broadleafUnknown || l.larch || l.todo || l.vegOther || l.vegMizunara.length > 0;
 
 type RGBA = [number, number, number, number];
 export const FOREST_COLORS: Record<'mz1' | 'mz2' | 'mz3' | 'kokuyuNoMizunara' | 'broadleafUnknown' | 'larch' | 'todo' | 'vegOther', RGBA> = {
@@ -115,6 +120,8 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
   const communities = mizunaraCommunities(f);
   const vegShow = f.vegs.map((v) => (v.mizunara ? l.vegMizunara.includes(v.name) : l.vegOther));
   const vegCol = f.vegs.map((v) => (v.mizunara ? vegColor(communities, v.name) : FOREST_COLORS.vegOther));
+  // 選んだ樹種の林分ごとの順位（樹種を選んでいなければ順位の塗りはしない。「国有林で…なし」はミズナラ）
+  const ranks = l.species ? standRanks(f, l.species) : null;
   for (let y = 0; y < f.height; y++) {
     for (let x = 0; x < f.width; x++) {
       const i = y * f.width + x;
@@ -123,7 +130,8 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
       if (si) {
         const s = f.stands[si - 1];
         if (s) {
-          const r = s.mizunaraRank;
+          const r = ranks ? ranks[si - 1] : 0;
+          const rk = ranks ? r : s.mizunaraRank; // 「国有林で…なし」の判定用
           if (r === 1 && l.mz1) c = FOREST_COLORS.mz1;
           else if (r === 2 && l.mz2) c = FOREST_COLORS.mz2;
           else if (r === 3 && l.mz3) c = FOREST_COLORS.mz3;
@@ -132,7 +140,7 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
             if (s.cls === FOREST_CLASS.broadleafUnknown && l.broadleafUnknown) c = FOREST_COLORS.broadleafUnknown;
             else if (s.cls === FOREST_CLASS.larch && l.larch) c = FOREST_COLORS.larch;
             else if (s.cls === FOREST_CLASS.todo && l.todo) c = FOREST_COLORS.todo;
-            else if (r === 0 && s.owner === 'k' && s.cls !== FOREST_CLASS.noRegister && l.kokuyuNoMizunara) c = FOREST_COLORS.kokuyuNoMizunara;
+            else if (rk === 0 && s.owner === 'k' && s.cls !== FOREST_CLASS.noRegister && l.kokuyuNoMizunara) c = FOREST_COLORS.kokuyuNoMizunara;
           }
         }
       }
@@ -153,7 +161,6 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
 // ---- 地点情報（データの年を必ず付ける） ----
 const OWNER_LABEL: Record<ForestOwner, string> = { k: '国有林', m: '民有林' };
 // 国有林の森林調査簿の略号（表示だけ言い換える。データは変えない）
-const SPECIES_LABEL: Record<string, string> = { '他Ｌ': 'その他広葉樹', '他Ｎ': 'その他針葉樹', '他L': 'その他広葉樹', '他N': 'その他針葉樹' };
 
 export function describeForest(f: ForestData, i: number): string[] {
   const lines: string[] = [];
@@ -161,7 +168,7 @@ export function describeForest(f: ForestData, i: number): string[] {
   const s = si ? f.stands[si - 1] : null;
   if (s) {
     const sp = s.species.length
-      ? s.species.map(([n, r], k) => `${k + 1}位 ${SPECIES_LABEL[n] ?? n}${r ? `（${r}割）` : ''}`).join('・')
+      ? s.species.map(([n, r], k) => `${k + 1}位 ${displaySpeciesName(n)}${r ? `（${r}割）` : ''}`).join('・')
       : '樹種の記録なし';
     lines.push(`森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点）: ${sp}${s.age ? `／林齢 ${s.age}` : ''}${s.type ? `／${s.type}` : ''}`);
     if (s.cls === FOREST_CLASS.broadleafUnknown) lines.push('天然林広葉樹は樹種不明（ミズナラかどうか分からない）');
@@ -191,7 +198,7 @@ export function forestHeadline(f: ForestData, i: number): ForestHeadline {
   if (s) {
     species = s.cls === FOREST_CLASS.broadleafUnknown
       ? '天然林広葉樹（樹種不明）'
-      : s.species.length ? s.species.map(([n, r], k) => `${k + 1}位 ${SPECIES_LABEL[n] ?? n}${r ? `（${r}割）` : ''}`).join('・') : '樹種の記録なし';
+      : s.species.length ? s.species.map(([n, r], k) => `${k + 1}位 ${displaySpeciesName(n)}${r ? `（${r}割）` : ''}`).join('・') : '樹種の記録なし';
     note = `森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点${s.age ? `・林齢${s.age}` : ''}${s.type ? `・${s.type}` : ''}）`;
   }
   return { species, note, vegetation: v ? `${v.name}（${v.year ?? '年不明'}調査）` : null };

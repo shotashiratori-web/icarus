@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { EnvSpeciesItem } from '../../environmentSpots/types';
-import { MATCH_COLOR, type HypothesisConditions, type HypothesisSnapshot, type MizunaraRank } from '../../terrain/hypothesis';
+import { forestPlanOf, MATCH_COLOR, type HypothesisConditions, type HypothesisSnapshot, type MizunaraRank } from '../../terrain/hypothesis';
+import type { SpeciesOption } from '../../terrain/forestSpecies';
 import { STATE_COLORS, STATE_LABEL, STATE_LABEL_NO_TARGET, type ExplorationState } from '../../terrain/targetExploration';
 import styles from './ExplorationMap.module.css';
 
@@ -20,6 +21,7 @@ type Props = {
   candidateSummary: string;
   communities: string[];
   forestAvailable: boolean;
+  forestSpecies: SpeciesOption[]; // 森林計画の樹種（個別種・グループ）
   forestYears: { forestPlan: string | null; vegetation: string | null };
   trees: EnvSpeciesItem[];
   treeCounts: Record<string, number>;
@@ -50,7 +52,9 @@ export default function HypothesisPanel(p: Props) {
   const h = p.hyp;
   const set = (patch: Partial<HypothesisConditions>) => p.onHyp({ ...h, ...patch });
   const toggle = <T,>(list: T[], v: T, on: boolean) => (on ? [...list, v] : list.filter((x) => x !== v));
-  const ranks = h.forestPlan?.mizunaraRanks ?? [];
+  const fp = forestPlanOf(h.forestPlan);
+  const fpSpecies = fp?.species ?? '';
+  const ranks = fp?.ranks ?? [];
   const comms = h.vegetation?.communities ?? [];
   const states = h.exploration?.states ?? [];
   const target = p.targets.find((t) => t.id === p.targetId) ?? null;
@@ -102,12 +106,25 @@ export default function HypothesisPanel(p: Props) {
         <summary className={styles.h}>条件を重ねる（すべて満たす範囲）{p.match ? `：${km2(p.match.matchKm2)}` : ''}</summary>
         <p className={styles.sub}>同じ項目の中は「どれか」、項目どうしは「すべて」。点数や確率ではありません</p>
 
-        <p className={styles.label}>森林計画{p.forestYears.forestPlan ? `（${p.forestYears.forestPlan}）` : ''}：ミズナラが入る林分</p>
+        <p className={styles.label}>森林計画{p.forestYears.forestPlan ? `（${p.forestYears.forestPlan}）` : ''}：樹種が入る林分（1 樹種）</p>
         {!p.forestAvailable && <p className={styles.sub}>この版の地形データには森林がありません</p>}
+        <label className={styles.check}>
+          樹種
+          <select
+            className={styles.selectSmall}
+            aria-label="条件の樹種"
+            disabled={!p.forestAvailable}
+            value={fpSpecies}
+            onChange={(e) => set({ forestPlan: e.target.value ? { species: e.target.value, ranks: ranks.length ? ranks : [1] } : null })}
+          >
+            <option value="">使わない</option>
+            {p.forestSpecies.map((o) => <option key={o.name} value={o.name}>{o.name}{o.group ? '（まとめ）' : ''}（{o.stands.toLocaleString()} 林分）</option>)}
+          </select>
+        </label>
         <div className={styles.chips}>
           {([1, 2, 3] as MizunaraRank[]).map((r) => (
             <label key={r} className={styles.chip}>
-              <input type="checkbox" disabled={!p.forestAvailable} checked={ranks.includes(r)} onChange={(e) => set({ forestPlan: { mizunaraRanks: toggle(ranks, r, e.target.checked) } })} />
+              <input type="checkbox" disabled={!p.forestAvailable || !fpSpecies} checked={!!fpSpecies && ranks.includes(r)} onChange={(e) => fpSpecies && set({ forestPlan: { species: fpSpecies, ranks: toggle(ranks, r, e.target.checked) } })} />
               {r}位
             </label>
           ))}

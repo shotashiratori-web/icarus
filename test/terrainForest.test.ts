@@ -40,10 +40,10 @@ describe('forest', () => {
   });
 
   it('2. ミズナラ 1〜3 位は別々の色・別々の ON/OFF（1 色に潰さない）', () => {
-    const only1 = renderForest(f, { ...NO_FOREST_LAYERS, mz1: true });
+    const only1 = renderForest(f, { ...NO_FOREST_LAYERS, species: 'ミズナラ', mz1: true });
     expect(Array.from(only1.slice(0, 4))).toEqual(FOREST_COLORS.mz1);
     expect(only1[4 + 3]).toBe(0); // 2位は出ない
-    const all = renderForest(f, { ...NO_FOREST_LAYERS, mz1: true, mz2: true, mz3: true });
+    const all = renderForest(f, { ...NO_FOREST_LAYERS, species: 'ミズナラ', mz1: true, mz2: true, mz3: true });
     expect(Array.from(all.slice(4, 8))).toEqual(FOREST_COLORS.mz2);
     expect(Array.from(all.slice(8, 12))).toEqual(FOREST_COLORS.mz3);
     expect(FOREST_COLORS.mz1).not.toEqual(FOREST_COLORS.mz2);
@@ -51,7 +51,7 @@ describe('forest', () => {
   });
 
   it('3. 天然林広葉樹（樹種不明）はミズナラのレイヤーに出ない。自分のレイヤーでだけ薄く出る', () => {
-    const mz = renderForest(f, { ...NO_FOREST_LAYERS, mz1: true, mz2: true, mz3: true });
+    const mz = renderForest(f, { ...NO_FOREST_LAYERS, species: 'ミズナラ', mz1: true, mz2: true, mz3: true });
     expect(mz[4 * 4 + 3]).toBe(0);
     const bl = renderForest(f, { ...NO_FOREST_LAYERS, broadleafUnknown: true });
     expect(Array.from(bl.slice(16, 20))).toEqual(FOREST_COLORS.broadleafUnknown);

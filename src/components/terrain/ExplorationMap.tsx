@@ -22,6 +22,7 @@ import {
   bearingName, cellIndex, cellValues, compileConditions, isCandidateRaw, accessClassRaw, latLngToGrid,
   nearestCandidate, candidateStats, type ExplorationConditions, type AccessClass,
 } from '../../terrain/engine';
+import { forestSpeciesOptions, genusOnlyNotice, standRanks } from '../../terrain/forestSpecies';
 import { CUSTOM_PRESET_ID, SPECIES_PRESETS, matchPreset, presetById } from '../../terrain/presets';
 import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
 import { describeRoad, groupByClass, indexRoads, nearestRoad, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
@@ -549,14 +550,20 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
     const byStand = (f: (st: ForestStand) => boolean) => forestAreaHa(forest, px, (st) => !!st && f(st));
     const veg: Record<string, number> = {};
     for (const c of communities) veg[c] = forestAreaHa(forest, px, (_, v) => v?.name === c);
+    // 選んだ樹種（選んでいなければミズナラ）の林分ごとの順位
+    const sel = standRanks(forest, forestLayers.species ?? 'ミズナラ');
+    const idx = new Map(forest.stands.map((st, k) => [st, k]));
+    const rankOf = (st: ForestStand) => sel[idx.get(st)!];
     return {
-      mz1: byStand((st) => st.mizunaraRank === 1), mz2: byStand((st) => st.mizunaraRank === 2), mz3: byStand((st) => st.mizunaraRank === 3),
-      kokuyuNoMizunara: byStand((st) => st.owner === 'k' && st.mizunaraRank === 0 && st.cls !== FOREST_CLASS.noRegister),
+      mz1: byStand((st) => rankOf(st) === 1), mz2: byStand((st) => rankOf(st) === 2), mz3: byStand((st) => rankOf(st) === 3),
+      kokuyuNoMizunara: byStand((st) => st.owner === 'k' && rankOf(st) === 0 && st.cls !== FOREST_CLASS.noRegister),
       broadleafUnknown: byStand((st) => st.cls === FOREST_CLASS.broadleafUnknown),
       larch: byStand((st) => st.cls === FOREST_CLASS.larch), todo: byStand((st) => st.cls === FOREST_CLASS.todo),
       veg,
     };
-  }, [forest, manifest, communities]);
+  }, [forest, manifest, communities, forestLayers.species]);
+  const forestSpeciesOpts = useMemo(() => (forest ? forestSpeciesOptions(forest) : []), [forest]);
+  const speciesNotice = useMemo(() => (forest ? genusOnlyNotice(forest, forestLayers.species) : null), [forest, forestLayers.species]);
   const [forestUrl, setForestUrl] = useState<string | null>(null);
   const forestCanvas = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -1238,6 +1245,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
               candidateSummary={`傾斜 ${conditions.slopeMinDeg}° 以上・日射 上位 ${conditions.sunTopPct}%・尾根から約 ${Math.round(conditions.ridgeMaxM)}m`}
               communities={communities}
               forestAvailable={!!forest}
+              forestSpecies={forestSpeciesOpts}
               forestYears={forestYears}
               trees={treeList}
               treeCounts={treeCounts}
@@ -1361,17 +1369,35 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
             {loaded.forestError && <p className={styles.sub}>{loaded.forestError}</p>}
             {forest && forestHa && (
               <>
-                <p className={styles.sub}>森林計画でミズナラが入る林分（{forest.sources.kokuyu?.year ?? '—'}年・国有林／{forest.sources.minyu?.year ?? '—'}年・民有林）</p>
-                {([['mz1', '1位'], ['mz2', '2位'], ['mz3', '3位']] as const).map(([k, label]) => (
+                <p className={styles.sub}>森林計画の樹種（{forest.sources.kokuyu?.year ?? '—'}年・国有林／{forest.sources.minyu?.year ?? '—'}年・民有林）。小班（数 ha）単位の計画の値で、一本一本の木ではありません</p>
+                <label className={styles.check}>
+                  樹種
+                  <select
+                    className={styles.selectSmall}
+                    aria-label="森林計画の樹種"
+                    value={forestLayers.species ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value || null;
+                      setForestLayers((l) => (v
+                        ? { ...l, species: v, ...(l.mz1 || l.mz2 || l.mz3 ? {} : { mz1: true, mz2: true, mz3: true }) }
+                        : { ...l, species: null, mz1: false, mz2: false, mz3: false }));
+                    }}
+                  >
+                    <option value="">選ばない</option>
+                    {forestSpeciesOpts.map((o) => <option key={o.name} value={o.name}>{o.name}{o.group ? '（まとめ）' : ''}（{o.stands.toLocaleString()} 林分）</option>)}
+                  </select>
+                </label>
+                {forestLayers.species && ([['mz1', '1位'], ['mz2', '2位'], ['mz3', '3位']] as const).map(([k, label]) => (
                   <label key={k} className={styles.check}>
                     <input type="checkbox" checked={forestLayers[k]} onChange={toggleForest(k)} />
-                    <span className={styles.swatch} style={{ background: `rgba(${FOREST_COLORS[k].slice(0, 3).join(',')},0.9)` }} />ミズナラ {label}
+                    <span className={styles.swatch} style={{ background: `rgba(${FOREST_COLORS[k].slice(0, 3).join(',')},0.9)` }} />{forestLayers.species} {label}
                     <span className={styles.num}>{forestHa[k].toLocaleString()} ha</span>
                   </label>
                 ))}
+                {speciesNotice && <p className={styles.sub}>{speciesNotice}</p>}
                 <label className={styles.check}>
                   <input type="checkbox" checked={forestLayers.kokuyuNoMizunara} onChange={toggleForest('kokuyuNoMizunara')} />
-                  <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.kokuyuNoMizunara.slice(0, 3).join(',')})` }} />国有林でミズナラなし
+                  <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.kokuyuNoMizunara.slice(0, 3).join(',')})` }} />国有林で{forestLayers.species ?? 'ミズナラ'}なし
                   <span className={styles.num}>{forestHa.kokuyuNoMizunara.toLocaleString()} ha</span>
                 </label>
                 <p className={styles.sub}>林の種類（森林計画）</p>

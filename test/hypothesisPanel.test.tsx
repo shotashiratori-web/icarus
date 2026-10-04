@@ -19,7 +19,7 @@ function props(over: Partial<React.ComponentProps<typeof HypothesisPanel>> = {})
   return {
     targets: [sp('target-maitake', 'target', 'マイタケ')], targetId: null, onTarget: vi.fn(), hyp: NO_HYPOTHESIS_CONDITIONS, onHyp: vi.fn(),
     terrainUse: { candidate: false, dem: false }, onTerrainUse: vi.fn(), demAvailable: true, demSummary: null, candidateSummary: '傾斜 25° 以上',
-    communities: ['ミズナラ群落'], forestAvailable: true, forestYears: { forestPlan: '国有林 2018', vegetation: '2021〜2022' },
+    communities: ['ミズナラ群落'], forestAvailable: true, forestSpecies: [{ name: 'ミズナラ', group: false, stands: 600 }, { name: 'トドマツ', group: false, stands: 2000 }, { name: 'カンバ類', group: true, stands: 1800 }], forestYears: { forestPlan: '国有林 2018', vegetation: '2021〜2022' },
     trees: [sp('tree-mizunara', 'tree', 'ミズナラ')], treeCounts: { 'tree-mizunara': 2 }, stateAreas: null,
     showTargetLayer: true, onShowTargetLayer: vi.fn(), showMatch: true, onShowMatch: vi.fn(), conditionText: [], match: null, missing: [],
     saved: [], suggestedName: '案', onSave: vi.fn(async () => undefined), onLoad: vi.fn(), onDelete: vi.fn(async () => undefined), terrainVersion: 'v1', pointRadiusM: 50,
@@ -43,8 +43,8 @@ describe('HypothesisPanel', () => {
     const p = props();
     render(<HypothesisPanel {...p} />);
     expect(screen.getByText(/ミズナラ系群落（ミズナラそのものではありません）/)).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('1位'));
-    expect(p.onHyp).toHaveBeenLastCalledWith({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { mizunaraRanks: [1] } });
+    fireEvent.change(screen.getByLabelText('条件の樹種'), { target: { value: 'トドマツ' } });
+    expect(p.onHyp).toHaveBeenLastCalledWith({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'トドマツ', ranks: [1] } });
     fireEvent.click(screen.getByLabelText('ミズナラ群落'));
     expect(p.onHyp).toHaveBeenLastCalledWith({ ...NO_HYPOTHESIS_CONDITIONS, vegetation: { communities: ['ミズナラ群落'] } });
   });

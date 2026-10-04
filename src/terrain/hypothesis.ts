@@ -1,6 +1,7 @@
 import { compileConditions, isCandidateRaw, latLngToGrid, type ExplorationConditions } from './engine';
 import { matchTerrain, type HydroGrid, type TerrainConditions } from './hydro';
 import type { ForestData } from './forest';
+import { isGroup, membersOf, standRanks } from './forestSpecies';
 import { STATE_CODE, type ExplorationState, type TargetExploration } from './targetExploration';
 import type { TerrainGrid, TerrainManifest } from './types';
 
@@ -11,9 +12,20 @@ import type { TerrainGrid, TerrainManifest } from './types';
 export const HYPOTHESIS_SCHEMA = 'icarus.hypothesis/v1';
 
 export type MizunaraRank = 1 | 2 | 3;
+export interface ForestPlanCondition { species: string; ranks: MizunaraRank[]; members?: string[] }
+interface LegacyForestPlan { mizunaraRanks: MizunaraRank[] }
+
+// 森林計画の条件を今の形にそろえる（古い形はミズナラ）
+export function forestPlanOf(fp: HypothesisConditions['forestPlan']): ForestPlanCondition | null {
+  if (!fp) return null;
+  if ('mizunaraRanks' in fp) return { species: 'ミズナラ', ranks: fp.mizunaraRanks };
+  return fp;
+}
 
 export interface HypothesisConditions {
-  forestPlan: { mizunaraRanks: MizunaraRank[] } | null; // 森林計画（小班の樹種 1〜3 位）
+  // 森林計画（小班の樹種 1〜3 位）。species は個別種の表示名かグループ名（カンバ類など）、members はグループの中身（保存時点）。
+  // 2026-10-04 より前の仮説は { mizunaraRanks } の形（ミズナラとして読む）
+  forestPlan: ForestPlanCondition | LegacyForestPlan | null;
   vegetation: { communities: string[] } | null; // 植生図のミズナラ系群落（群落名）
   confirmedTrees: { treeSpeciesId: string; treeName: string; withinM: number } | null; // 環境スポット（現地確認の木）から ○m 以内
   terrain: { candidate: ExplorationConditions | null; dem: TerrainConditions | null } | null;
@@ -35,7 +47,11 @@ const GROUPS: GroupId[] = ['forestPlan', 'vegetation', 'confirmedTrees', 'terrai
 export function normalizeConditions(c: HypothesisConditions): HypothesisConditions {
   const terrain = c.terrain && (c.terrain.candidate || c.terrain.dem) ? c.terrain : null;
   return {
-    forestPlan: c.forestPlan && c.forestPlan.mizunaraRanks.length ? { mizunaraRanks: [...c.forestPlan.mizunaraRanks].sort() } : null,
+    forestPlan: (() => {
+      const fp = forestPlanOf(c.forestPlan);
+      if (!fp || !fp.species || !fp.ranks.length) return null;
+      return { species: fp.species, ranks: [...fp.ranks].sort(), ...(isGroup(fp.species) ? { members: membersOf(fp.species) } : {}) };
+    })(),
     vegetation: c.vegetation && c.vegetation.communities.length ? { communities: [...c.vegetation.communities].sort() } : null,
     confirmedTrees: c.confirmedTrees,
     terrain,
@@ -70,7 +86,9 @@ export function compileHypothesis(ctx: MatchContext, raw: HypothesisConditions):
   const missing: GroupId[] = [];
   const px = m.grid.pxM;
 
-  const ranks = new Set(c.forestPlan?.mizunaraRanks ?? []);
+  const fpc = forestPlanOf(c.forestPlan);
+  const ranks = new Set(fpc?.ranks ?? []);
+  const fpRanks = fpc && forest ? standRanks(forest, fpc.species) : null;
   const comms = new Set(c.vegetation?.communities ?? []);
   if ((c.forestPlan || c.vegetation) && !forest) missing.push(...groups.filter((g) => g === 'forestPlan' || g === 'vegetation'));
 
@@ -114,7 +132,7 @@ export function compileHypothesis(ctx: MatchContext, raw: HypothesisConditions):
   const preds: Partial<Record<GroupId, (i: number) => boolean>> = {};
   if (c.forestPlan) preds.forestPlan = (i) => {
     const s = forest && forest.stand[i] ? forest.stands[forest.stand[i] - 1] : null;
-    return !!s && ranks.has(s.mizunaraRank as MizunaraRank);
+    return !!s && !!fpRanks && ranks.has(fpRanks[forest!.stand[i] - 1] as MizunaraRank);
   };
   if (c.vegetation) preds.vegetation = (i) => {
     const v = forest && forest.veg[i] ? forest.vegs[forest.veg[i] - 1] : null;
@@ -187,7 +205,8 @@ export interface SourceYears { forestPlan: string | null; vegetation: string | n
 export function describeConditions(raw: HypothesisConditions, target: { name: string } | null, years: SourceYears, stateLabel: (s: ExplorationState) => string): string[] {
   const c = normalizeConditions(raw);
   const out: string[] = [];
-  if (c.forestPlan) out.push(`森林計画（${years.forestPlan ?? '—'}）ミズナラ ${c.forestPlan.mizunaraRanks.map((r) => `${r}位`).join('・')}`);
+  const fpd = forestPlanOf(c.forestPlan);
+  if (fpd) out.push(`森林計画（${years.forestPlan ?? '—'}）${fpd.species} ${fpd.ranks.map((r) => `${r}位`).join('・')}`);
   if (c.vegetation) out.push(`植生図（${years.vegetation ?? '—'}調査）ミズナラ系群落: ${c.vegetation.communities.join('・')}`);
   if (c.confirmedTrees) out.push(`現地確認の${c.confirmedTrees.treeName}から ${c.confirmedTrees.withinM}m 以内`);
   if (c.terrain) {
