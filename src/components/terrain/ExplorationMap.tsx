@@ -48,7 +48,7 @@ import { photoFromFile } from '../../environmentSpots/sync';
 import { aspectDeg as hydroAspectDeg, directionOf as hydroDirectionOf, LANDFORMS as HYDRO_LANDFORMS, twiValue as hydroTwiValue } from '../../terrain/hydro';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
-import { ALL_SPECIES, filterBySpecies, speciesKey, speciesOptions } from '../../terrain/speciesFilter';
+import { ALL_SPECIES, FIELD_LOG_FILTER_LABEL, FIELD_LOG_FILTERS, filterBySpecies, matchesFieldLogFilter, speciesKey, speciesOptions, type FieldLogFilter } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import {
   buildTargetExploration, describeTargetAt, spotTargetStatus, targetKeys, type SpotTargetStatus, DEFAULT_POINT_RADIUS_M, renderTargetExploration, stateAreasKm2, STATE_LABEL, STATE_LABEL_NO_TARGET,
@@ -68,7 +68,6 @@ import styles from './ExplorationMap.module.css';
 type Props = { entries: FieldLogEntry[]; openGpxDraftId?: string };
 
 type Base = 'offline' | 'hillshademap' | 'std' | 'seamlessphoto';
-type FieldLogFilter = 'キノコ' | '植物' | 'all' | 'none';
 
 interface Loaded {
   pkg: AreaPackage;
@@ -692,7 +691,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
   const [species, setSpecies] = useState<string>(ALL_SPECIES);
   const categoryPoints = useMemo(() => {
     if (fieldLogFilter === 'none') return [];
-    return entries.filter((e) => !isEnvironmentEntry(e) && (fieldLogFilter === 'all' || e.largeCategory === fieldLogFilter));
+    return entries.filter((e) => !isEnvironmentEntry(e) && matchesFieldLogFilter(e, fieldLogFilter));
   }, [entries, fieldLogFilter]);
   const species_ = useMemo(() => speciesOptions(categoryPoints), [categoryPoints]);
   const activeSpecies = species === ALL_SPECIES || species_.some((o) => o.key === species) ? species : ALL_SPECIES;
@@ -1095,7 +1094,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
         ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
-            <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}</Popup>
+            <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}{e.subCategory && e.subCategory !== '不明' ? `・${e.largeCategory}/${e.subCategory}` : ''}</Popup>
           </CircleMarker>
         ))}
         {probe && <CircleMarker center={[probe.lat, probe.lng]} radius={5} pathOptions={{ color: '#8d5524', weight: 2, fill: false }} />}
@@ -1421,10 +1420,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
             <label className={styles.check}>
               <span className={styles.swatch} style={{ background: '#2b8a3e', borderRadius: '50%' }} />Field Log
               <select className={styles.selectSmall} value={fieldLogFilter} onChange={(e) => { setFieldLogFilter(e.target.value as FieldLogFilter); setSpecies(ALL_SPECIES); }} aria-label="Field Log の表示">
-                <option value="キノコ">きのこ</option>
-                <option value="植物">植物（山菜など）</option>
-                <option value="all">すべて</option>
-                <option value="none">表示しない</option>
+                {FIELD_LOG_FILTERS.map((f) => <option key={f} value={f}>{FIELD_LOG_FILTER_LABEL[f]}</option>)}
               </select>
               <span className={styles.num}>{logPoints.length}件</span>
             </label>
@@ -1439,6 +1435,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
                 </select>
               </label>
             )}
+            {(fieldLogFilter === '山菜' || fieldLogFilter === 'キノコ+山菜') && <p className={styles.sub}>山菜は小分類が「山菜」の記録だけを出します（過去に見つけた場所。発生の予測ではありません）。小分類が「不明」の植物は「植物（すべて）」で見られます</p>}
             {activeSpecies !== ALL_SPECIES && <p className={styles.sub}>過去に記録した地点です（発生の予測ではありません）。「？」付きの記録は薄い点</p>}
             {entries.length === 0 && <p className={styles.sub}>Field Log はログイン中・読み込み済みのときだけ表示されます</p>}
 

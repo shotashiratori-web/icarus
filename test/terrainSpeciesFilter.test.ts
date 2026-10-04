@@ -35,3 +35,21 @@ describe('speciesOptions / filterBySpecies', () => {
     expect(filterBySpecies(list, ALL_SPECIES)).toHaveLength(list.length);
   });
 });
+
+describe('地形探索の Field Log の表示（大分類・小分類）', () => {
+  it('山菜は 植物/山菜 だけ。きのこ＋山菜は両方。植物（すべて）は小分類を問わない', async () => {
+    const { matchesFieldLogFilter } = await import('../src/terrain/speciesFilter');
+    const kinoko = { largeCategory: 'キノコ', subCategory: '不明' };
+    const sansai = { largeCategory: '植物', subCategory: '山菜' };
+    const yasai = { largeCategory: '植物', subCategory: '野菜' };
+    const plantUnknown = { largeCategory: '植物' };
+    const fish = { largeCategory: '魚介', subCategory: '魚' };
+    const pick = (f: Parameters<typeof matchesFieldLogFilter>[1]) => [kinoko, sansai, yasai, plantUnknown, fish].map((e) => matchesFieldLogFilter(e, f));
+    expect(pick('キノコ')).toEqual([true, false, false, false, false]);
+    expect(pick('山菜')).toEqual([false, true, false, false, false]);
+    expect(pick('キノコ+山菜')).toEqual([true, true, false, false, false]);
+    expect(pick('植物')).toEqual([false, true, true, true, false]);
+    expect(pick('all')).toEqual([true, true, true, true, true]);
+    expect(pick('none')).toEqual([false, false, false, false, false]);
+  });
+});

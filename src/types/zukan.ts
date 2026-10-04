@@ -21,6 +21,7 @@ export interface FieldLogEntry {
   imageExpired?: boolean;
   // 大分類（キノコ・植物…）。地形探索モードで Field Log を絞るのに使う。古いキャッシュには無い（Exploration Mode Stage 1）
   largeCategory?: string;
+  subCategory?: string; // 小分類（植物 → 山菜など）。古いキャッシュには無い
   // Field Log 環境記録（icarus_field_log_environment_capture_design.md）。古いキャッシュには無い（= 食材）
   subjectType?: string | null;
   assetId?: string | null; // 写真の Asset（ready の時だけ）。Environment Spot にする時に同じ写真を結び付ける
@@ -47,6 +48,7 @@ interface FieldLogGeoJsonFeature {
     eventId?: string;
     takenAt?: string;
     largeCategory?: string;
+    subCategory?: string;
     subjectType?: string | null;
     assetId?: string | null;
     environmentSpotId?: string | null;
