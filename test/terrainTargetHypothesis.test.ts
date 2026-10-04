@@ -108,7 +108,7 @@ describe('対象ごとの探索実績', () => {
 function forest(): ForestData {
   const stand = new Uint16Array(W * H), veg = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { stand[y * W + x] = x < 20 ? 1 : 2; veg[y * W + x] = y < 15 ? 1 : 2; }
-  const st = (rank: 1 | 3): ForestStand => ({ owner: 'k', year: 2018, name: '', species: [], age: null, type: null, mizunaraRank: rank, cls: 0 });
+  const st = (rank: 1 | 3): ForestStand => ({ owner: 'k', year: 2018, name: '', species: rank === 1 ? [['ミズナラ', null], ['シラカバ', null]] : [['トドマツ', null], ['カンバ', null], ['ミズナラ', null]], age: null, type: null, mizunaraRank: rank, cls: 0 });
   return {
     width: W, height: H, stand, veg, stands: [st(1), st(3)],
     vegs: [{ code: '1', name: 'ミズナラ群落', year: 2022, mizunara: true }, { code: '2', name: 'ササ群落', year: 2022, mizunara: false }],
@@ -209,13 +209,13 @@ describe('仮説のスナップショット（hypothesis_json）', () => {
     expect(snap.data.evidence.notFoundTracks).toBe(2);
     expect(snap.params).toEqual({ coverageWidthM: 50, pointRadiusM: 50, pxM: PX });
     expect(snap.conditions.vegetation).toBeNull();
-    expect(snap.conditions.forestPlan).toEqual({ mizunaraRanks: [1] });
+    expect(snap.conditions.forestPlan).toEqual({ species: 'ミズナラ', ranks: [1] }); // 古い形（mizunaraRanks）はミズナラとして保存
     expect(snap.summary.matchCells).toBe(result.matchCells);
     expect(snap.app.build).toBe('abc1234');
     expect(JSON.stringify(snap)).not.toMatch(/@/); // メールアドレスを入れない
     // 元の条件を後で変えても、スナップショットは変わらない
-    cond.forestPlan!.mizunaraRanks.push(3);
-    expect(snap.conditions.forestPlan).toEqual({ mizunaraRanks: [1] });
+    (cond.forestPlan as { mizunaraRanks: number[] }).mizunaraRanks.push(3);
+    expect(snap.conditions.forestPlan).toEqual({ species: 'ミズナラ', ranks: [1] });
   });
 
   it('16. normalizeConditions: 地形の両方が無ければ null・アクセスの両方が無ければ null', () => {
@@ -239,5 +239,20 @@ describe('環境スポットの強調（対象の観察）', () => {
   it('19. 最新で上書きしない: 1 回でも あり なら見つかった（後で なし があっても）', () => {
     expect(spotTargetStatus(k, [{ name: 'まいたけ', result: 'found' }, { name: 'マイタケ', result: 'not_found' }])).toBe('found');
     expect(spotTargetStatus(k, [{ name: 'マイタケ', result: 'not_found' }, { name: '舞茸', result: 'not_found' }])).toBe('notFound');
+  });
+});
+
+describe('森林計画の任意樹種（2026-10-04）', () => {
+  it('17. 樹種＋順位: トドマツ 1位・カンバ類（シラカバ・カンバを含む）・シラカンバ（国有林のカンバは含まない）', () => {
+    expect(cells({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'トドマツ', ranks: [1] } })).toBe(20 * H); // 右半分（3位側の林分）の 1 位
+    expect(cells({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'カンバ類', ranks: [2] } })).toBe(W * H); // 左=シラカバ 2位・右=カンバ 2位
+    expect(cells({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'シラカンバ', ranks: [2] } })).toBe(20 * H); // 左のシラカバだけ
+    expect(cells({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'ミズナラ', ranks: [1, 3] } })).toBe(cells({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { mizunaraRanks: [1, 3] } }));
+  });
+  it('18. グループで保存すると中身（members）も残る。条件の文に樹種名', () => {
+    const n = normalizeConditions({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'カンバ類', ranks: [3, 1] } });
+    expect(n.forestPlan).toEqual({ species: 'カンバ類', ranks: [1, 3], members: ['カンバ', 'シラカンバ', 'ダケカンバ', 'ウダイカンバ', 'その他カンバ'] });
+    const t = describeConditions({ ...NO_HYPOTHESIS_CONDITIONS, forestPlan: { species: 'トドマツ', ranks: [1, 2] } }, null, { forestPlan: '国有林 2018・民有林 2023', vegetation: null }, (s) => STATE_LABEL[s]);
+    expect(t[0]).toBe('森林計画（国有林 2018・民有林 2023）トドマツ 1位・2位');
   });
 });
