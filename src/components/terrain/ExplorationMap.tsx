@@ -668,8 +668,8 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
   const toggleCommunity = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForestLayers((l) => ({ ...l, vegMizunara: e.target.checked ? [...l.vegMizunara, name] : l.vegMizunara.filter((n) => n !== name) }));
 
-  // ---- 等高線（既定 OFF。ON にした時だけ読み込む。2026-09-29 より前の版には無い） ----
-  const [showContours, setShowContours] = useState(false);
+  // ---- 等高線（既定 ON。表示している時だけ読み込む。2026-09-29 より前の版には無い） ----
+  const [showContours, setShowContours] = useState(true); // 2026-10-04 から既定 ON（ユーザー要望）。「最小に」で消せる
   const [contours, setContours] = useState<{ version: string; data: Contours } | null>(null);
   const [contourError, setContourError] = useState<string | null>(null);
   const contourBlob = loaded?.pkg.files['contours.json'] ?? null;
