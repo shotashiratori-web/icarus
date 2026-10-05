@@ -1217,17 +1217,17 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       )}
       {/* 地図の上の状態チップ（いま重ねている表示。タップで該当タブ、× でその表示だけ消す） */}
       {statusChips.length > 0 && !probe && !recordLoc && !selectedMarker && (
-        <div className={styles.chips} aria-label="地図に表示中">
+        <div className={styles.statusChips} aria-label="地図に表示中">
           {statusChips.map((c) => (
-            <span key={c.id} className={styles.chip}>
-              <button className={styles.chipMain} onClick={() => openChip(c.tab)}>
-                {c.color && <span className={styles.chipSwatch} style={{ background: c.color }} />}
+            <span key={c.id} className={styles.statusChip}>
+              <button className={styles.statusChipMain} onClick={() => openChip(c.tab)}>
+                {c.color && <span className={styles.statusChipSwatch} style={{ background: c.color }} />}
                 {c.label}
               </button>
-              <button className={styles.chipX} onClick={() => clearChip(c.id)} aria-label={`${c.label} を消す`}>×</button>
+              <button className={styles.statusChipX} onClick={() => clearChip(c.id)} aria-label={`${c.label} を消す`}>×</button>
             </span>
           ))}
-          {statusChips.length >= 2 && <button className={styles.chipAll} onClick={minimizeMap}>すべて消す</button>}
+          {statusChips.length >= 2 && <button className={styles.statusChipAll} onClick={minimizeMap}>すべて消す</button>}
         </div>
       )}
       {/* 地図の上のボタンは 1 か所にまとめる（全体図・現在地・進行方向・記録） */}
