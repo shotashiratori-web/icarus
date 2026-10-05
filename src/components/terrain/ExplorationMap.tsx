@@ -314,7 +314,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   const manifest = loaded?.pkg.manifest ?? null;
   const cc = useMemo(() => (manifest ? compileConditions(manifest, conditions) : null), [manifest, conditions]);
   // ---- 探索履歴（Stage 2）: 「探索済み」は保存せず、絞り込んだ軌跡 × 探索幅から毎回求める ----
-  const history = useExplorationHistory(idToken, manifest?.areaId ?? null);
+  const history = useExplorationHistory(idToken, manifest?.areaId ?? null, manifest?.bounds ?? null);
   // ---- 環境スポット（S3）: この木（地形・その他）がここにある、という現地の記録と、時間つきの観察 ----
   const spotBbox = useMemo<[number, number, number, number] | null>(() => (manifest ? [manifest.bounds.south, manifest.bounds.west, manifest.bounds.north, manifest.bounds.east] : null), [manifest]);
   const envSpots = useEnvironmentSpots(idToken, spotBbox);

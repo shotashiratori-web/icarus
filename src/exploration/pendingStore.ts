@@ -74,18 +74,28 @@ export async function deletePending(id: string): Promise<void> {
 }
 
 // ---- サーバーの記録の写し（圏外でも探索履歴を表示するため） ----
-export async function saveRemoteSessions(items: ExplorationSession[], syncedAt: string): Promise<void> {
+// 山域ごとに入れ替える（2026-10-06）。ある山域を取り直しても、他の山域の写しは消さない
+// （以前は全部消してから入れていたため、電波のある所でニセコを開くと余市の写しが消え、圏外で余市の履歴が出なくなった）
+const syncKey = (areaId: string) => `lastRemoteSync:${areaId}`;
+const inArea = (s: ExplorationSession, areaId: string) => Array.isArray(s.areaIds) && s.areaIds.includes(areaId);
+
+export async function saveRemoteSessions(items: ExplorationSession[], syncedAt: string, areaId: string): Promise<void> {
   const d = await db();
   const tx = d.transaction([SESSIONS, META], 'readwrite');
-  await tx.objectStore(SESSIONS).clear();
-  for (const it of items) await tx.objectStore(SESSIONS).put(it);
-  await tx.objectStore(META).put(syncedAt, 'lastRemoteSync');
+  const store = tx.objectStore(SESSIONS);
+  for (const old of (await store.getAll()) as ExplorationSession[]) {
+    if (inArea(old, areaId)) await store.delete(old.id); // この山域の分だけ入れ替える（他の山域にも入る記録は、下で入れ直す）
+  }
+  for (const it of items) await store.put(it);
+  await tx.objectStore(META).put(syncedAt, syncKey(areaId));
   await tx.done;
 }
 
-export async function listRemoteSessions(): Promise<{ items: ExplorationSession[]; syncedAt: string | null }> {
+export async function listRemoteSessions(areaId: string): Promise<{ items: ExplorationSession[]; syncedAt: string | null }> {
   const d = await db();
-  return { items: await d.getAll(SESSIONS), syncedAt: (await d.get(META, 'lastRemoteSync')) ?? null };
+  const items = ((await d.getAll(SESSIONS)) as ExplorationSession[]).filter((s) => inArea(s, areaId));
+  // 山域ごとの取得時刻が無い（入れ替える前の版で保存した）時は、前の共通の時刻
+  return { items, syncedAt: (await d.get(META, syncKey(areaId))) ?? (await d.get(META, 'lastRemoteSync')) ?? null };
 }
 
 export async function saveRemoteTrack(sessionId: string, track: TrackSegments): Promise<void> {
