@@ -688,7 +688,7 @@ label.btn {
 /* 地図の上の状態チップ（Stage A）: 左上のズームと右上のボタンの間に横一列。はみ出す分は横にスクロール */
 .statusChips {
   position: absolute;
-  top: var(--space-2);
+  top: calc(var(--space-2) + 48px); /* 1 段目は山域ボタン（.areaPill）。2026-10-06 重なりの修正 */
   left: 54px;
   right: 104px;
   z-index: 1001;
@@ -779,7 +779,7 @@ label.btn {
 }
 .otherAreaHint {
   position: absolute;
-  top: 56px;
+  top: calc(var(--space-2) + 96px); /* 山域ボタン・状態チップの下 */
   left: 54px;
   z-index: 1001;
   display: flex;
