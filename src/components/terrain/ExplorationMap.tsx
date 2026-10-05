@@ -49,6 +49,7 @@ import { photoFromFile } from '../../environmentSpots/sync';
 import { aspectDeg as hydroAspectDeg, directionOf as hydroDirectionOf, LANDFORMS as HYDRO_LANDFORMS, twiValue as hydroTwiValue } from '../../terrain/hydro';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
+import { buildStatusChips, type StatusChipId } from '../../terrain/statusChips';
 import { ALL_SPECIES, FIELD_LOG_FILTER_LABEL, FIELD_LOG_FILTERS, filterBySpecies, matchesFieldLogFilter, speciesKey, speciesOptions, type FieldLogFilter } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
 import {
@@ -834,23 +835,32 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
     setTab(t);
     try { localStorage.setItem(TAB_KEY, t); } catch { /* 保存できなくても使える */ }
   };
-  const activeSummary = useMemo(() => {
-    const out: string[] = [];
-    const abc = (['A', 'B', 'C'] as const).filter((k) => show[k]).join('');
-    if (abc) out.push(`候補 ${abc}`);
-    if (hydro && anyTerrainCondition(terrainCond)) out.push(`地形 ${summarizeTerrain(terrainCond)}${terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)}km²）` : ''}`);
-    if (target) out.push(`対象 ${target.name}`);
-    if (matchResult && showMatch) out.push(`重ねた条件 ${matchResult.matchKm2 < 1 ? matchResult.matchKm2.toFixed(2) : matchResult.matchKm2.toFixed(1)}km²`);
-    if (anyForestLayer(forestLayers)) out.push('森林');
-    if (showContours) out.push('等高線');
-    if (showStreams) out.push('沢');
-    if (show.ridge) out.push('尾根線');
-    if (show.sun) out.push('日射');
-    if (showHistory && visibleHistory.length) out.push('探索履歴');
-    if (fieldLogFilter !== 'none') out.push('Field Log');
-    if (showSpots && visibleSpots.length) out.push('環境スポット');
-    return out;
-  }, [target, matchResult, showMatch, show, hydro, terrainCond, terrainMatchKm2, forestLayers, showContours, showStreams, showHistory, visibleHistory.length, fieldLogFilter, showSpots, visibleSpots.length]);
+  // 地図の上の状態チップ（Stage A）: 消し忘れると読めなくなる重ね表示だけ。条件の計算は変えない
+  const statusChips = useMemo(() => buildStatusChips({
+    forest: forestLayers,
+    forestAny: anyForestLayer(forestLayers),
+    candidates: { A: show.A, B: show.B, C: show.C },
+    terrainSummary: hydro && anyTerrainCondition(terrainCond) ? `${summarizeTerrain(terrainCond)}${terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)}km²）` : ''}` : null,
+    matchKm2: matchResult && showMatch ? matchResult.matchKm2 : null,
+    targetName: target && showTargetLayer ? target.name : null,
+    fieldLogLabel: fieldLogFilter !== 'none' ? FIELD_LOG_FILTER_LABEL[fieldLogFilter] : null,
+    ridge: show.ridge,
+    sun: show.sun,
+  }, `rgb(${FOREST_COLORS.mz1.slice(0, 3).join(',')})`), [forestLayers, show, hydro, terrainCond, terrainMatchKm2, matchResult, showMatch, target, showTargetLayer, fieldLogFilter]);
+  // チップの × : その表示だけを消す（保存した仮説・選んだ対象・樹種の選択は消さない）
+  const clearChip = (id: StatusChipId) => {
+    if (id === 'forest') setForestLayers((l) => ({ ...NO_FOREST_LAYERS, species: l.species }));
+    else if (id === 'candidates') setShow((sh) => ({ ...sh, A: false, B: false, C: false }));
+    else if (id === 'terrain') setTerrainCond(NO_TERRAIN_CONDITIONS);
+    else if (id === 'match') setShowMatch(false);
+    else if (id === 'target') setShowTargetLayer(false);
+    else if (id === 'fieldLog') setFieldLogFilter('none');
+    else if (id === 'analysis') setShow((sh) => ({ ...sh, ridge: false, sun: false }));
+  };
+  const openChip = (t: PanelTab) => {
+    chooseTab(t);
+    setPanelOpen(true);
+  };
   // 地図を最小に: 陰影・道・現在地・探索履歴・環境スポットだけ残す
   const minimizeMap = () => {
     setShow((sh) => ({ ...sh, A: false, B: false, C: false, ridge: false, sun: false }));
@@ -950,6 +960,27 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       startGps();
       rememberGps(true);
     }
+  };
+  // 全体図: 地形データの範囲全体を出す（追従は止める。動かすと現在地へ戻されないように）
+  const showWholeArea = () => {
+    if (headingMode) exitHeading();
+    setFollow(false);
+    if (bounds) mapRef.current?.fitBounds(bounds);
+  };
+  // 現在地: 取っていなければ取り始め、取っていれば現在地へ戻って追従（止めるのは「記録」タブ）
+  const goToCurrent = () => {
+    setFollow(true);
+    if (watchId.current === null) {
+      startGps();
+      rememberGps(true);
+      return;
+    }
+    if (!pos) return;
+    if (manifest && !insideBounds(manifest.bounds, pos.lat, pos.lng)) {
+      setHeadingMsg('現在地は地形データの範囲の外です');
+      return;
+    }
+    mapRef.current?.setView([pos.lat, pos.lng], Math.max(mapRef.current.getZoom(), 15));
   };
   // 開いた時: 許可済み、または前回使っていたら自動で現在地を取る（初めての人には開いた瞬間に許可を求めない）
   const hasArea = !!loaded;
@@ -1184,11 +1215,27 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
           onChanged={() => void envSpots.refreshRemote()}
         />
       )}
-      {/* 地図の上のボタンは 1 か所にまとめる（現在地・進行方向・記録） */}
+      {/* 地図の上の状態チップ（いま重ねている表示。タップで該当タブ、× でその表示だけ消す） */}
+      {statusChips.length > 0 && !probe && !recordLoc && !selectedMarker && (
+        <div className={styles.chips} aria-label="地図に表示中">
+          {statusChips.map((c) => (
+            <span key={c.id} className={styles.chip}>
+              <button className={styles.chipMain} onClick={() => openChip(c.tab)}>
+                {c.color && <span className={styles.chipSwatch} style={{ background: c.color }} />}
+                {c.label}
+              </button>
+              <button className={styles.chipX} onClick={() => clearChip(c.id)} aria-label={`${c.label} を消す`}>×</button>
+            </span>
+          ))}
+          {statusChips.length >= 2 && <button className={styles.chipAll} onClick={minimizeMap}>すべて消す</button>}
+        </div>
+      )}
+      {/* 地図の上のボタンは 1 か所にまとめる（全体図・現在地・進行方向・記録） */}
       {/* 地点情報・記録・詳細を開いている間はボタンを隠す（スマホで地点情報の見出しと閉じるボタンに重なるため） */}
       {!probe && !recordLoc && !selectedMarker && (
       <div className={styles.toolbar}>
-        <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={toggleGps} aria-pressed={watching}>{watching ? '現在地 ON' : '現在地'}</button>
+        <button className={styles.tool} onClick={showWholeArea}>全体図</button>
+        <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={goToCurrent} aria-pressed={watching}>現在地</button>
         {(pos || headingMode) && (
           <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '進行方向'}</button>
         )}
@@ -1214,12 +1261,6 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
           <span className={styles.areaName}>{manifest.name}</span>
           <button className={styles.btn} onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>{panelOpen ? '閉じる' : '条件・操作'}</button>
         </div>
-        {activeSummary.length > 0 && (
-          <p className={styles.condSummary}>
-            表示中：{activeSummary.join(' / ')}
-            <button className={styles.linkBtn} onClick={minimizeMap}>最小に</button>
-          </p>
-        )}
         {panelOpen && (
           <div className={styles.tabs} role="tablist">
             {PANEL_TABS.map((t) => (
