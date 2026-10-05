@@ -806,3 +806,18 @@ label.btn {
   font-size: var(--font-size-xs);
   color: var(--color-text-sub);
 }
+/* PC 幅（601px〜）: 範囲全体・現在地がズームボタンの下（左）に並ぶので、状態チップは山域ボタンと同じ 1 段目の右隣に置く（2026-10-06）。
+   スマホ幅は 1 段目 = 山域ボタン、2 段目 = 状態チップ */
+@media (min-width: 601px) {
+  .areaPill {
+    max-width: 190px;
+  }
+  .statusChips {
+    top: var(--space-2);
+    left: 252px;
+  }
+  .otherAreaHint {
+    top: calc(var(--space-2) + 48px);
+    left: 104px;
+  }
+}
