@@ -756,3 +756,53 @@ label.btn {
     right: calc(320px + 2 * var(--space-3));
   }
 }
+
+/* 複数エリア（山域）: 山域ボタン・別の山域の案内・全体図の重ね（2026-10-06。既存クラスと名前を分ける） */
+.areaPill {
+  position: absolute;
+  top: var(--space-2);
+  left: 54px; /* Leaflet のズームボタンの右 */
+  z-index: 1001;
+  max-width: calc(100% - 200px);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.otherAreaHint {
+  position: absolute;
+  top: 56px;
+  left: 54px;
+  z-index: 1001;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 200px);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.overviewLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1500;
+  background: var(--color-bg);
+}
+.areaSavedList {
+  margin: var(--space-1) 0;
+  padding-left: 1.2em;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
