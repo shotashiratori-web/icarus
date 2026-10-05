@@ -4,6 +4,11 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../../context/AuthContext';
 import { fetchTerrainAreas, TerrainOfflineError } from '../../api/terrainApi';
+import {
+  areasAt, cacheAreasIndex, cachedAreasIndex, canOpen, chooseInitialArea, clearLastArea, fmtMB, lastArea, mergeAreas, rememberLastArea,
+  type AreaEntry,
+} from '../../terrain/areaSelection';
+import AreaOverview from './AreaOverview';
 import { TokenExpiredError } from '../../api/icarusApi';
 import {
   deleteSavedArea, fetchAreaPackage, listSavedAreas, loadSavedArea, saveAreaPackage,
@@ -235,15 +240,30 @@ function Follow({ pos, follow, bounds }: { pos: [number, number] | null; follow:
   return null;
 }
 
-export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
-  const { idToken, handleTokenExpired, staffMe } = useAuth();
+// 1 つの山域の地図。山域の一覧・保存・削除・全体図は外側（ExplorationMap）が持ち、ここは渡された package を表示する。
+// 山域を替えても条件（樹種・地形など）はこのコンポーネントの状態として残り、地点・ターゲットなど山域に結びつく状態だけ戻す
+type AreaMapProps = Props & {
+  pkg: AreaPackage;
+  area: AreaEntry;
+  areaList: AreaEntry[];
+  online: boolean;
+  saving: { areaId: string; text: string } | null;
+  areaError: string | null;
+  onShowOverview: () => void;
+  onSaveArea: (areaId: string) => void;
+  onDeleteArea: (areaId: string) => void;
+  onOpenArea: (areaId: string, from: 'saved' | 'network') => void;
+  onPos: (p: { lat: number; lng: number } | null) => void;
+};
+
+function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving: savingAny, areaError, onShowOverview, onSaveArea, onDeleteArea, onOpenArea, onPos }: AreaMapProps) {
+  const { idToken, staffMe } = useAuth();
 
   const [status, setStatus] = useState<string>('地形データを読み込み中…');
   const [error, setError] = useState<string | null>(null);
-  const [remoteAreas, setRemoteAreas] = useState<TerrainAreaSummary[] | null>(null);
-  const [saved, setSaved] = useState<SavedArea | null>(null);
+  const saved = area.saved;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);
+  const saving = savingAny?.areaId === area.areaId ? savingAny.text : null;
 
   const [presetId, setPresetId] = useState<string>(SPECIES_PRESETS[0].id);
   const [conditions, setConditions] = useState<ExplorationConditions>(SPECIES_PRESETS[0].conditions);
@@ -270,57 +290,22 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
     });
   }, []);
 
+  // 渡された package を読む（山域を替えたら前の山域の表示を先に消す）
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const savedList = await listSavedAreas().catch(() => [] as SavedArea[]);
-        const firstSaved = savedList[0] ?? null;
-        if (!cancelled) setSaved(firstSaved);
-        let usedSaved = false;
-        if (firstSaved) {
-          const pkg = await loadSavedArea(firstSaved.areaId);
-          if (pkg && !cancelled) {
-            await load(pkg);
-            usedSaved = true;
-            setStatus('');
-          }
-        }
-        if (!idToken) {
-          if (!usedSaved && !cancelled) setError('オフライン保存したエリアがありません。電波のある所でログインして「このエリアをオフライン保存」を押してください。');
-          return;
-        }
-        let areas: TerrainAreaSummary[];
-        try {
-          areas = await fetchTerrainAreas(idToken);
-        } catch (e) {
-          if (e instanceof TokenExpiredError) handleTokenExpired();
-          if (!usedSaved && !cancelled) setError(e instanceof TerrainOfflineError ? e.message : (e as Error).message);
-          return;
-        }
-        if (cancelled) return;
-        setRemoteAreas(areas);
-        const area = areas.find((a) => a.areaId === firstSaved?.areaId) ?? areas[0];
-        if (!area) {
-          if (!usedSaved) setError('地形データがまだ用意されていません。');
-          return;
-        }
-        if (usedSaved && firstSaved?.version === area.version) return; // 保存済みが最新
-        if (usedSaved) return; // 古い版を表示中。「更新して保存」は利用者が押す
-        setStatus('地形データを取得中…');
-        const pkg = await fetchAreaPackage(area, idToken, (d, t) => !cancelled && setStatus(`地形データを取得中…（${d}/${t}）`));
-        if (!cancelled) {
-          await load(pkg);
-          setStatus('');
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : '地形データを読み込めませんでした');
+    setLoaded((prev) => {
+      if (prev && prev.pkg.manifest.areaId !== pkg.manifest.areaId) {
+        URL.revokeObjectURL(prev.hillshadeUrl);
+        return null;
       }
-    })();
+      return prev;
+    });
+    setStatus('地形データを読み込み中…');
+    load(pkg).then(() => { if (!cancelled) { setStatus(''); setError(null); } }, (e) => { if (!cancelled) setError(e instanceof Error ? e.message : '地形データを読み込めませんでした'); });
     return () => {
       cancelled = true;
     };
-  }, [idToken, handleTokenExpired, load]);
+  }, [pkg, load]);
 
   useEffect(() => () => {
     if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
@@ -963,7 +948,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       rememberGps(true);
     }
   };
-  // 全体図: 地形データの範囲全体を出す（追従は止める。動かすと現在地へ戻されないように）
+  // 範囲全体: この山域の地形データの範囲全体を出す（山域を選ぶ「全体図」とは別）（追従は止める。動かすと現在地へ戻されないように）
   const showWholeArea = () => {
     if (headingMode) exitHeading();
     setFollow(false);
@@ -979,7 +964,8 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
     }
     if (!pos) return;
     if (manifest && !insideBounds(manifest.bounds, pos.lat, pos.lng)) {
-      setHeadingMsg('現在地は地形データの範囲の外です');
+      const other = areasAt(areaList.filter((a) => a.areaId !== area.areaId), pos.lat, pos.lng)[0];
+      setHeadingMsg(other ? `現在地は${other.name}の中です（この山域の範囲の外）` : '現在地はこの山域の範囲の外です');
       return;
     }
     mapRef.current?.setView([pos.lat, pos.lng], Math.max(mapRef.current.getZoom(), 15));
@@ -999,32 +985,11 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
   const nearest = useMemo(() => (pos && manifest && loaded && cc ? nearestCandidate(manifest, loaded.grid, cc, pos.lat, pos.lng, 2500, coverage) : null), [pos, manifest, loaded, cc, coverage]);
   const hereLines = useMemo(() => (pos ? describePoint(pos.lat, pos.lng) : []), [pos, describePoint]);
 
-  // ---- オフライン保存 ----
-  const currentRemote = remoteAreas?.find((a) => a.areaId === (manifest?.areaId ?? remoteAreas[0]?.areaId)) ?? remoteAreas?.[0];
-  const savedIsLatest = !!saved && !!currentRemote && saved.version === currentRemote.version;
-  const handleSave = async () => {
-    if (!currentRemote || !idToken) return;
-    setSaving('保存中…');
-    setError(null);
-    try {
-      const pkg = loaded && loaded.pkg.manifest.version === currentRemote.version
-        ? loaded.pkg
-        : await fetchAreaPackage(currentRemote, idToken, (d, t) => setSaving(`保存中…（${d}/${t}）`));
-      const s = await saveAreaPackage(pkg);
-      setSaved(s);
-      if (loaded?.pkg.manifest.version !== s.version) await load(pkg);
-    } catch (e) {
-      if (e instanceof TokenExpiredError) handleTokenExpired();
-      setError(e instanceof Error ? e.message : '保存できませんでした');
-    } finally {
-      setSaving(null);
-    }
-  };
-  const handleDelete = async () => {
-    if (!saved) return;
-    await deleteSavedArea(saved.areaId);
-    setSaved(null);
-  };
+  // ---- オフライン保存（この山域。保存・削除そのものは外側が行う） ----
+  const currentRemote = area.remote;
+  const savedIsLatest = !!saved && (!currentRemote || saved.version === currentRemote.version);
+  const handleSave = () => onSaveArea(area.areaId);
+  const handleDelete = () => onDeleteArea(area.areaId);
 
   const setCondition = (patch: Partial<ExplorationConditions>) => {
     const next = { ...conditions, ...patch };
@@ -1036,6 +1001,32 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
     const p = presetById(id);
     if (p) setConditions(p.conditions);
   };
+
+  // 現在地が別の山域の中にある時の案内（この山域の外にいる時だけ）
+  const otherHere = useMemo(() => {
+    if (!pos || !manifest || insideBounds(manifest.bounds, pos.lat, pos.lng)) return null;
+    return areasAt(areaList.filter((a) => a.areaId !== area.areaId), pos.lat, pos.lng)[0] ?? null;
+  }, [pos, manifest, areaList, area.areaId]);
+  useEffect(() => { onPos(pos ? { lat: pos.lat, lng: pos.lng } : null); }, [pos, onPos]);
+  // 山域を替えた時: 山域に結びつく状態（地点・ターゲット・記録・スポットの選択など）だけ戻す。条件は残す
+  const areaIdRef = useRef(area.areaId);
+  useEffect(() => {
+    if (areaIdRef.current === area.areaId) return;
+    areaIdRef.current = area.areaId;
+    setProbe(null);
+    setTargetId(null);
+    setSelectedSpot(null);
+    setRecordLoc(null);
+    setRecordInit(null);
+    setPlaceWait(null);
+    setCoordValue('');
+    setPhotoMsg(null);
+    setPromoteAsk(null);
+    setPromoteFrom(null);
+    setPromoteMsg(null);
+    setHypNote(null);
+    setFollow(true);
+  }, [area.areaId]);
 
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
@@ -1054,7 +1045,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
         className={`${styles.rotor} ${headingMode && rotor > 0 ? styles.rotating : ''}`}
         style={headingMode && rotor > 0 ? { width: rotor, height: rotor, left: anchor.x - rotor / 2, top: anchor.y - rotor / 2 } : undefined}
       >
-      <MapContainer className={styles.map} bounds={bounds} maxBounds={maxBounds ?? undefined} maxBoundsViscosity={0.8} minZoom={10} preferCanvas zoomControl attributionControl>
+      <MapContainer key={manifest.areaId} className={styles.map} bounds={bounds} maxBounds={maxBounds ?? undefined} maxBoundsViscosity={0.8} minZoom={10} preferCanvas zoomControl attributionControl>
         <FitOnce bounds={bounds} />
         {onlineBase && (
           <TileLayer
@@ -1232,11 +1223,29 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
           {statusChips.length >= 2 && <button className={styles.statusChipAll} onClick={minimizeMap}>すべて消す</button>}
         </div>
       )}
-      {/* 地図の上のボタンは 1 か所にまとめる（全体図・現在地・進行方向・記録） */}
+      {/* 山域（全体図へ）。地点情報・記録を開いている間は隠す */}
+      {!probe && !recordLoc && !selectedMarker && !headingMode && (
+        <button className={styles.areaPill} onClick={onShowOverview} aria-label={`山域: ${area.name}。全体図で山域を選ぶ`}>
+          ▤ {area.name} ▾
+        </button>
+      )}
+      {otherHere && !probe && !recordLoc && (
+        <div className={styles.otherAreaHint} role="status">
+          現在地は{otherHere.name}の中です
+          {canOpen(otherHere, online) === 'saved' ? (
+            <button className={styles.btn} onClick={() => onOpenArea(otherHere.areaId, 'saved')}>{otherHere.name}を開く</button>
+          ) : online && otherHere.remote ? (
+            <button className={styles.btn} onClick={onShowOverview}>全体図で保存する</button>
+          ) : (
+            <span>（未保存・電波が必要）</span>
+          )}
+        </div>
+      )}
+      {/* 地図の上のボタンは 1 か所にまとめる（範囲全体・現在地・進行方向・記録） */}
       {/* 地点情報・記録・詳細を開いている間はボタンを隠す（スマホで地点情報の見出しと閉じるボタンに重なるため） */}
       {!probe && !recordLoc && !selectedMarker && (
       <div className={styles.toolbar}>
-        <button className={styles.tool} onClick={showWholeArea}>全体図</button>
+        <button className={styles.tool} onClick={showWholeArea}>範囲全体</button>
         <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={goToCurrent} aria-pressed={watching}>現在地</button>
         {(pos || headingMode) && (
           <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '進行方向'}</button>
@@ -1300,7 +1309,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
               conditionText={conditionText}
               match={matchResult}
               missing={(compiledHyp?.missing ?? []).map((g) => GROUP_LABEL[g])}
-              saved={savedHyps}
+              saved={savedHyps.filter((h) => h.areaId === manifest.areaId)}
               suggestedName={suggestName(target, conditionText)}
               onSave={saveCurrentHypothesis}
               onLoad={loadHypothesis}
@@ -1596,24 +1605,34 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
               <option value="seamlessphoto">国土地理院 航空写真（要電波）</option>
             </select>
 
-            <h3 className={styles.h}>オフライン</h3>
+            <h3 className={styles.h}>オフライン（山域ごと）</h3>
+            <p className={styles.sub}>表示中: {area.name}</p>
             {saved ? (
               <p className={styles.sub}>
-                オフライン保存済み（{fmtDate(saved.savedAt)}・約{(saved.bytes / 1e6).toFixed(1)}MB）
+                この山域はオフライン保存済み（{fmtDate(saved.savedAt)}・約{(saved.bytes / 1e6).toFixed(1)}MB）
                 {currentRemote && !savedIsLatest && <><br /><b>新しい版があります</b></>}
               </p>
             ) : (
-              <p className={styles.sub}>まだ保存していません。山に入る前に保存してください。</p>
+              <p className={styles.sub}>この山域はまだ保存していません。山に入る前に保存してください。</p>
             )}
             <div className={styles.row}>
               {(!saved || !savedIsLatest) && (
-                <button className={`${styles.btn} ${styles.primary}`} onClick={() => void handleSave()} disabled={!!saving || !idToken || !currentRemote}>
-                  {saving ?? (saved ? '更新して保存' : 'このエリアをオフライン保存')}
+                <button className={`${styles.btn} ${styles.primary}`} onClick={handleSave} disabled={!!savingAny || !idToken || !currentRemote}>
+                  {saving ?? (saved ? `新しい版を保存 ${fmtMB(currentRemote?.totalBytes ?? null)}` : `この山域を保存 ${fmtMB(currentRemote?.totalBytes ?? null)}`)}
                 </button>
               )}
-              {saved && <button className={styles.btn} onClick={() => void handleDelete()} disabled={!!saving}>保存を削除</button>}
+              {saved && <button className={styles.btn} onClick={handleDelete} disabled={!!savingAny}>この山域の保存を削除</button>}
             </div>
-            {error && <p className={styles.warn}>{error}</p>}
+            <ul className={styles.areaSavedList}>
+              {areaList.map((a) => (
+                <li key={a.areaId}>{a.name}: {a.saved ? `保存済み ${fmtMB(a.saved.bytes)}` : '未保存'}{a.areaId === area.areaId ? '（表示中）' : ''}</li>
+              ))}
+            </ul>
+            <p className={styles.sub}>保存済み 合計 {fmtMB(areaList.reduce((n, a) => n + (a.saved?.bytes ?? 0), 0))}</p>
+            <div className={styles.row}>
+              <button className={styles.btn} onClick={onShowOverview}>全体図で山域を選ぶ・管理する</button>
+            </div>
+            {(error || areaError) && <p className={styles.warn}>{areaError ?? error}</p>}
             <p className={styles.sub}>表示中: {displayedSourceLabel(manifest.version, saved?.version ?? null)}・{manifest.version}</p>
             <p className={styles.sub}>アプリの版: {APP_BUILD}</p>
 
@@ -1674,6 +1693,162 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       )}
       {status && <div className={styles.toast}>{status}</div>}
       {!status && watching && !pos && !gpsError && <div className={styles.toast}>現在地を取得中…</div>}
+    </div>
+  );
+}
+
+// ---- 山域（エリア）の管理と全体図 ----
+// 開いた時: 保存済みの山域（前回 → 現在地 → 北から）を直接開く。保存済みが無ければ全体図から選ぶ（未保存の山域を黙って取りに行かない）。
+// 保存・削除は山域ごと。全体図は地図の上に重ねて出し、地図（条件・現在地の取得）はそのまま残す。
+// 設計: icarus/docs/architecture/icarus_terrain_multi_area_ui_design.md
+export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
+  const { idToken, handleTokenExpired } = useAuth();
+  const [savedList, setSavedList] = useState<SavedArea[] | null>(null);
+  const [remote, setRemote] = useState<TerrainAreaSummary[] | null>(null);
+  const [current, setCurrent] = useState<{ areaId: string; pkg: AreaPackage } | null>(null);
+  const [overview, setOverview] = useState(false);
+  const [opening, setOpening] = useState<string | null>('地形データを読み込み中…');
+  const [saving, setSaving] = useState<{ areaId: string; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
+  // 起動中（最初の山域を決めて開くまで）は全体図を出さない（余市を保存済みの人に一瞬でも全体図を見せない）
+  const [booting, setBooting] = useState(true);
+  const online = remote !== null;
+  const areaList = useMemo(() => mergeAreas(remote, savedList ?? [], remote ? [] : cachedAreasIndex()), [remote, savedList]);
+
+  const refreshSaved = useCallback(async () => {
+    const list = await listSavedAreas().catch(() => [] as SavedArea[]);
+    setSavedList(list);
+    return list;
+  }, []);
+
+  const openArea = useCallback(async (areaId: string, from: 'saved' | 'network', list = areaList) => {
+    const e = list.find((a) => a.areaId === areaId);
+    if (!e) return;
+    setError(null);
+    try {
+      let pkg: AreaPackage | null = null;
+      if (from === 'saved') {
+        setOpening(`${e.name}を開いています…`);
+        pkg = await loadSavedArea(areaId);
+        if (!pkg) throw new Error(`${e.name}の保存データを読めませんでした。全体図から保存し直してください`);
+      } else {
+        if (!e.remote || !idToken) throw new Error('電波のある所でログインしてください');
+        setOpening(`${e.name}を取得中…`);
+        pkg = await fetchAreaPackage(e.remote, idToken, (d, t) => setOpening(`${e.name}を取得中…（${d}/${t}）`));
+      }
+      setCurrent({ areaId, pkg });
+      setOverview(false);
+      if (from === 'saved') rememberLastArea(areaId); // 保存せずに見た山域は、次に開く山域として覚えない
+    } catch (err) {
+      if (err instanceof TokenExpiredError) handleTokenExpired();
+      setError(err instanceof Error ? err.message : '開けませんでした');
+      setOverview(true);
+    } finally {
+      setOpening(null);
+    }
+  }, [areaList, idToken, handleTokenExpired]);
+
+  // 開いた時
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const list = await refreshSaved();
+      if (cancelled) return;
+      const offlineList = mergeAreas(null, list, cachedAreasIndex());
+      const choice = chooseInitialArea(offlineList, lastArea(), null);
+      if (choice.kind === 'open') await openArea(choice.areaId, 'saved', offlineList);
+      else {
+        setOverview(true);
+        setOpening(null);
+      }
+      if (!cancelled) setBooting(false);
+      if (!idToken || cancelled) return;
+      try {
+        const areas = await fetchTerrainAreas(idToken);
+        if (cancelled) return;
+        setRemote(areas);
+        cacheAreasIndex(areas);
+      } catch (e) {
+        if (e instanceof TokenExpiredError) handleTokenExpired();
+        else if (!(e instanceof TerrainOfflineError) && !cancelled) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveArea = useCallback(async (areaId: string) => {
+    const e = areaList.find((a) => a.areaId === areaId);
+    if (!e?.remote || !idToken) return;
+    const remoteArea = e.remote;
+    setSaving({ areaId, text: '保存中…' });
+    setError(null);
+    try {
+      const pkg = current && current.areaId === areaId && current.pkg.manifest.version === remoteArea.version
+        ? current.pkg
+        : await fetchAreaPackage(remoteArea, idToken, (d, t) => setSaving({ areaId, text: `${e.name}を保存中…（${d}/${t}）` }));
+      await saveAreaPackage(pkg);
+      await refreshSaved();
+      setCurrent({ areaId, pkg });
+      setOverview(false);
+      rememberLastArea(areaId);
+    } catch (err) {
+      if (err instanceof TokenExpiredError) handleTokenExpired();
+      setError(err instanceof Error ? err.message : '保存できませんでした');
+    } finally {
+      setSaving(null);
+    }
+  }, [areaList, idToken, current, refreshSaved, handleTokenExpired]);
+
+  const deleteArea = useCallback(async (areaId: string) => {
+    await deleteSavedArea(areaId);
+    await refreshSaved();
+    if (lastArea() === areaId) clearLastArea();
+    if (current?.areaId === areaId) {
+      // 表示中の山域を消したら全体図へ（オフラインで開けない状態を残さない）
+      setCurrent(null);
+      setOverview(true);
+    }
+  }, [current, refreshSaved]);
+
+  const area = current ? areaList.find((a) => a.areaId === current.areaId) ?? null : null;
+  const showOverview = !booting && (overview || !current || !area);
+
+  return (
+    <div className={styles.root}>
+      {current && area && (
+        <AreaMap
+          entries={entries} openGpxDraftId={openGpxDraftId}
+          pkg={current.pkg} area={area} areaList={areaList} online={online} saving={saving} areaError={error}
+          onShowOverview={() => setOverview(true)}
+          onSaveArea={(id) => void saveArea(id)}
+          onDeleteArea={(id) => void deleteArea(id)}
+          onOpenArea={(id, from) => void openArea(id, from)}
+          onPos={setPos}
+        />
+      )}
+      {booting && !current && <div className={styles.message}><p>{opening ?? '地形データを読み込み中…'}</p></div>}
+      {showOverview && (
+        <div className={styles.overviewLayer}>
+          {(
+            <AreaOverview
+              entries={areaList}
+              online={online}
+              currentAreaId={current?.areaId ?? null}
+              pos={pos}
+              saving={saving ?? (opening ? { areaId: '', text: opening } : null)}
+              error={error}
+              onOpen={(id, from) => void openArea(id, from)}
+              onSave={(id) => void saveArea(id)}
+              onDelete={(id) => void deleteArea(id)}
+              onBack={current && area ? () => setOverview(false) : null}
+            />
+          )}
+        </div>
+      )}
+      {opening && !showOverview && <div className={styles.toast}>{opening}</div>}
     </div>
   );
 }

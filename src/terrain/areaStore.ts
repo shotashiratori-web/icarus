@@ -86,6 +86,15 @@ export async function loadSavedArea(areaId: string): Promise<AreaPackage | null>
   return { manifest: saved.manifest, files, source: 'saved', savedAt: saved.savedAt };
 }
 
+// 保存済みエリアのファイルを 1 つだけ読む（全体図で陰影図だけ出す時。パッケージ全体は読まない）
+export async function loadSavedFile(areaId: string, file: TerrainFileName): Promise<Blob | null> {
+  const d = await db();
+  const saved: SavedArea | undefined = await d.get(AREAS, areaId);
+  if (!saved) return null;
+  const stored: StoredFile | undefined = await d.get(FILES, fileKey(areaId, saved.version, file));
+  return stored ? new Blob([stored.data], { type: stored.type }) : null;
+}
+
 // ネットワークから取得（保存はしない）
 export async function fetchAreaPackage(area: TerrainAreaSummary, idToken: string, onProgress?: (done: number, total: number) => void): Promise<AreaPackage> {
   const manifest = JSON.parse(await (await fetchTerrainFile(area.areaId, area.version, 'manifest.json', idToken)).text()) as TerrainManifest;
