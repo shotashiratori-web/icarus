@@ -6,6 +6,9 @@ import {
 } from '../../exploration/pendingStore';
 import { resumeExplorationPending, submitExploration } from '../../exploration/submit';
 import type { HypothesisSnapshot } from '../../terrain/hypothesis';
+import type { TerrainBounds } from '../../terrain/types';
+
+const overlaps = (a: TerrainBounds, b: TerrainBounds) => !(a.north < b.south || a.south > b.north || a.east < b.west || a.west > b.east);
 import { displayStatus, type DisplayStatus, type ExplorationSession, type PendingExploration, type Purpose, type TargetResult, type TrackSegments } from '../../exploration/types';
 
 // 地形探索の探索履歴レイヤー（Stage 2 Web）。表示するのは:
@@ -28,7 +31,8 @@ export interface HistoryEntry {
   hypothesis: HypothesisSnapshot | null; // S4b: この探索に使った仮説
 }
 
-export function useExplorationHistory(idToken: string | null, areaId: string | null) {
+// 探索履歴は表示中の山域の分だけ（サーバーの記録は area_ids、端末の未送信は範囲の重なりで絞る）
+export function useExplorationHistory(idToken: string | null, areaId: string | null, bounds: TerrainBounds | null = null) {
   const [pending, setPending] = useState<PendingExploration[]>([]);
   const [remote, setRemote] = useState<ExplorationSession[]>([]);
   const [tracks, setTracks] = useState<Record<string, TrackSegments>>({});
@@ -40,7 +44,8 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
   }, []);
 
   const loadCachedRemote = useCallback(async () => {
-    const cached = await listRemoteSessions().catch(() => ({ items: [] as ExplorationSession[], syncedAt: null }));
+    if (!areaId) return;
+    const cached = await listRemoteSessions(areaId).catch(() => ({ items: [] as ExplorationSession[], syncedAt: null }));
     const t: Record<string, TrackSegments> = {};
     for (const s of cached.items) {
       const tr = await getRemoteTrack(s.id).catch(() => undefined);
@@ -49,7 +54,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
     setRemote(cached.items);
     setTracks(t);
     setRemoteAsOf(cached.syncedAt);
-  }, []);
+  }, [areaId]);
 
   // 電波とログインがあればサーバーから取り直し、端末に写す（軌跡は変わらないので未取得の分だけ取る）
   const refreshRemote = useCallback(async () => {
@@ -66,7 +71,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
         t[s.id] = tr;
       }
       const now = new Date().toISOString();
-      await saveRemoteSessions(items, now).catch(() => undefined);
+      await saveRemoteSessions(items, now, areaId).catch(() => undefined);
       setRemote(items);
       setTracks(t);
       setRemoteAsOf(now);
@@ -102,7 +107,8 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
   }, [idToken, refreshLocal, refreshRemote]);
 
   const entries = useMemo<HistoryEntry[]>(() => {
-    const out: HistoryEntry[] = remote.map((s) => ({
+    // 山域を替えた直後（写しを読み直す前）に前の山域の記録を出さない
+    const out: HistoryEntry[] = remote.filter((s) => !areaId || !Array.isArray(s.areaIds) || s.areaIds.includes(areaId)).map((s) => ({
       key: `s:${s.id}`, origin: 'server', sessionId: s.id, pendingId: null, exploredOn: s.exploredOn, explorerNames: s.explorerNames,
       purpose: s.purpose, targets: s.targets.map((t) => ({ target: t.target, result: t.result })), distanceM: s.distanceM,
       track: tracks[s.id] ?? null, status: 'registered', updatedAt: s.updatedAt, hypothesis: s.hypothesis ?? null,
@@ -110,6 +116,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
     const serverShas = new Set(remote.map((s) => s.gpxSha256));
     for (const p of pending) {
       if (serverShas.has(p.sha256)) continue; // サーバーの写しにあるものはそちらで表示
+      if (bounds && !overlaps(p.preview.bbox, bounds)) continue; // 他の山域の未送信は出さない
       out.push({
         key: `p:${p.id}`, origin: 'device', sessionId: p.sessionId, pendingId: p.id, exploredOn: p.exploredOnManual ?? p.preview.exploredOn,
         explorerNames: p.explorerNames, purpose: p.purpose, targets: p.targets.map((t) => ({ target: t.target, result: t.result })),
@@ -117,7 +124,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
       });
     }
     return out.sort((a, b) => (b.exploredOn ?? '').localeCompare(a.exploredOn ?? ''));
-  }, [remote, tracks, pending]);
+  }, [remote, tracks, pending, bounds, areaId]);
 
   return { pending, entries, remoteAsOf, remoteError, refreshLocal, refreshRemote, send };
 }
