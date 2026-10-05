@@ -57,3 +57,14 @@ describe('状態チップ', () => {
     expect(buildStatusChips({ ...base, matchKm2: 0.123 })[0].label).toBe('条件に合う範囲 0.12km²');
   });
 });
+
+// 2026-10-05: 状態チップに既存の .chips/.chip と同じ名前を付け、地形の条件・仮説パネルのチップまで地図の上に浮いた（回帰）
+describe('状態チップの CSS', () => {
+  it('既存のチップ（.chips/.chip）と別の名前で、既存の定義は 1 つだけ', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/components/terrain/ExplorationMap.module.css', 'utf8');
+    expect(css.match(/^\.chips \{/gm)).toHaveLength(1);
+    expect(css.match(/^\.chip \{/gm)).toHaveLength(1);
+    expect(css).toMatch(/^\.statusChips \{/m);
+  });
+});
