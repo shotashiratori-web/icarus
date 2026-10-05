@@ -248,6 +248,9 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
   // 地図をすっきりさせるため、Field Log は最初は出さない（見るタブで選ぶ）
   const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>('none');
   const [base, setBase] = useState<Base>('offline');
+  // パネルの説明文（ⓘ で出し入れ。端末に覚える）
+  const [showHelp, setShowHelp] = useState(() => { try { return localStorage.getItem('icarus:exploration-help') === '1'; } catch { return false; } });
+  const toggleHelp = () => setShowHelp((v) => { try { localStorage.setItem('icarus:exploration-help', v ? '0' : '1'); } catch { /* 覚えられなくても使える */ } return !v; });
   const [panelOpen, setPanelOpen] = useState(() => !!openGpxDraftId || initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead } | null>(null);
@@ -1208,10 +1211,11 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       )}
       {headingMsg && <div className={styles.toast} role="status" onClick={() => setHeadingMsg(null)}>{headingMsg}</div>}
 
-      <section className={`${styles.panel} ${panelOpen ? '' : styles.collapsed}`} aria-label="地形探索の条件と操作">
+      <section className={`${styles.panel} ${panelOpen ? '' : styles.collapsed} ${showHelp ? styles.showHelp : ''}`} aria-label="地形探索の条件と操作">
         <div className={styles.panelHead}>
           <strong>地形探索</strong>
           <span className={styles.areaName}>{manifest.name}</span>
+          {panelOpen && <button className={`${styles.helpBtn} ${showHelp ? styles.helpOn : ''}`} onClick={toggleHelp} aria-pressed={showHelp} aria-label="説明を表示">ⓘ</button>}
           <button className={styles.btn} onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>{panelOpen ? '閉じる' : '条件・操作'}</button>
         </div>
         {activeSummary.length > 0 && (
@@ -1271,7 +1275,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
               {SPECIES_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
               <option value={CUSTOM_PRESET_ID}>条件を自分で決める</option>
             </select>
-            <p className={styles.sub}>{presetById(presetId)?.description ?? '下の条件を自由に変えられます'}</p>
+            <p className={`${styles.sub} ${styles.help}`}>{presetById(presetId)?.description ?? '下の条件を自由に変えられます'}</p>
 
             <label className={styles.slider}>
               <span>傾斜 <b>{conditions.slopeMinDeg}° 以上</b></span>
@@ -1313,7 +1317,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
             {loaded.hydroError && <p className={styles.sub}>{loaded.hydroError}</p>}
             {hydro && (
               <>
-                <p className={styles.sub}>選んだ条件をすべて満たす範囲を<span style={{ color: `rgb(${TERRAIN_MATCH_COLOR.slice(0, 3).join(',')})`, fontWeight: 700 }}> 点 </span>で表示（同じ項目の中はどれか、項目どうしは全部）</p>
+                <p className={`${styles.sub} ${styles.help}`}>選んだ条件をすべて満たす範囲を<span style={{ color: `rgb(${TERRAIN_MATCH_COLOR.slice(0, 3).join(',')})`, fontWeight: 700 }}> 点 </span>で表示（同じ項目の中はどれか、項目どうしは全部）</p>
                 <p className={styles.sub}>斜面の向き</p>
                 <div className={styles.chips}>
                   {DIRECTIONS.map((d: Direction) => (
@@ -1354,7 +1358,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
                 </label>
                 {terrainMatchKm2 !== null && <p className={styles.sub}>条件をすべて満たす範囲 {terrainMatchKm2.toFixed(1)} km²</p>}
                 {anyTerrainCondition(terrainCond) && <button className={styles.btn} onClick={() => setTerrainCond(NO_TERRAIN_CONDITIONS)}>地形の条件をクリア</button>}
-                <p className={styles.sub}>沢は DEM から計算した水の通り道で、実際の水の有無とは違います。上部斜面（肩の目安）は試験的な分類です。</p>
+                <p className={`${styles.sub} ${styles.help}`}>沢は DEM から計算した水の通り道で、実際の水の有無とは違います。上部斜面（肩の目安）は試験的な分類です。</p>
               </>
             )}
 
@@ -1369,7 +1373,8 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
             {loaded.forestError && <p className={styles.sub}>{loaded.forestError}</p>}
             {forest && forestHa && (
               <>
-                <p className={styles.sub}>森林計画の樹種（{forest.sources.kokuyu?.year ?? '—'}年・国有林／{forest.sources.minyu?.year ?? '—'}年・民有林）。小班（数 ha）単位の計画の値で、一本一本の木ではありません</p>
+                <p className={styles.label}>森林計画の樹種（国有林 {forest.sources.kokuyu?.year ?? '—'}・民有林 {forest.sources.minyu?.year ?? '—'}）</p>
+                <p className={`${styles.sub} ${styles.help}`}>小班（数 ha）単位の計画の値で、一本一本の木ではありません</p>
                 <label className={styles.check}>
                   樹種
                   <select
@@ -1461,7 +1466,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
                 </select>
               </label>
             )}
-            {(fieldLogFilter === '山菜' || fieldLogFilter === 'キノコ+山菜') && <p className={styles.sub}>山菜は小分類が「山菜」の記録だけを出します（過去に見つけた場所。発生の予測ではありません）。小分類が「不明」の植物は「植物（すべて）」で見られます</p>}
+            {(fieldLogFilter === '山菜' || fieldLogFilter === 'キノコ+山菜') && <p className={`${styles.sub} ${styles.help}`}>山菜は小分類が「山菜」の記録だけを出します（過去に見つけた場所。発生の予測ではありません）。小分類が「不明」の植物は「植物（すべて）」で見られます</p>}
             {activeSpecies !== ALL_SPECIES && <p className={styles.sub}>過去に記録した地点です（発生の予測ではありません）。「？」付きの記録は薄い点</p>}
             {entries.length === 0 && <p className={styles.sub}>Field Log はログイン中・読み込み済みのときだけ表示されます</p>}
 

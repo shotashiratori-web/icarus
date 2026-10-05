@@ -703,3 +703,84 @@ label.btn {
   min-width: 0;
   font-size: var(--font-size-xs);
 }
+
+/* ---- 「探す」などパネルの読みやすさ（2026-10-05）: 操作は大きく、面積は右に小さく、説明は ⓘ で出し入れ ---- */
+.panelBody {
+  gap: var(--space-2);
+}
+
+.panelBody .check {
+  min-height: 40px;
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}
+
+.panelBody .check input[type='checkbox'],
+.panelBody .chip input[type='checkbox'] {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.panelBody .chip {
+  min-height: 38px;
+  padding: 0 var(--space-3);
+}
+
+.panelBody .select,
+.panelBody .selectSmall {
+  min-height: 42px;
+  font-size: 16px; /* iPhone で拡大されない大きさ */
+}
+
+.panelBody .num {
+  min-width: 4.5em;
+  text-align: right;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.panelBody .swatch {
+  width: 14px;
+  height: 14px;
+}
+
+.panelBody .details summary {
+  margin-top: var(--space-2);
+  padding: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text);
+  border-top: 1px solid var(--color-border);
+}
+
+.panelBody .label {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+/* 説明文: 既定は隠す。パネル上の ⓘ で出す */
+.help {
+  display: none;
+}
+
+.showHelp .help {
+  display: block;
+}
+
+.helpBtn {
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-sub);
+  font-size: var(--font-size-sm);
+}
+
+.helpOn {
+  border-color: var(--color-primary, #1a73e8);
+  color: var(--color-primary, #1a73e8);
+  font-weight: 700;
+}

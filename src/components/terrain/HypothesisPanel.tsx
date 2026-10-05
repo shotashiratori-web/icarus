@@ -80,7 +80,7 @@ export default function HypothesisPanel(p: Props) {
         <option value="">未選択（対象を区別しない）</option>
         {p.targets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
       </select>
-      {target && <p className={styles.sub}>対象を変えると、重ねた条件は白紙に戻ります（ほかの種の条件をそのまま使わないため）</p>}
+      {target && <p className={`${styles.sub} ${styles.help}`}>対象を変えると、重ねた条件は白紙に戻ります（ほかの種の条件をそのまま使わないため）</p>}
       {p.stateAreas && (
         <>
           <label className={styles.check}>
@@ -97,14 +97,14 @@ export default function HypothesisPanel(p: Props) {
               ))}
             </div>
           )}
-          {target && <p className={styles.sub}>環境スポット: 緑の輪＋✓ = {target.name}あり（1 回でも）、赤の破線＋× = {target.name}なし。ほかの種の結果は含みません。タップで観察の履歴を全部見られます</p>}
-          {target && <p className={styles.sub}>見つかった（地点）は Field Log・観察の地点から {p.pointRadiusM}m。地点の無い「見つかった」探索は軌跡として別に塗ります</p>}
+          {target && <p className={`${styles.sub} ${styles.help}`}>環境スポット: 緑の輪＋✓ = {target.name}あり（1 回でも）、赤の破線＋× = {target.name}なし。ほかの種の結果は含みません。タップで観察の履歴を全部見られます</p>}
+          {target && <p className={`${styles.sub} ${styles.help}`}>見つかった（地点）は Field Log・観察の地点から {p.pointRadiusM}m。地点の無い「見つかった」探索は軌跡として別に塗ります</p>}
         </>
       )}
 
       <details className={styles.details} open={anyGroup}>
         <summary className={styles.h}>条件を重ねる（すべて満たす範囲）{p.match ? `：${km2(p.match.matchKm2)}` : ''}</summary>
-        <p className={styles.sub}>同じ項目の中は「どれか」、項目どうしは「すべて」。点数や確率ではありません</p>
+        <p className={`${styles.sub} ${styles.help}`}>同じ項目の中は「どれか」、項目どうしは「すべて」。点数や確率ではありません</p>
 
         <p className={styles.label}>森林計画{p.forestYears.forestPlan ? `（${p.forestYears.forestPlan}）` : ''}：樹種が入る林分（1 樹種）</p>
         {!p.forestAvailable && <p className={styles.sub}>この版の地形データには森林がありません</p>}
