@@ -40,7 +40,8 @@ describe('道有林の表示', () => {
 
   it('3. 見出し: 樹種不明でも出どころの行で道有林・1 樹種のみと分かる', () => {
     expect(forestHeadline(f, 1)).toMatchObject({ species: '天然林広葉樹（樹種不明）', note: `森林計画（道有林 2022時点・天然林）・${DOYURIN_SPECIES_NOTE}` });
-    expect(forestHeadline(f, 0).species).toBe(`樹種 ミズナラ（${DOYURIN_SPECIES_NOTE}）`);
+    expect(forestHeadline(f, 0)).toMatchObject({ species: `樹種 ミズナラ（${DOYURIN_SPECIES_NOTE}）`, note: '森林計画（道有林 2022時点・林齢20・人工林）' }); // 注記は重ねない
+    expect(forestHeadline(f, 2).note).toBe(`森林計画（道有林 2022時点・未立木地）・${DOYURIN_SPECIES_NOTE}`);
   });
 
   it('4. 国有林・民有林は今までどおり（1〜3 位・割合）', () => {

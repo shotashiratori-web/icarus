@@ -206,7 +206,7 @@ export function forestHeadline(f: ForestData, i: number): ForestHeadline {
       ? '天然林広葉樹（樹種不明）'
       : standSpeciesText(s);
     note = `森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点${s.age ? `・林齢${s.age}` : ''}${s.type ? `・${s.type}` : ''}）`;
-    if (s.owner === 'd') note += `・${DOYURIN_SPECIES_NOTE}`;
+    if (s.owner === 'd' && !species.includes(DOYURIN_SPECIES_NOTE)) note += `・${DOYURIN_SPECIES_NOTE}`; // 樹種の行に注記が無い時だけ（重ねない）
   }
   return { species, note, vegetation: v ? `${v.name}（${v.year ?? '年不明'}調査）` : null };
 }
