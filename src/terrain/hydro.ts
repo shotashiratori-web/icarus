@@ -1,7 +1,7 @@
 import type { TerrainManifest } from './types';
 
 // DEM 由来の地形（Species Exploration / Maitake v1 S2）。build_area.py の hydro.py が作る terrain2.png:
-// R = 方位（0–254 = 0–360°、255 = 平坦・海）、G = 沢からの距離（格子数、255 = 遠い）、
+// R = 方位（0–254 = 0–360°、255 = 平坦・海）、G = 沢の目安からの距離（格子数、255 = 遠い）、
 // B = (湿潤度 TWI の段階 0–31) << 3 | 斜面の位置（0 = 海、1 尾根・2 上部斜面（肩の目安）・3 中腹・4 平坦・5 下部斜面・6 谷）
 
 export interface HydroGrid {
@@ -118,16 +118,21 @@ export function renderHydro(m: TerrainManifest, h: HydroGrid, c: TerrainConditio
   return { image: o, matchCells };
 }
 
+// 沢の目安 = DEM から計算した、地形上の水の集まり道（集水面積 10ha 以上）。実際に水が流れている保証ではない
+// （羊蹄山など火山の斜面では地図の河川線との一致が低い。Audit icarus_niseko_area_audit_v1.md §14）
+export const STREAM_NOTE = '沢の目安は DEM から計算した地形上の水の集まり道です。火山地形などでは、実際の流水と一致しない場合があります';
+
 export function describeHydro(m: TerrainManifest, h: HydroGrid, i: number): string[] {
   if (h.landform[i] === 0) return [];
   const d = aspectDeg(h.aspect[i]);
   const lf = LANDFORMS.find((l) => l.id === h.landform[i])?.label ?? '—';
   const sd = h.streamDist[i];
-  const stream = sd === 0 ? '沢の上' : sd === 255 ? '沢から約1.2km以上' : `沢から約${Math.round((sd * m.grid.pxM) / 10) * 10}m`;
+  const stream = sd === 0 ? '沢の目安の上' : sd === 255 ? '沢の目安から約1.2km以上' : `沢の目安から約${Math.round((sd * m.grid.pxM) / 10) * 10}m`;
   const tw = twiValue(m, h.twiLevel[i]);
   return [
     `方位 ${d === null ? '平坦' : `${DIRECTION_LABEL[directionOf(d)]}（${Math.round(d)}°）`}・斜面の位置 ${lf}`,
     `${stream}・湿潤度 ${WETNESS_LABEL[wetnessOf(m, h.twiLevel[i])]}（TWI ${tw.toFixed(1)}）`,
+    `※${STREAM_NOTE}`,
   ];
 }
 
@@ -158,7 +163,7 @@ export function summarizeTerrain(c: TerrainConditions): string {
   if (d) parts.push(d);
   if (c.landforms.length) parts.push([...c.landforms].sort().map((l) => LANDFORM_SHORT[l]).join('・'));
   if (c.wetness.length) parts.push((['low', 'mid', 'high'] as Wetness[]).filter((w) => c.wetness.includes(w)).map((w) => WETNESS_SHORT[w]).join('・'));
-  if (c.streamWithinM !== null) parts.push(`沢から${c.streamWithinM}m以内`);
-  if (c.streamBeyondM !== null) parts.push(`沢から${c.streamBeyondM}m以上`);
+  if (c.streamWithinM !== null) parts.push(`沢の目安から${c.streamWithinM}m以内`);
+  if (c.streamBeyondM !== null) parts.push(`沢の目安から${c.streamBeyondM}m以上`);
   return parts.join(' / ');
 }

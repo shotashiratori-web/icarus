@@ -217,8 +217,8 @@ export function describeConditions(raw: HypothesisConditions, target: { name: st
       if (d.directions.length) t.push(d.directions.map((x) => DIR_JA[x]).join('・'));
       if (d.landforms.length) t.push(`斜面の位置 ${d.landforms.length} 種`);
       if (d.wetness.length) t.push(`湿潤度 ${d.wetness.length} 段階`);
-      if (d.streamWithinM !== null) t.push(`沢から ${d.streamWithinM}m 以内`);
-      if (d.streamBeyondM !== null) t.push(`沢から ${d.streamBeyondM}m 以上`);
+      if (d.streamWithinM !== null) t.push(`沢の目安から ${d.streamWithinM}m 以内`);
+      if (d.streamBeyondM !== null) t.push(`沢の目安から ${d.streamBeyondM}m 以上`);
     }
     out.push(t.join('・'));
   }

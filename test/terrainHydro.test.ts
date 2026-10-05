@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  anyTerrainCondition, describeHydro, directionOf, summarizeDirections, summarizeTerrain, hydroFromPixels, matchTerrain, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, wetnessOf,
+  anyTerrainCondition, describeHydro, directionOf, summarizeDirections, summarizeTerrain, hydroFromPixels, matchTerrain, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, STREAM_NOTE, TERRAIN_MATCH_COLOR, wetnessOf,
 } from '../src/terrain/hydro';
 import type { TerrainManifest } from '../src/terrain/types';
 
@@ -26,12 +26,12 @@ const h = hydroFromPixels(m, rgba, 4, 1);
 
 describe('summarize', () => {
   it('5. 選択中の条件を短く（連続する方位は「〜」、北をまたいでも）', () => {
-    expect(summarizeTerrain({ directions: ['S', 'SW', 'W'], landforms: [2, 1], wetness: ['low'], streamWithinM: null, streamBeyondM: 100 })).toBe('南〜西 / 尾根・上部斜面 / 乾燥 / 沢から100m以上');
+    expect(summarizeTerrain({ directions: ['S', 'SW', 'W'], landforms: [2, 1], wetness: ['low'], streamWithinM: null, streamBeyondM: 100 })).toBe('南〜西 / 尾根・上部斜面 / 乾燥 / 沢の目安から100m以上');
     expect(summarizeDirections(['NW', 'N', 'NE'])).toBe('北西〜北東');
     expect(summarizeDirections(['N', 'S'])).toBe('北・南');
     expect(summarizeDirections(['S', 'SW'])).toBe('南・南西');
     expect(summarizeDirections(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'])).toBe('全方位');
-    expect(summarizeTerrain({ directions: [], landforms: [], wetness: ['high', 'low'], streamWithinM: 50, streamBeyondM: null })).toBe('乾燥・湿潤 / 沢から50m以内');
+    expect(summarizeTerrain({ directions: [], landforms: [], wetness: ['high', 'low'], streamWithinM: 50, streamBeyondM: null })).toBe('乾燥・湿潤 / 沢の目安から50m以内');
     expect(summarizeTerrain({ directions: [], landforms: [], wetness: [], streamWithinM: null, streamBeyondM: null })).toBe('');
   });
 });
@@ -72,8 +72,8 @@ describe('hydro', () => {
   });
 
   it('4. 地点情報', () => {
-    expect(describeHydro(m, h, 0)).toEqual(['方位 南西（225°）・斜面の位置 谷', '沢の上・湿潤度 湿りやすい（TWI 9.2）']); // 32 段階（約 0.5 刻み）
-    expect(describeHydro(m, h, 1)[1]).toContain('沢から約100m');
+    expect(describeHydro(m, h, 0)).toEqual(['方位 南西（225°）・斜面の位置 谷', '沢の目安の上・湿潤度 湿りやすい（TWI 9.2）', `※${STREAM_NOTE}`]); // 32 段階（約 0.5 刻み）
+    expect(describeHydro(m, h, 1)[1]).toContain('沢の目安から約100m');
     expect(describeHydro(m, h, 2)[0]).toContain('方位 平坦');
     expect(describeHydro(m, h, 3)).toEqual([]);
   });

@@ -11,11 +11,11 @@ import {
 } from '../../terrain/areaStore';
 import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
 import {
-  anyForestLayer, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
+  anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
   type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import {
-  anyTerrainCondition, describeHydro, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
+  anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
 } from '../../terrain/hydro';
 import {
@@ -90,7 +90,7 @@ async function decodeHydroPkg(pkg: AreaPackage): Promise<{ hydro: HydroGrid | nu
     const px = await pixels(png);
     return { hydro: hydroFromPixels(pkg.manifest, px.data, px.width, px.height), hydroError: null };
   } catch (e) {
-    return { hydro: null, hydroError: e instanceof Error ? e.message : '地形（方位・沢）を読めませんでした' };
+    return { hydro: null, hydroError: e instanceof Error ? e.message : '地形（方位・沢の目安）を読めませんでした' };
   }
 }
 
@@ -168,6 +168,8 @@ const PANEL_TABS: { id: PanelTab; label: string }[] = [
 const TAB_KEY = 'icarus:exploration-panel-tab';
 
 const FOREST_ATTRIBUTION = '国土数値情報（国有林野）・北海道 森林計画・環境省 現存植生図2024 を加工';
+const FOREST_ATTRIBUTION_DOYURIN = '国土数値情報（国有林野）・北海道 森林計画・北海道 道有林森林資源情報・環境省 現存植生図2024 を加工';
+
 
 function ClickProbe({ onClick, disabled }: { onClick: (lat: number, lng: number) => void; disabled?: boolean }) {
   // 進行方向モードでは Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
@@ -631,7 +633,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
   const compiledHyp = useMemo(() => (matchCtx ? compileHypothesis(matchCtx, hypEffective) : null), [matchCtx, hypEffective]);
   const matchResult = useMemo(() => (matchCtx && compiledHyp && compiledHyp.groups.length ? computeMatch(matchCtx, compiledHyp) : null), [matchCtx, compiledHyp]);
   const forestYears = useMemo(() => ({
-    forestPlan: forest ? [forest.sources.kokuyu?.year && `国有林 ${forest.sources.kokuyu.year}`, forest.sources.minyu?.year && `民有林 ${forest.sources.minyu.year}`].filter(Boolean).join('・') || null : null,
+    forestPlan: forest ? [forest.sources.kokuyu?.year && `国有林 ${forest.sources.kokuyu.year}`, forest.sources.minyu?.year && `民有林 ${forest.sources.minyu.year}`, forest.sources.doyurin?.year && `道有林 ${forest.sources.doyurin.year}`].filter(Boolean).join('・') || null : null,
     vegetation: forest?.sources.veg?.years ? forest.sources.veg.years.join('〜') : null,
   }), [forest]);
   const stateLabelFor = useCallback((st: ExplorationState) => (target ? STATE_LABEL[st] : STATE_LABEL_NO_TARGET[st] ?? STATE_LABEL[st]), [target]);
@@ -763,7 +765,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       snap.aspect = d === null ? '平坦' : DIRECTION_LABEL[hydroDirectionOf(d)];
       snap.landform = HYDRO_LANDFORMS.find((l) => l.id === h.landform[i])?.label ?? null;
       snap.streamM = h.streamDist[i] === 255 ? null : Math.round(h.streamDist[i] * manifest.grid.pxM);
-      snap.stream = h.streamDist[i] === 255 ? '沢から約1.2km以上' : `沢から約${Math.round((h.streamDist[i] * manifest.grid.pxM) / 10) * 10}m`;
+      snap.stream = h.streamDist[i] === 255 ? '沢の目安から約1.2km以上' : `沢の目安から約${Math.round((h.streamDist[i] * manifest.grid.pxM) / 10) * 10}m`;
       snap.twi = Math.round(hydroTwiValue(manifest, h.twiLevel[i]) * 10) / 10;
     }
     const f = loaded.forest;
@@ -1063,7 +1065,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
           />
         )}
         {!onlineBase && <ImageOverlay url={loaded.hillshadeUrl} bounds={bounds} attribution={attribution} />}
-        {forestUrl && <ImageOverlay url={forestUrl} bounds={bounds} opacity={1} zIndex={4} attribution={FOREST_ATTRIBUTION} />}
+        {forestUrl && <ImageOverlay url={forestUrl} bounds={bounds} opacity={1} zIndex={4} attribution={forest?.sources.doyurin ? FOREST_ATTRIBUTION_DOYURIN : FOREST_ATTRIBUTION} />}
         {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={1} zIndex={5} />}
         {hydroUrl && <ImageOverlay url={hydroUrl} bounds={bounds} opacity={1} zIndex={6} />}
         {targetUrl && <ImageOverlay url={targetUrl} bounds={bounds} opacity={1} zIndex={7} />}
@@ -1155,7 +1157,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
             <button className={styles.btn} onClick={() => mapRef.current?.zoomIn()} aria-label="拡大">＋</button>
             <button className={styles.btn} onClick={() => mapRef.current?.zoomOut()} aria-label="縮小">－</button>
           </div>
-          <div className={styles.headingAttribution}>国土地理院 | © OpenStreetMap contributors{forestUrl ? ` | ${FOREST_ATTRIBUTION}` : ''}</div>
+          <div className={styles.headingAttribution}>国土地理院 | © OpenStreetMap contributors{forestUrl ? ` | ${forest?.sources.doyurin ? FOREST_ATTRIBUTION_DOYURIN : FOREST_ATTRIBUTION}` : ''}</div>
         </>
       )}
       {placeWait && !recordLoc && (
@@ -1350,7 +1352,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
 
             <details className={styles.details} open={anyTerrainCondition(terrainCond)}>
               <summary className={styles.h}>地形の条件{anyTerrainCondition(terrainCond) ? `：${summarizeTerrain(terrainCond)}` : ''}</summary>
-            {!hydro && !loaded.hydroError && <p className={styles.sub}>この版の地形データには方位・沢がありません（新しい版を「更新して保存」すると使えます）</p>}
+            {!hydro && !loaded.hydroError && <p className={styles.sub}>この版の地形データには方位・沢の目安がありません（新しい版を「更新して保存」すると使えます）</p>}
             {loaded.hydroError && <p className={styles.sub}>{loaded.hydroError}</p>}
             {hydro && (
               <>
@@ -1383,19 +1385,19 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
                   ))}
                 </div>
                 <label className={styles.check}>
-                  沢から
-                  <select className={styles.selectSmall} value={terrainCond.streamWithinM ?? ''} onChange={(e) => setTerrainCond((c) => ({ ...c, streamWithinM: e.target.value ? Number(e.target.value) : null }))} aria-label="沢から○m以内">
+                  沢の目安から
+                  <select className={styles.selectSmall} value={terrainCond.streamWithinM ?? ''} onChange={(e) => setTerrainCond((c) => ({ ...c, streamWithinM: e.target.value ? Number(e.target.value) : null }))} aria-label="沢の目安から○m以内">
                     <option value="">指定なし</option>
                     {[50, 100, 200, 300].map((v) => <option key={v} value={v}>{v}m 以内</option>)}
                   </select>
-                  <select className={styles.selectSmall} value={terrainCond.streamBeyondM ?? ''} onChange={(e) => setTerrainCond((c) => ({ ...c, streamBeyondM: e.target.value ? Number(e.target.value) : null }))} aria-label="沢から○m以上">
+                  <select className={styles.selectSmall} value={terrainCond.streamBeyondM ?? ''} onChange={(e) => setTerrainCond((c) => ({ ...c, streamBeyondM: e.target.value ? Number(e.target.value) : null }))} aria-label="沢の目安から○m以上">
                     <option value="">指定なし</option>
                     {[100, 200, 300, 500].map((v) => <option key={v} value={v}>{v}m 以上</option>)}
                   </select>
                 </label>
                 {terrainMatchKm2 !== null && <p className={styles.sub}>条件をすべて満たす範囲 {terrainMatchKm2.toFixed(1)} km²</p>}
                 {anyTerrainCondition(terrainCond) && <button className={styles.btn} onClick={() => setTerrainCond(NO_TERRAIN_CONDITIONS)}>地形の条件をクリア</button>}
-                <p className={styles.sub}>沢は DEM から計算した水の通り道で、実際の水の有無とは違います。上部斜面（肩の目安）は試験的な分類です。</p>
+                <p className={styles.sub}>{STREAM_NOTE}。上部斜面（肩の目安）は試験的な分類です。</p>
               </>
             )}
 
@@ -1410,7 +1412,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
             {loaded.forestError && <p className={styles.sub}>{loaded.forestError}</p>}
             {forest && forestHa && (
               <>
-                <p className={styles.sub}>森林計画の樹種（{forest.sources.kokuyu?.year ?? '—'}年・国有林／{forest.sources.minyu?.year ?? '—'}年・民有林）。小班（数 ha）単位の計画の値で、一本一本の木ではありません</p>
+                <p className={styles.sub}>森林計画の樹種（{forest.sources.kokuyu?.year ?? '—'}年・国有林／{forest.sources.minyu?.year ?? '—'}年・民有林{forest.sources.doyurin && <>／{forest.sources.doyurin.year ?? '—'}年・道有林</>}）。小班（数 ha）単位の計画の値で、一本一本の木ではありません{forest.sources.doyurin && <>。{DOYURIN_SPECIES_NOTE}（順位・割合なし）で、選んだ樹種なら「1位」の色で塗ります</>}</p>
                 <label className={styles.check}>
                   樹種
                   <select
@@ -1508,7 +1510,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
 
             <label className={styles.check}>
               <input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} />
-              <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />沢の線（集水 10ha 以上）
+              <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />地形上の水の集まり道（沢の目安・集水 10ha 以上）
             </label>
             <h3 className={styles.h}>環境スポット</h3>
             <label className={styles.check}><input type="checkbox" checked={showSpots} onChange={(e) => setShowSpots(e.target.checked)} />地図に表示</label>
@@ -1624,8 +1626,8 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
               </p>
               {forest && (
                 <p className={styles.sub}>
-                  森林は国有林・民有林の森林計画（小班ごとの樹種 1〜3 位）と環境省の現存植生図を、約{Math.round(manifest.grid.pxM)}m の格子に置き直したもの（格子の中心が入る林分）。
-                  小班は数 ha 単位で、一本一本の木ではありません。国有林は {forest.sources.kokuyu?.year ?? '—'} 年時点の計画です。
+                  森林は国有林・民有林{forest.sources.doyurin ? '・道有林' : ''}の森林計画（小班ごとの樹種 1〜3 位{forest.sources.doyurin ? `。${DOYURIN_SPECIES_NOTE}` : ''}）と環境省の現存植生図を、約{Math.round(manifest.grid.pxM)}m の格子に置き直したもの（格子の中心が入る林分）。
+                  小班は数 ha 単位で、一本一本の木ではありません。国有林は {forest.sources.kokuyu?.year ?? '—'} 年時点の計画です。{forest.sources.doyurin && <>道有林は {forest.sources.doyurin.year ?? '—'} 年時点です。</>}
                 </p>
               )}
               <p className={styles.sub}>出典: {manifest.sources.map((s) => s.name).join('、')}</p>

@@ -6,7 +6,7 @@ import { displaySpeciesName, standRanks } from './forestSpecies';
 // 林分の区分（class）とミズナラの順位はパイプラインで決めた値をそのまま使い、ここで樹種から推論し直さない。
 // 「天然林広葉樹（樹種不明）」はミズナラの条件に入れない（設計 §13-3）
 
-export type ForestOwner = 'k' | 'm'; // 国有林・民有林
+export type ForestOwner = 'k' | 'm' | 'd'; // 国有林・民有林・道有林（道有林は小班ごとに 1 樹種だけの記録・割合なし）
 export const FOREST_CLASS = { other: 0, broadleafUnknown: 1, larch: 2, todo: 3, noRegister: 4 } as const;
 
 export interface ForestStand {
@@ -159,7 +159,15 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
 }
 
 // ---- 地点情報（データの年を必ず付ける） ----
-const OWNER_LABEL: Record<ForestOwner, string> = { k: '国有林', m: '民有林' };
+const OWNER_LABEL: Record<ForestOwner, string> = { k: '国有林', m: '民有林', d: '道有林' };
+// 道有林は 1 位〜3 位・割合が無い（小班ごとに 1 樹種）。「1位」と書かず、1 樹種だけの記録と分かるようにする
+export const DOYURIN_SPECIES_NOTE = '道有林は小班ごとに1樹種のみ記録';
+
+function standSpeciesText(s: ForestStand): string {
+  if (!s.species.length) return '樹種の記録なし';
+  if (s.owner === 'd') return `樹種 ${displaySpeciesName(s.species[0][0])}（${DOYURIN_SPECIES_NOTE}）`;
+  return s.species.map(([n, r], k) => `${k + 1}位 ${displaySpeciesName(n)}${r ? `（${r}割）` : ''}`).join('・');
+}
 // 国有林の森林調査簿の略号（表示だけ言い換える。データは変えない）
 
 export function describeForest(f: ForestData, i: number): string[] {
@@ -167,9 +175,7 @@ export function describeForest(f: ForestData, i: number): string[] {
   const si = f.stand[i];
   const s = si ? f.stands[si - 1] : null;
   if (s) {
-    const sp = s.species.length
-      ? s.species.map(([n, r], k) => `${k + 1}位 ${displaySpeciesName(n)}${r ? `（${r}割）` : ''}`).join('・')
-      : '樹種の記録なし';
+    const sp = standSpeciesText(s);
     lines.push(`森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点）: ${sp}${s.age ? `／林齢 ${s.age}` : ''}${s.type ? `／${s.type}` : ''}`);
     if (s.cls === FOREST_CLASS.broadleafUnknown) lines.push('天然林広葉樹は樹種不明（ミズナラかどうか分からない）');
   } else {
@@ -198,8 +204,9 @@ export function forestHeadline(f: ForestData, i: number): ForestHeadline {
   if (s) {
     species = s.cls === FOREST_CLASS.broadleafUnknown
       ? '天然林広葉樹（樹種不明）'
-      : s.species.length ? s.species.map(([n, r], k) => `${k + 1}位 ${displaySpeciesName(n)}${r ? `（${r}割）` : ''}`).join('・') : '樹種の記録なし';
+      : standSpeciesText(s);
     note = `森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点${s.age ? `・林齢${s.age}` : ''}${s.type ? `・${s.type}` : ''}）`;
+    if (s.owner === 'd' && !species.includes(DOYURIN_SPECIES_NOTE)) note += `・${DOYURIN_SPECIES_NOTE}`; // 樹種の行に注記が無い時だけ（重ねない）
   }
   return { species, note, vegetation: v ? `${v.name}（${v.year ?? '年不明'}調査）` : null };
 }
