@@ -1201,6 +1201,8 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
           isAdmin={staffMe?.role === 'admin'}
           here={pos}
           onChanged={() => void envSpots.refreshRemote()}
+          terrainAt={terrainAt}
+          areaName={(id) => areaList.find((a) => a.areaId === id)?.name ?? id}
         />
       )}
       {/* 地図の上の状態チップ（いま重ねている表示。タップで該当タブ、× でその表示だけ消す） */}

@@ -149,3 +149,29 @@
   border: 1px solid #b3261e;
   border-radius: var(--radius-sm);
 }
+
+/* 記録時の地形の再取得（新旧の比較） */
+.compareBox {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.compare {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs);
+}
+
+.compare th,
+.compare td {
+  padding: 2px var(--space-1);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.compare .changed {
+  font-weight: 700;
+}
