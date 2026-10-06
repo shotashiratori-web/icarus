@@ -87,6 +87,16 @@ export async function patchEnvironmentSpot(id: string, body: EditRequest, idToke
   return (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }, idToken)).json();
 }
 
+export interface SpotHistoryItem {
+  id: string; entityType: string; entityId: string; editedAt: string; editedByName: string; reason: string | null;
+  changes: { field: string; old: unknown; new: unknown }[];
+}
+
+// 訂正の履歴（Spot と、その観察）
+export async function fetchEnvironmentSpotHistory(id: string, idToken: string): Promise<SpotHistoryItem[]> {
+  return ((await (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(id)}/history`, {}, idToken)).json()) as { items?: SpotHistoryItem[] }).items ?? [];
+}
+
 export async function patchSpotObservation(id: string, body: EditRequest, idToken: string): Promise<{ outcome: string }> {
   return (await request(`${WORKER_URL}/spot-observations/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }, idToken)).json();
 }

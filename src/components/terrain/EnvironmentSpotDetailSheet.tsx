@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { editErrorMessage, fetchEnvironmentSpot, patchEnvironmentSpot, patchSpotObservation, SpotNetworkError } from '../../api/environmentSpotsApi';
 import EnvironmentSpotEditForm from './EnvironmentSpotEditForm';
+import SpotTerrainSection from './SpotTerrainSection';
+import type { TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { addPhotosToSpot } from '../../environmentSpots/sync';
 import {
   LIFE_LABEL, PHOTO_MISSING_LABEL, RESULT_LABEL, STAGE_LABEL,
@@ -22,6 +24,8 @@ type Props = {
   isAdmin?: boolean;
   here?: { lat: number; lng: number; accuracy: number } | null;
   onChanged?: () => void; // 訂正・無効化の後に一覧を取り直す
+  terrainAt?: (lat: number, lng: number) => Promise<TerrainSnapshot>; // 「地形情報を再取得」（地点を含む山域で計算）
+  areaName?: (areaId: string) => string;
 };
 
 interface Row { key: string; observedAt: string; target: string; result: ObsResult; foundStage: FoundStage | null; memo: string; by: string; device: boolean; updatedAt: string | null }
@@ -48,7 +52,7 @@ const fmt = (iso: string) => {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs, idToken, onObserve, onClose, isAdmin = false, here = null, onChanged }: Props) {
+export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs, idToken, onObserve, onClose, isAdmin = false, here = null, onChanged, terrainAt, areaName = (id) => id }: Props) {
   const [detail, setDetail] = useState<EnvironmentSpot | null>(marker.remote);
   const [adding, setAdding] = useState(false);
   const [targetId, setTargetId] = useState<string | null>(null);
@@ -206,7 +210,8 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
       )}
       {p && !s && <p className={styles.sub}>写真 {p.photos.length} 枚{p.photos.length === 0 && p.body.photoMissingReason ? `（なし: ${PHOTO_MISSING_LABEL[p.body.photoMissingReason]}）` : ''}</p>}
       {loc && <p className={styles.sub}>位置: {loc.src === 'gps' ? `現在地${loc.acc !== null ? `（精度 約${Math.round(loc.acc)}m）` : ''}` : '地図で指定'}</p>}
-      {terrain && <p className={styles.sub}>記録時の地形: {[terrain.aspect && `方位 ${terrain.aspect}`, terrain.landform, terrain.slopeDeg !== undefined && `傾斜 ${terrain.slopeDeg}°`, terrain.stream].filter(Boolean).join('・')}</p>}
+      {s && <SpotTerrainSection spot={s} idToken={idToken} terrainAt={terrainAt} areaName={areaName} onDone={afterEdit} />}
+      {!s && terrain && <p className={styles.sub}>記録時の地形: {[terrain.aspect && `方位 ${terrain.aspect}`, terrain.landform, terrain.slopeDeg !== undefined && `傾斜 ${terrain.slopeDeg}°`, terrain.stream].filter(Boolean).join('・')}</p>}
 
       {s && !editing && (
         <div className={styles.actions}>
