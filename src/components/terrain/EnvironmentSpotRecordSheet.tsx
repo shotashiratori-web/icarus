@@ -21,7 +21,8 @@ export interface RecordLocation {
 type Props = {
   location: RecordLocation;
   species: EnvSpeciesItem[];
-  terrainAt: (lat: number, lng: number) => Record<string, unknown> | null;
+  // 地点を含む山域の地形（表示中の山域ではなく）。記録シートでは地点が決まるたびに 1 回だけ計算する
+  terrainAt: (lat: number, lng: number) => Promise<Record<string, unknown> | null>;
   onSave: (body: PendingSpot['body'], photos: PendingPhoto[]) => Promise<void>;
   onClose: () => void;
   initialPhotos?: PendingPhoto[]; // 撮った写真から記録する時
@@ -70,10 +71,22 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   const trees = useMemo(() => species.filter((s) => s.kind === 'tree').sort((a, b) => a.sortOrder - b.sortOrder), [species]);
   const other = trees.find((s) => s.id === speciesId)?.isOther ?? false;
   // 候補: この場所の林分の樹種（森林計画）と、この端末でよく使う樹種を先頭に
+  // 地形（保存する terrain と木の候補で同じ値を使う）。計算が終わるまで保存しない
+  const locKey = `${loc.lat},${loc.lng}`;
+  const [terrain, setTerrain] = useState<{ key: string; value: Record<string, unknown> | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    terrainAt(loc.lat, loc.lng).then(
+      (value) => { if (!cancelled) setTerrain({ key: `${loc.lat},${loc.lng}`, value }); },
+      () => { if (!cancelled) setTerrain({ key: `${loc.lat},${loc.lng}`, value: null }); },
+    );
+    return () => { cancelled = true; };
+  }, [terrainAt, loc.lat, loc.lng]);
+  const terrainReady = terrain?.key === locKey;
   const standTrees = useMemo(() => {
-    const t = terrainAt(loc.lat, loc.lng) as { forestStand?: { species?: string[] } | null } | null;
+    const t = (terrainReady ? terrain?.value : null) as { forestStand?: { species?: string[] } | null } | null;
     return matchSpecies(t?.forestStand?.species ?? [], trees);
-  }, [terrainAt, loc.lat, loc.lng, trees]);
+  }, [terrainReady, terrain, trees]);
   const frequent = useMemo(() => {
     const u = speciesUsage();
     return trees.filter((s) => (u[s.id] ?? 0) > 0 && !standTrees.includes(s)).sort((a, b) => (u[b.id] ?? 0) - (u[a.id] ?? 0)).slice(0, 3);
@@ -132,7 +145,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
   };
 
   const save = async () => {
-    if (!choice || problems.length) return;
+    if (!choice || problems.length || !terrainReady) return;
     setSaving(true);
     setError(null);
     try {
@@ -142,7 +155,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
         dbhCm: isTree ? dbhNum : null, decayClass: choice.lifeState === 'snag' || choice.lifeState === 'fallen' ? decay : null,
         lat: loc.lat, lng: loc.lng, locationSource: loc.source, gpsAccuracyM: loc.source === 'gps' ? loc.accuracyM : null,
         photoMissingReason: photos.length ? null : missing, photoMissingMemo: photos.length ? null : missingMemo.trim() || null,
-        memo: memo.trim(), observedAt: photoTakenAt ?? new Date().toISOString(), terrain: terrainAt(loc.lat, loc.lng),
+        memo: memo.trim(), observedAt: photoTakenAt ?? new Date().toISOString(), terrain: terrain?.value ?? null,
         ...(fromFieldLog ? { fieldLogEventId: fromFieldLog.eventId } : {}),
       }, photos);
       if (isTree && speciesId) countSpeciesUse(speciesId);
@@ -258,7 +271,7 @@ export default function EnvironmentSpotRecordSheet({ location, species, terrainA
       {problems.length > 0 && <p className={styles.sub}>{problems[0]}</p>}
       {error && <p className={styles.warn}>{error}</p>}
       <div className={styles.actions}>
-        <button className={`${styles.btn} ${styles.primary}`} disabled={problems.length > 0 || saving} onClick={() => void save()}>{saving ? '保存中…' : '端末に保存して送信'}</button>
+        <button className={`${styles.btn} ${styles.primary}`} disabled={problems.length > 0 || saving || !terrainReady} onClick={() => void save()}>{saving ? '保存中…' : terrainReady ? '端末に保存して送信' : '地形を確認中…'}</button>
       </div>
       <p className={styles.sub}>圏外でも端末に保存され、電波のある所で自動的に送信します（写真の原本も送信が済むまで端末に残ります）</p>
     </section>

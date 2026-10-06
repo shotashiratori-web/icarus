@@ -71,13 +71,13 @@ describe('昇格の画面（EnvironmentSpotRecordSheet）', () => {
     const photos = [{ id: 'p1', name: 'mizunara.jpg', type: 'image/jpeg', data: null, bytes: 0, sha256: '', assetId: 'asset-1' }];
     render(<EnvironmentSpotRecordSheet
       location={{ lat: 43.05, lng: 140.78, source: 'gps', accuracyM: null, fromPhoto: true }}
-      species={SPECIES} terrainAt={() => ({ terrainVersion: 'v' })} onSave={onSave} onClose={vi.fn()}
+      species={SPECIES} terrainAt={async () => ({ terrainVersion: 'v' })} onSave={onSave} onClose={vi.fn()}
       initialPhotos={photos} observedAt="2026-10-05T00:10:00.000Z"
       fromFieldLog={{ eventId: 'ev-1', name: 'ミズナラ', speciesId: 'tree-mizunara', thumbnailUrl: 'https://example.invalid/t.jpg' }}
     />);
     expect(screen.getByText(/Field Log「ミズナラ」を Spot にする/)).toBeInTheDocument();
     expect(screen.getByAltText('Field Log の写真 1')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /保存/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /保存/ }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const [body, sent] = onSave.mock.calls[0] as unknown as [Record<string, unknown>, typeof photos];
     expect(body).toMatchObject({ fieldLogEventId: 'ev-1', treeSpeciesId: 'tree-mizunara', lifeState: 'alive', lat: 43.05, lng: 140.78, locationSource: 'gps', observedAt: '2026-10-05T00:10:00.000Z' });
@@ -87,7 +87,7 @@ describe('昇格の画面（EnvironmentSpotRecordSheet）', () => {
   it('6. 名前が樹種マスタに無い時は樹種を選ばず、名前をメモに入れておく', () => {
     render(<EnvironmentSpotRecordSheet
       location={{ lat: 43.05, lng: 140.78, source: 'gps', accuracyM: null, fromPhoto: true }}
-      species={SPECIES} terrainAt={() => null} onSave={vi.fn()} onClose={vi.fn()}
+      species={SPECIES} terrainAt={async () => null} onSave={vi.fn()} onClose={vi.fn()}
       fromFieldLog={{ eventId: 'ev-2', name: '大きな倒木', speciesId: null, thumbnailUrl: null }}
     />);
     expect(screen.getByDisplayValue('大きな倒木')).toBeInTheDocument();

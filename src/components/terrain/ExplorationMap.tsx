@@ -51,7 +51,7 @@ import EnvironmentSpotDetailSheet from './EnvironmentSpotDetailSheet';
 import { KIND_CHOICES, type PendingPhoto, type SpotKindChoice } from '../../environmentSpots/types';
 import { readPhotoMeta } from '../../environmentSpots/photoMeta';
 import { photoFromFile } from '../../environmentSpots/sync';
-import { aspectDeg as hydroAspectDeg, directionOf as hydroDirectionOf, LANDFORMS as HYDRO_LANDFORMS, twiValue as hydroTwiValue } from '../../terrain/hydro';
+import { resolveTerrainSnapshot, type DecodedArea, type TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import { buildStatusChips, type StatusChipId } from '../../terrain/statusChips';
@@ -732,36 +732,31 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     return lines;
   }, [loaded, manifest, cc, coverage, showHistory, visibleHistory, coverageWidth, compiledHyp, targetId, target, trackEvidence, pointEvidence]);
 
-  // 記録時の地形の値（terrain_json）。端末の地形パッケージから計算し、version とデータの年を付ける
-  const terrainAt = useCallback((lat: number, lng: number): Record<string, unknown> | null => {
-    if (!loaded || !manifest) return null;
-    const { x, y } = latLngToGrid(manifest, lat, lng);
-    const i = cellIndex(loaded.grid, x, y);
-    if (i === null) return { terrainVersion: manifest.version, outside: true };
-    const v = cellValues(manifest, loaded.grid, i);
-    const snap: Record<string, unknown> = {
-      terrainVersion: manifest.version, slopeDeg: Math.round(v.slopeDeg), sun: Math.round(v.sun * 100) / 100,
-      ridgeM: v.ridgeM === null ? null : Math.round(v.ridgeM), roadM: v.roadM === null ? null : Math.round(v.roadM),
-    };
-    const h = loaded.hydro;
-    if (h) {
-      const d = hydroAspectDeg(h.aspect[i]);
-      snap.aspectDeg = d === null ? null : Math.round(d);
-      snap.aspect = d === null ? '平坦' : DIRECTION_LABEL[hydroDirectionOf(d)];
-      snap.landform = HYDRO_LANDFORMS.find((l) => l.id === h.landform[i])?.label ?? null;
-      snap.streamM = h.streamDist[i] === 255 ? null : Math.round(h.streamDist[i] * manifest.grid.pxM);
-      snap.stream = h.streamDist[i] === 255 ? '沢の目安から約1.2km以上' : `沢の目安から約${Math.round((h.streamDist[i] * manifest.grid.pxM) / 10) * 10}m`;
-      snap.twi = Math.round(hydroTwiValue(manifest, h.twiLevel[i]) * 10) / 10;
+  // 記録時の地形の値（terrain_json）。地点を含む山域の地形データで計算する（表示中の山域で判定しない。terrainSnapshot.ts）。
+  // 表示中ではない保存済みの山域は、記録の時だけ読んで 1 つだけ覚えておく
+  const otherArea = useRef<{ key: string; p: Promise<DecodedArea | null> } | null>(null);
+  const loadSavedDecoded = useCallback((areaId: string): Promise<DecodedArea | null> => {
+    const e = areaList.find((a) => a.areaId === areaId);
+    if (!e?.saved) return Promise.resolve(null);
+    const key = `${areaId}/${e.saved.version}`;
+    if (otherArea.current?.key !== key) {
+      const p = loadSavedArea(areaId).then(async (pkg) => {
+        if (!pkg) return null;
+        const [grid, fr, hy] = await Promise.all([decodeGrid(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg)]);
+        return { manifest: pkg.manifest, grid, hydro: hy.hydro, forest: fr.forest };
+      }).catch(() => {
+        otherArea.current = null;
+        return null;
+      });
+      otherArea.current = { key, p };
     }
-    const f = loaded.forest;
-    if (f) {
-      const st = f.stand[i] ? f.stands[f.stand[i] - 1] : null;
-      const vg = f.veg[i] ? f.vegs[f.veg[i] - 1] : null;
-      snap.forestStand = st ? { owner: st.owner, year: st.year, species: st.species.map(([n]) => n), mizunaraRank: st.mizunaraRank } : null;
-      snap.vegetation = vg ? { name: vg.name, year: vg.year } : null;
-    }
-    return snap;
-  }, [loaded, manifest]);
+    return otherArea.current.p;
+  }, [areaList]);
+  const terrainAt = useCallback((lat: number, lng: number): Promise<TerrainSnapshot> => resolveTerrainSnapshot(lat, lng, {
+    areaList,
+    current: loaded ? { manifest: loaded.pkg.manifest, grid: loaded.grid, hydro: loaded.hydro, forest: loaded.forest } : null,
+    loadSaved: loadSavedDecoded,
+  }), [areaList, loaded, loadSavedDecoded]);
 
   // 地点情報の見出し: 樹種（林分の 1〜3 位）・植生・近くの環境スポットを一番上に大きく
   const headOf = useCallback((lat: number, lng: number): ProbeHead | undefined => {

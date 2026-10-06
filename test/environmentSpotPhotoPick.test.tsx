@@ -24,7 +24,7 @@ function pick() {
 describe('撮った写真を選ぶ', () => {
   it('1. 位置の無い古い写真: 撮影日時を記録日時にし、現在地のままなら警告。位置が無い写真の案内', async () => {
     meta.value = { lat: null, lng: null, accuracyM: 4.7, takenAt: '2026-09-30T00:14:16.000Z' };
-    render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 3 }} species={SPECIES} terrainAt={() => null} onSave={vi.fn(async () => undefined)} onClose={vi.fn()} />);
+    render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 3 }} species={SPECIES} terrainAt={async () => null} onSave={vi.fn(async () => undefined)} onClose={vi.fn()} />);
     pick();
     expect(await screen.findByText('（写真の撮影日時）', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('木の場所ではない可能性があります', { exact: false })).toBeInTheDocument();
@@ -34,12 +34,12 @@ describe('撮った写真を選ぶ', () => {
   it('2. 位置の入っている写真（Field Log と同じく写真の位置を使う）: 現在地ではなく写真の撮影時の位置を使う', async () => {
     meta.value = { lat: 43.054353, lng: 140.787705, accuracyM: 4.7, takenAt: '2026-09-30T00:14:16.000Z' };
     const onSave = vi.fn(async (..._a: unknown[]) => undefined);
-    render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 3 }} species={SPECIES} terrainAt={() => null} onSave={onSave} onClose={vi.fn()} />);
+    render(<EnvironmentSpotRecordSheet location={{ lat: 43.19135, lng: 140.79865, source: 'gps', accuracyM: 3 }} species={SPECIES} terrainAt={async () => null} onSave={onSave} onClose={vi.fn()} />);
     pick();
     expect(await screen.findByText('写真の撮影時の GPS', { exact: false })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '生木' }));
     fireEvent.click(screen.getByRole('button', { name: 'ミズナラ' }));
-    fireEvent.click(screen.getByRole('button', { name: '端末に保存して送信' }));
+    fireEvent.click(await screen.findByRole('button', { name: '端末に保存して送信' }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0]).toMatchObject({ lat: 43.054353, lng: 140.787705, locationSource: 'gps', gpsAccuracyM: 4.7, observedAt: '2026-09-30T00:14:16.000Z' });
   });
