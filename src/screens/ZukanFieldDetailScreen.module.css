@@ -525,3 +525,54 @@
   font-weight: 600;
   margin-right: var(--space-2);
 }
+
+/* 記録の無効化（削除の代わり・管理者だけ）。訂正のボタンとは離して注意の色 */
+.voidSection {
+  margin: var(--space-6) var(--space-6) 0;
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--color-border);
+}
+
+.voidBtn {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent);
+  background: var(--color-surface);
+  color: var(--color-accent);
+}
+
+.voidPanel,
+.voidedBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.voidedBanner {
+  margin: 0 var(--space-6) var(--space-4);
+}
+
+.voidTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.voidText {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+  line-height: 1.5;
+}
+
+.voidInput {
+  font-size: 16px; /* iPhone で拡大されない大きさ */
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}

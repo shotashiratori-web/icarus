@@ -24,6 +24,11 @@ export interface FieldEntryDetail extends FieldEditValues {
   kigo: string;
   createdBy: string;
   updatedAt: string; // 楽観ロック（expectedUpdatedAt）に使う
+  // 無効化（削除の代わり。icarus_field_log_void_design.md）。古い API では返らないので任意
+  status?: 'active' | 'voided';
+  voidedAt?: string;
+  voidedByName?: string;
+  voidReason?: string;
 }
 
 export type FieldEditPatch = Partial<FieldEditValues>;

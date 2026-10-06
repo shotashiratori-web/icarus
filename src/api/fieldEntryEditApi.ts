@@ -18,6 +18,14 @@ export class FieldEditConflictError extends Error {
   }
 }
 
+// 無効化された記録への操作（409 ENTRY_VOIDED）。「他の人が先に更新」とは別に扱う
+export class FieldEntryVoidedError extends Error {
+  constructor(message = 'この記録は無効化されています。') {
+    super(message);
+    this.name = 'FieldEntryVoidedError';
+  }
+}
+
 const NETWORK_MESSAGE = '通信エラーが発生しました。もう一度お試しください。';
 
 async function request(url: string, idToken: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
@@ -38,6 +46,9 @@ async function request(url: string, idToken: string, init: RequestInit = {}): Pr
     json = await res.json();
   } catch {
     throw new Error(`サーバーエラー (HTTP ${res.status})`);
+  }
+  if (json.code === 'ENTRY_VOIDED') {
+    throw new FieldEntryVoidedError();
   }
   if (res.status === 409 || json.code === 'EDIT_CONFLICT') {
     throw new FieldEditConflictError('他の人が先にこの記録を更新しました。');
@@ -73,7 +84,22 @@ export function parseFieldEntryDetail(raw: Record<string, unknown>): FieldEntryD
     kigo: str(raw.kigo),
     createdBy: str(raw.created_by),
     updatedAt: str(raw.updated_at),
+    status: raw.status === 'voided' ? 'voided' : 'active',
+    voidedAt: str(raw.voided_at),
+    voidedByName: str(raw.voided_by_name),
+    voidReason: str(raw.void_reason),
   };
+}
+
+// 記録の無効化（管理者だけ・理由必須）。記録は消さず、図鑑・一覧・地図から外れる。
+// 返り値の linkedSpotCount = この記録を根拠にしている Environment Spot の数（Spot と写真は残る）
+export async function voidFieldEntry(
+  eventId: string,
+  body: { requestId: string; expectedUpdatedAt: string; reason: string },
+  idToken: string,
+): Promise<{ updatedAt: string; linkedSpotCount: number }> {
+  const json = await request(`${FIELD_ENTRIES_URL}/${encodeURIComponent(eventId)}/void`, idToken, { method: 'POST', body: JSON.stringify(body) });
+  return { updatedAt: str(json.updatedAt), linkedSpotCount: typeof json.linkedSpotCount === 'number' ? json.linkedSpotCount : 0 };
 }
 
 export async function fetchFieldEntryDetail(eventId: string, idToken: string): Promise<FieldEntryDetail> {
