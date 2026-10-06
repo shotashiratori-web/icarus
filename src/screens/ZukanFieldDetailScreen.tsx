@@ -15,6 +15,7 @@ import {
   fetchFieldEntryDetail,
   fetchFieldEntryHistory,
   patchFieldEntry,
+  voidFieldEntry,
   FieldEditConflictError,
 } from '../api/fieldEntryEditApi';
 import { TokenExpiredError } from '../api/icarusApi';
@@ -72,7 +73,9 @@ function fieldsText(fields: FieldEditableField[]): string {
 // 変えた項目だけをexpectedUpdatedAt付きで送る。他の人が先に保存していたら409 → 最新を読み込み直す。
 export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();
-  const canEdit = staffMe?.staffStatus === 'active' && !!entry.eventId;
+  const canEditBase = staffMe?.staffStatus === 'active' && !!entry.eventId;
+  // 無効化（削除の代わり）は管理者だけ。設計: icarus_field_log_void_design.md
+  const isAdmin = canEditBase && staffMe?.role === 'admin';
 
   const [detail, setDetail] = useState<FieldEntryDetail | null>(null);
   const [detailError, setDetailError] = useState('');
@@ -92,6 +95,12 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const [draftPrompt, setDraftPrompt] = useState<FieldLogDraft | null>(null);
   const [draftSaveFailedNotice, setDraftSaveFailedNotice] = useState(false);
 
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [isVoiding, setIsVoiding] = useState(false);
+  const [voidError, setVoidError] = useState('');
+  const voidRequestRef = useRef<string | null>(null);
+
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyItems, setHistoryItems] = useState<FieldEntryHistoryItem[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -103,6 +112,10 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
   const draftSaveFailedShownRef = useRef(false);
   // 通信断の後に同じ内容で保存し直す時は同じrequestIdを使う（Workerが二重に書かない）
   const pendingRequestRef = useRef<{ key: string; requestId: string } | null>(null);
+
+  const isVoided = detail?.status === 'voided';
+  // 無効化された記録は編集しない（戻すのは管理者の restore。通常の画面には置かない）
+  const canEdit = canEditBase && !isVoided;
 
   const hasGps = Number.isFinite(entry.lat) && Number.isFinite(entry.lng) && !(entry.lat === 0 && entry.lng === 0);
 
@@ -447,6 +460,62 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
     </div>
   );
 
+  const handleVoid = async () => {
+    if (!detail || !idToken || !entry.eventId || !voidReason.trim()) return;
+    setIsVoiding(true);
+    setVoidError('');
+    // 通信断の後に押し直した時は同じ requestId（Worker が二重に無効化しない）
+    voidRequestRef.current ??= crypto.randomUUID();
+    try {
+      const r = await voidFieldEntry(entry.eventId, { requestId: voidRequestRef.current, expectedUpdatedAt: detail.updatedAt, reason: voidReason.trim() }, idToken);
+      voidRequestRef.current = null;
+      setVoidOpen(false);
+      setVoidReason('');
+      // 一覧・地図から外す（次の取得でも API が除く）
+      useZukanFieldStore.getState().removeEntry(entry.eventId);
+      setDetail(await fetchFieldEntryDetail(entry.eventId, idToken).catch(() => ({ ...detail, status: 'voided' as const, voidReason: voidReason.trim() })));
+      setSaveNotice(r.linkedSpotCount > 0
+        ? `無効化しました。この記録は Environment Spot ${r.linkedSpotCount} 件の根拠になっていました（Spot と写真は残ります）`
+        : '無効化しました');
+    } catch (e) {
+      if (e instanceof FieldEditConflictError) voidRequestRef.current = null;
+      setVoidError(handleError(e, '無効化できませんでした。もう一度お試しください。'));
+    } finally {
+      setIsVoiding(false);
+    }
+  };
+
+  const renderVoid = () => (
+    <div className={styles.voidSection}>
+      {!voidOpen ? (
+        <button className={styles.voidBtn} onClick={() => { setVoidOpen(true); setVoidError(''); }} disabled={!detail}>この記録を無効化</button>
+      ) : (
+        <div className={styles.voidPanel} role="group" aria-label="記録の無効化">
+          <p className={styles.voidTitle}>この記録を無効化しますか？</p>
+          <p className={styles.voidText}>
+            記録は消えず、図鑑・一覧・地図・新しい関連づけから外れます。理由と履歴が残り、管理者は元に戻せます。
+            Environment Spot の根拠になっている場合も、Spot・写真・観察は残ります。Google Sheets の元の行も残り、「食材ログ_無効化」タブに記録されます。
+          </p>
+          <input
+            className={styles.voidInput}
+            value={voidReason}
+            onChange={(e) => setVoidReason(e.target.value)}
+            placeholder="理由（必須・履歴に残ります）例: 同じ発見の重複記録"
+            maxLength={500}
+            aria-label="無効化の理由"
+          />
+          {voidError && <p className={styles.errorText}>{voidError}</p>}
+          <div className={styles.confirmBtns}>
+            <button className={styles.continueBtn} onClick={() => { setVoidOpen(false); setVoidError(''); }} disabled={isVoiding}>やめる</button>
+            <button className={styles.discardBtn} onClick={() => void handleVoid()} disabled={isVoiding || !voidReason.trim()}>
+              {isVoiding ? '無効化中…' : '無効化する'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -461,6 +530,16 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
       </header>
 
       <main className={styles.main}>
+        {isVoided && (
+          <div className={styles.voidedBanner} role="status">
+            <p className={styles.voidTitle}>この記録は無効化されています</p>
+            <p className={styles.voidText}>
+              {detail?.voidedAt ? `${formatHistoryTime(detail.voidedAt)}・` : ''}{detail?.voidedByName || ''}
+              {detail?.voidReason ? `　理由: ${detail.voidReason}` : ''}
+            </p>
+            <p className={styles.voidText}>図鑑・一覧・地図には出ません。編集・Spot にする・関連づけはできません。</p>
+          </div>
+        )}
         <div className={styles.photoWrap}>
           {entry.photoUrl && entry.imageExpired
             ? <div className={styles.photoPlaceholder}>写真は再取得待ち（通信が戻ると表示されます）</div>
@@ -503,7 +582,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
         ) : (
           <h1 className={styles.foodName}>{shown.food || '無題'}</h1>
         )}
-        {(detail?.subject_type ?? entry.subjectType) === '環境' && !isEditing && (
+        {(detail?.subject_type ?? entry.subjectType) === '環境' && !isEditing && !isVoided && (
           <p className={styles.hintText}>
             🌲 環境の記録（Sheets・Notion には送りません）。
             {entry.environmentSpotId ? 'Environment Spot にしました。' : '地形探索の「記録」タブ →「Spot にする候補」から Environment Spot にできます。'}
@@ -607,7 +686,7 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
                 🧭 経路案内
               </a>
             )}
-            {canEdit && (
+            {canEditBase && (
               <button className={styles.linkBtn} onClick={() => void toggleHistory()} aria-expanded={historyOpen}>
                 🕘 編集履歴{historyOpen ? 'を閉じる' : ''}
               </button>
@@ -621,6 +700,9 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
         )}
 
         {!isEditing && historyOpen && renderHistory()}
+
+        {/* 訂正のボタンとは別の行・注意の色（Work Log の無効化と同じ）。管理者だけ */}
+        {isAdmin && !isEditing && !isVoided && renderVoid()}
       </main>
 
       {isEditing && (
