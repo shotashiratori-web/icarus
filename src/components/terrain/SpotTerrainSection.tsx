@@ -39,10 +39,10 @@ export default function SpotTerrainSection({ spot, idToken, terrainAt, areaName,
   useEffect(() => {
     if (!idToken || !navigator.onLine) return;
     let cancelled = false;
-    fetchEnvironmentSpotHistory(spot.id, idToken).then(
-      (items) => { if (!cancelled) setHistory(items.filter((h) => h.entityType === 'spot' && h.changes.some((c) => c.field === 'terrain'))); },
-      () => undefined,
-    );
+    // 履歴が読めなくても詳細は使える（表示しないだけ）
+    fetchEnvironmentSpotHistory(spot.id, idToken)
+      .then((items) => { if (!cancelled) setHistory(items.filter((h) => h.entityType === 'spot' && (h.changes ?? []).some((c) => c.field === 'terrain'))); })
+      .catch(() => undefined);
     return () => { cancelled = true; };
   }, [spot.id, spot.updatedAt, idToken]);
 

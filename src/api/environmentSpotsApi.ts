@@ -94,7 +94,7 @@ export interface SpotHistoryItem {
 
 // 訂正の履歴（Spot と、その観察）
 export async function fetchEnvironmentSpotHistory(id: string, idToken: string): Promise<SpotHistoryItem[]> {
-  return ((await (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(id)}/history`, {}, idToken)).json()) as { items: SpotHistoryItem[] }).items;
+  return ((await (await request(`${ENV_SPOTS_URL}/${encodeURIComponent(id)}/history`, {}, idToken)).json()) as { items?: SpotHistoryItem[] }).items ?? [];
 }
 
 export async function patchSpotObservation(id: string, body: EditRequest, idToken: string): Promise<{ outcome: string }> {
