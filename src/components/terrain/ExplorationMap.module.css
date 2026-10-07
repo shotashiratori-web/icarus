@@ -865,3 +865,62 @@ label.btn {
 .coneUnstable .coneLabel {
   color: #9c6500;
 }
+
+/* ここへ行く（Field Navigation v1 PR3）: 画面の上に小さな帯。検索のパネルは閉じる */
+.navBanner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  width: min(420px, calc(100% - 24px));
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  color: #222;
+}
+
+.navHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.navName {
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navDist {
+  font-weight: 800;
+  font-size: 20px;
+  color: #d93025;
+  white-space: nowrap;
+}
+
+.navGuide {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0b57d0;
+}
+
+.navArrive {
+  margin-top: 2px;
+  font-weight: 700;
+  color: #188038;
+}
+
+.navFoot {
+  margin-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
