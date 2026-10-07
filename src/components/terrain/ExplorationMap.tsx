@@ -1090,18 +1090,19 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   }, [area.areaId]);
 
   // ---- 日没・薄明（Field Navigation v1 PR4）: 端末の中で計算（ネット不要）。30 秒ごとに残り時間を更新し、日付が変われば計算し直す。
-  // 現在地が取れればそこで、無ければ表示中の山域の中心で（その時は「約」「山域基準」）。安全な時刻の判断はしない
+  // GPS を使っている間に現在地が取れればそこで、無ければ表示中の山域の中心で（その時は「約」「山域基準」）。安全な時刻の判断はしない。
+  // GPS を止めたら、最後の現在地を「現在地基準」として使い続けず山域基準へ戻す（青い点の扱いは今までどおり）
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNowMs(Date.now()), 30000);
     return () => window.clearInterval(t);
   }, []);
   const sun = useMemo(() => {
-    if (pos) return sunLines(nowMs, pos.lat, pos.lng, 'here');
+    if (pos && watching) return sunLines(nowMs, pos.lat, pos.lng, 'here');
     if (!manifest) return null;
     const b = manifest.bounds;
     return sunLines(nowMs, (b.south + b.north) / 2, (b.west + b.east) / 2, 'area');
-  }, [nowMs, pos?.lat, pos?.lng, manifest]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nowMs, pos?.lat, pos?.lng, watching, manifest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
