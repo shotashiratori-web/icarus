@@ -821,3 +821,48 @@ label.btn {
     left: 104px;
   }
 }
+
+/* 3D（PC だけ・見るだけ）。2D の上に全面で重ねる */
+.view3d {
+  position: absolute;
+  inset: 0;
+  z-index: 1500;
+  background: #1b1b1b;
+}
+
+.view3dMap {
+  position: absolute;
+  inset: 0;
+}
+
+.view3dBar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 80px);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  color: #222;
+}
+
+.view3dNote {
+  position: absolute;
+  left: 10px;
+  bottom: 28px;
+  z-index: 2;
+  max-width: 520px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  color: #444;
+}
