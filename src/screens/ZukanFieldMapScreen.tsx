@@ -8,7 +8,8 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { useZukanFieldStore, computeDuplicateCandidateIds } from '../store/zukanFieldStore';
 import { computeDateRange, lastYearSameLabel, type TimeFilterKey } from '../utils/fieldTimeFilter';
 import { matchesFilter } from '../utils/fieldFilter';
-import { deleteFieldLogEntries } from '../api/zukanApi';
+import { voidFieldEntryLatest } from '../api/fieldEntryEditApi';
+import { TokenExpiredError } from '../api/icarusApi';
 import { useAuth } from '../context/AuthContext';
 import FieldMapControls from './FieldMapControls';
 import FieldMarker from './FieldMarker';
@@ -35,6 +36,8 @@ function loadMapMode(): MapMode {
 
 // openGpxDraftId: 「🌲 環境を記録」から YAMAP の GPX を選んだ時。地形探索の「記録」タブでその記録の入力を開く
 type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string };
+
+const VOID_REASON_DUPLICATE = '重複';
 
 export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraftId }: Props) {
   const {
@@ -64,6 +67,8 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 選んだ記録の無効化の結果（削除はしない。1 件ずつ無効化し、途中で失敗しても残りを続ける。icarus_field_log_void_design.md §9）
+  const [voidResult, setVoidResult] = useState<{ done: number; total: number; failed: { id: string; name: string; message: string }[] } | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -97,12 +102,23 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
     setDeleteError(null);
     try {
       if (!idToken) throw new Error('ログインが必要です');
-      await deleteFieldLogEntries(targets.map((t) => t.eventId), idToken);
-      setSelectedIds(new Set());
+      const failed: { id: string; name: string; message: string }[] = [];
+      let done = 0;
+      for (const t of targets) {
+        try {
+          await voidFieldEntryLatest(t.eventId, VOID_REASON_DUPLICATE, idToken);
+          done++;
+        } catch (err) {
+          if (err instanceof TokenExpiredError) { handleTokenExpired(); throw err; }
+          failed.push({ id: t.id, name: `${t.foodName || '無題'}（${t.date}）`, message: err instanceof Error ? err.message : '無効化できませんでした' });
+        }
+      }
+      setVoidResult({ done, total: targets.length, failed });
+      setSelectedIds(new Set(failed.map((f) => f.id))); // 失敗した記録だけ選んだまま残す（やり直せるように）
       setConfirming(false);
       await reload(idToken);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : '削除に失敗しました');
+      setDeleteError(err instanceof Error ? err.message : '無効化できませんでした');
     } finally {
       setDeleting(false);
     }
@@ -373,13 +389,13 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
                 {!confirming ? (
                   <>
                     <span>{selectedIds.size}件選択中</span>
-                    <button className={styles.deleteBtn} onClick={() => setConfirming(true)}>削除する</button>
+                    <button className={styles.deleteBtn} onClick={() => { setConfirming(true); setVoidResult(null); }}>無効化する</button>
                   </>
                 ) : (
                   <>
-                    <span>本当に{selectedIds.size}件削除しますか？（Sheets行削除・元に戻せません）</span>
+                    <span>{selectedIds.size}件を無効化しますか？（理由「{VOID_REASON_DUPLICATE}」。記録・写真・Sheets の行は残り、管理者は元に戻せます）</span>
                     <button className={styles.deleteBtn} onClick={() => void handleDelete()} disabled={deleting}>
-                      {deleting ? '削除中…' : '実行する'}
+                      {deleting ? '無効化中…' : '実行する'}
                     </button>
                     <button className={styles.cancelDeleteBtn} onClick={() => setConfirming(false)} disabled={deleting}>
                       キャンセル
@@ -387,6 +403,13 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
                   </>
                 )}
                 {deleteError && <span className={styles.deleteErrorText}>{deleteError}</span>}
+              </div>
+            )}
+            {manageMode && voidResult && (
+              <div className={styles.deleteBar} role="status">
+                <span>{voidResult.total}件中{voidResult.done}件を無効化しました</span>
+                {voidResult.failed.map((f) => <span key={f.id} className={styles.deleteErrorText}>失敗: {f.name} — {f.message}</span>)}
+                <button className={styles.cancelDeleteBtn} onClick={() => setVoidResult(null)}>閉じる</button>
               </div>
             )}
           </>

@@ -55,7 +55,6 @@ export const AUTH_SESSION_URL = `${WORKER_URL}/auth/session`;
 export const AUTH_SESSION_OAUTH2_URL = `${WORKER_URL}/auth/session-oauth2`;
 export const PHOTO_HASH_CHECK_URL = `${WORKER_URL}/photo-hashes/check`;
 export const PHOTO_HASH_REGISTER_URL = `${WORKER_URL}/photo-hashes/register`;
-export const FIELD_DELETE_ENTRIES_URL = `${WORKER_URL}/field/delete-entries`;
 export const FIELD_CLASSIFY_PHOTO_URL = `${WORKER_URL}/field/classify-photo`;
 
 // Field Log 編集API（Editing & Classification。D1が正本、active staff以上）。旧GAS経由の編集APIはWebから使わない

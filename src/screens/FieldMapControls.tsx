@@ -180,7 +180,7 @@ export default function FieldMapControls({
             {showDupOnly ? 'すべて表示' : '重複候補のみ表示'}
           </button>
           <button className={styles.dupBarBtn} onClick={onToggleManageMode}>
-            {manageMode ? '選択をやめる' : '選択して削除'}
+            {manageMode ? '選択をやめる' : '選択して無効化'}
           </button>
         </div>
       )}

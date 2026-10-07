@@ -22,7 +22,6 @@ vi.mock('../src/api/fieldEntryEditApi', async (importOriginal) => ({
 vi.mock('../src/api/zukanApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/api/zukanApi')>()),
   classifyFieldPhoto: vi.fn().mockResolvedValue({ isFieldSubject: true, reason: '' }),
-  deleteFieldLogEntries: vi.fn(),
 }));
 
 const mk = (eventId: string, takenAt: string, over: Partial<FieldLogEntry> = {}): FieldLogEntry => ({

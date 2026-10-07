@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useZukanFieldStore } from '../store/zukanFieldStore';
-import { deleteFieldLogEntries, classifyFieldPhoto } from '../api/zukanApi';
+import { classifyFieldPhoto } from '../api/zukanApi';
 import {
   bulkEditFieldEntries,
   fetchFieldEntryDetail,
+  voidFieldEntryLatest,
   saveFieldEntryChanges,
   FieldEditConflictError,
 } from '../api/fieldEntryEditApi';
@@ -38,6 +39,8 @@ type NavAction = 'prev' | 'next' | 'skip';
 type SortMode = 'date' | 'gps';
 
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
+
+const VOID_REASON_DEFAULT = 'フィールドログ対象外（料理・メモ書きなど）';
 
 export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const { idToken, staffMe, handleTokenExpired } = useAuth();
@@ -73,12 +76,13 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
   const [saveNotice, setSaveNotice] = useState('');
   const [draftSaveFailedNotice, setDraftSaveFailedNotice] = useState(false);
 
-  // 食材として同定不能な写真（メモ書きの誤混入等）をその場で削除するための状態
+  // 食材ログ対象外の写真は削除せず無効化する（記録は残り、一覧・図鑑・地図から外れる。icarus_field_log_void_design.md）
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [voidReason, setVoidReason] = useState(VOID_REASON_DEFAULT);
 
-  // AIによる一次判定（食材写真かどうかだけを見る。種の同定はしない・参考表示のみで削除は人が行う）
+  // AIによる一次判定（食材写真かどうかだけを見る。種の同定はしない・参考表示のみで無効化は人が行う）
   const [classifyResult, setClassifyResult] = useState<{ isFieldSubject: boolean; reason: string } | null>(null);
   const [isClassifying, setIsClassifying] = useState(false);
   const [classifyError, setClassifyError] = useState('');
@@ -427,27 +431,28 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
     }
   };
 
-  // 食材として同定できない写真（メモ書きの誤混入等）をSheetsから削除する。管理者限定・元に戻せない
+  // 食材として同定できない写真（メモ書きの誤混入等）を無効化する。管理者限定。記録・写真・Sheets の行は残り、管理者は戻せる
   const handleDelete = async () => {
-    if (isDeleting || !idToken || !currentEntry?.eventId) return;
+    if (isDeleting || !idToken || !currentEntry?.eventId || !voidReason.trim()) return;
     setIsDeleting(true);
     setDeleteError('');
     try {
-      await deleteFieldLogEntries([currentEntry.eventId], idToken);
+      await voidFieldEntryLatest(currentEntry.eventId, voidReason.trim(), idToken);
       clearFieldLogDraft(currentEntry.eventId);
       removeDeferredId(currentEntry.eventId);
       useZukanFieldStore.getState().removeEntry(currentEntry.eventId);
       setDeleteConfirming(false);
+      setVoidReason(VOID_REASON_DEFAULT);
       doNav('next');
     } catch (e) {
       if (e instanceof TokenExpiredError) handleTokenExpired();
-      setDeleteError(e instanceof Error ? e.message : '削除に失敗しました。もう一度お試しください。');
+      setDeleteError(e instanceof Error ? e.message : '無効化できませんでした。もう一度お試しください。');
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // AIに「食材写真かどうか」だけを判定させる（参考表示。削除は既存の管理者操作を人が実行する）
+  // AIに「食材写真かどうか」だけを判定させる（参考表示。無効化は管理者が人の判断で行う）
   const handleClassify = async () => {
     if (isClassifying || !idToken || !currentEntry?.photoUrl) return;
     setIsClassifying(true);
@@ -639,7 +644,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
 
         {!isDone && !currentEntry && (
           <div className={styles.centerMessage}>
-            <p>この記録は見つかりませんでした（削除済みの可能性があります）。</p>
+            <p>この記録は見つかりませんでした（無効化された可能性があります）。</p>
             <button className={styles.doneBackBtn} onClick={() => doNav('next')}>次へ</button>
           </div>
         )}
@@ -729,7 +734,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                     <p className={styles.classifyOk}>✅ 食材の写真のようです{classifyResult.reason && `（${classifyResult.reason}）`}</p>
                   ) : (
                     <p className={styles.classifyWarn}>
-                      ⚠️ 食材写真ではないかもしれません{classifyResult.reason && `（${classifyResult.reason}）`}。削除を検討してください
+                      ⚠️ 食材写真ではないかもしれません{classifyResult.reason && `（${classifyResult.reason}）`}。無効化を検討してください
                     </p>
                   )
                 )}
@@ -873,15 +878,23 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                 ) : deleteConfirming ? (
                   <div className={styles.confirmRow}>
                     <p className={styles.confirmText}>
-                      この写真を削除しますか？（Sheetsの行を削除します。元に戻せません）
+                      この記録を無効化しますか？（記録・写真・Sheets の行は残り、図鑑・一覧・地図から外れます。管理者は元に戻せます）
                     </p>
+                    <input
+                      className={styles.voidReasonInput}
+                      value={voidReason}
+                      onChange={(e) => setVoidReason(e.target.value)}
+                      maxLength={500}
+                      aria-label="無効化の理由"
+                    />
+                    {!voidReason.trim() && <p className={styles.errorText}>理由を入力すると無効化できます</p>}
                     {deleteError && <p className={styles.errorText}>{deleteError}</p>}
                     <div className={styles.confirmBtns}>
                       <button className={styles.continueBtn} onClick={() => setDeleteConfirming(false)} disabled={isDeleting}>
                         キャンセル
                       </button>
-                      <button className={styles.discardBtn} onClick={() => void handleDelete()} disabled={isDeleting}>
-                        {isDeleting ? '削除中…' : '削除する'}
+                      <button className={styles.discardBtn} onClick={() => void handleDelete()} disabled={isDeleting || !voidReason.trim()}>
+                        {isDeleting ? '無効化中…' : '無効化する'}
                       </button>
                     </div>
                   </div>
@@ -919,7 +932,7 @@ export default function FieldBulkOrganizeScreen({ go, from }: Props) {
                       </button>
                     )}
                     <button className={styles.deleteLinkBtn} onClick={() => setDeleteConfirming(true)}>
-                      🗑 フィールドログ対象外として削除する（料理・メモ書きなど）
+                      フィールドログ対象外として無効化する（料理・メモ書きなど）
                     </button>
                   </>
                 )}

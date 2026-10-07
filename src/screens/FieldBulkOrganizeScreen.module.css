@@ -93,3 +93,4 @@
 .doneTitle { font-size:var(--font-size-lg); font-weight:700; }
 .doneSub { font-size:var(--font-size-sm); color:var(--color-text-sub); }
 .doneBackBtn { font-size:var(--font-size-base); font-weight:700; padding:var(--space-3) var(--space-6); border-radius:var(--radius-md); background:var(--color-primary); color:var(--color-primary-fg); }
+.voidReasonInput { width:100%; box-sizing:border-box; font-size:16px; padding:var(--space-3); border:1px solid var(--color-border); border-radius:var(--radius-sm); }
