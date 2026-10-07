@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { headingFromEvent, headingLabel, rotorSize, screenToMapPoint, smoothAngle } from '../src/terrain/heading';
+import { coneLabel, compassUnstable, headingFromEvent, headingLabel, rotorSize, screenToMapPoint, smoothAngle } from '../src/terrain/heading';
 
 // 進行方向モード: 向きの読み取り・なめらか化・表示・回転した地図のタップ位置
 
@@ -46,5 +46,20 @@ describe('heading', () => {
 
   it('5. 回しても四隅が空かない大きさ', () => {
     expect(rotorSize(400, 800, { x: 200, y: 480 })).toBeGreaterThanOrEqual(2 * Math.hypot(200, 480));
+  });
+});
+
+describe('向いている方向の扇形（Field Navigation v1 PR2）', () => {
+  it('扇形の表示は方位名と角度だけ。不安定なら知らせる', () => {
+    expect(coneLabel(310)).toBe('NW 310°');
+    expect(coneLabel(359.6)).toBe('N 0°');
+    expect(coneLabel(95, true)).toBe('E 95°（不安定）');
+  });
+  it('方位の精度: 負（使えない）・25° より大きいと不安定。値の無い端末は判定しない', () => {
+    expect(compassUnstable(10)).toBe(false);
+    expect(compassUnstable(25)).toBe(false);
+    expect(compassUnstable(40)).toBe(true);
+    expect(compassUnstable(-1)).toBe(true);
+    expect(compassUnstable(undefined)).toBe(false);
   });
 });

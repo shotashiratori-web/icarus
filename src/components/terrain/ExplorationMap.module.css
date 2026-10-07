@@ -370,7 +370,7 @@
   font-size: var(--font-size-sm);
 }
 
-/* 進行方向モード: 地図を回す箱。通常は画面いっぱい。回転中は四隅が空かない大きさにして rotate */
+/* 「向いている方向を上に」: 地図を回す箱。通常は画面いっぱい。回転中は四隅が空かない大きさにして rotate */
 .rotor {
   position: absolute;
   inset: 0;
@@ -472,7 +472,7 @@
   color: var(--color-text);
 }
 
-/* 地図の上のボタン（現在地・進行方向・記録）。スマホは右上、PC はパネルが右上なので左（ズームの下） */
+/* 地図の上のボタン（現在地・向いている方向・向いている方向を上に・記録）。スマホは右上、PC はパネルが右上なので左（ズームの下） */
 .toolbar {
   position: absolute;
   top: var(--space-2);
@@ -820,4 +820,48 @@ label.btn {
     top: calc(var(--space-2) + 48px);
     left: 104px;
   }
+}
+
+/* 向いている方向の扇形（Field Navigation v1 PR2）。現在地の青い点に重ね、扇形だけを回す（文字は回さない） */
+.cone {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+}
+
+.coneWedge {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.coneWedge path {
+  fill: rgba(26, 115, 232, 0.28);
+  stroke: rgba(26, 115, 232, 0.75);
+  stroke-width: 1.5;
+}
+
+.coneLabel {
+  position: absolute;
+  left: 50%;
+  top: 74px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0b57d0;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.coneUnstable .coneWedge {
+  opacity: 0.35;
+}
+
+.coneUnstable .coneLabel {
+  color: #9c6500;
 }
