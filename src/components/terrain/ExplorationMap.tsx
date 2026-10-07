@@ -52,6 +52,7 @@ import { KIND_CHOICES, type PendingPhoto, type SpotKindChoice } from '../../envi
 import { readPhotoMeta } from '../../environmentSpots/photoMeta';
 import { photoFromFile } from '../../environmentSpots/sync';
 import { resolveTerrainSnapshot, type DecodedArea, type TerrainSnapshot } from '../../terrain/terrainSnapshot';
+import { loadCamera, loadView, saveCamera, saveView, type Camera } from '../../terrain/viewState';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import { buildStatusChips, type StatusChipId } from '../../terrain/statusChips';
@@ -212,21 +213,36 @@ function HeadingSync({ on, size, pos, mapRef }: { on: boolean; size: number; pos
   return null;
 }
 
-function FitOnce({ bounds }: { bounds: L.LatLngBoundsExpression }) {
+// 開いた時の表示: 前回この山域で見ていた中心・ズームがあればそこへ、無ければ範囲全体。
+// 動かしたら少し待って中心・ズームを覚える（前回の画面の復元。viewState.ts）
+function FitOnce({ bounds, camera, onMoved }: { bounds: L.LatLngBoundsExpression; camera: Camera | null; onMoved: (c: Camera) => void }) {
   const map = useMap();
   const done = useRef(false);
   useEffect(() => {
     if (done.current) return;
     done.current = true;
-    map.fitBounds(bounds);
-  }, [map, bounds]);
+    if (camera) map.setView([camera.lat, camera.lng], camera.zoom, { animate: false });
+    else map.fitBounds(bounds);
+  }, [map, bounds, camera]);
+  useEffect(() => {
+    let t = 0;
+    let initial = true; // 開いた時の setView／fitBounds による移動は覚えない（利用者が動かした所だけ）
+    const save = () => {
+      if (initial) { initial = false; return; }
+      window.clearTimeout(t);
+      t = window.setTimeout(() => { const c = map.getCenter(); onMoved({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }); }, 800);
+    };
+    map.on('moveend', save);
+    return () => { window.clearTimeout(t); map.off('moveend', save); };
+  }, [map, onMoved]);
   return null;
 }
 
 // 最初に現在地が取れたら現在地周辺（ズーム 15）へ。範囲の外にいる時は範囲全体のまま
-function Follow({ pos, follow, bounds }: { pos: [number, number] | null; follow: boolean; bounds: { south: number; north: number; west: number; east: number } }) {
+// restored = 前回の画面を復元した時は、最初に現在地が取れても地図を動かさない（追従は「現在地」を押した時から）
+function Follow({ pos, follow, bounds, restored = false }: { pos: [number, number] | null; follow: boolean; bounds: { south: number; north: number; west: number; east: number }; restored?: boolean }) {
   const map = useMap();
-  const first = useRef(true);
+  const first = useRef(!restored);
   useEffect(() => {
     if (!pos) return;
     const inside = insideBounds(bounds, pos[0], pos[1]);
@@ -256,6 +272,38 @@ type AreaMapProps = Props & {
   onPos: (p: { lat: number; lng: number } | null) => void;
 };
 
+// 前回の画面の復元で覚える表示の設定（全山域で 1 つ）。値は今までの初期値と同じ。読めない項目は初期値のまま（viewState.ts）
+const VIEW_DEFAULTS = {
+  presetId: SPECIES_PRESETS[0].id as string,
+  conditions: SPECIES_PRESETS[0].conditions as ExplorationConditions,
+  show: { A: true, B: true, C: true, ridge: false, sun: false, road: true, trail: true },
+  fieldLogFilter: 'none' as FieldLogFilter,
+  base: 'offline' as Base,
+  showSpots: true,
+  spotKinds: KIND_CHOICES.map((k) => k.id) as SpotKindChoice[],
+  spotSpecies: 'all',
+  showHistory: true,
+  coverageWidth: DEFAULT_COVERAGE_WIDTH as CoverageWidth,
+  purposeFilter: 'all' as Purpose | 'all',
+  period: 'all' as PeriodFilter,
+  targetId: null as string | null,
+  showTargetLayer: true,
+  showMatch: true,
+  forestLayers: NO_FOREST_LAYERS as ForestLayers,
+  terrainCond: NO_TERRAIN_CONDITIONS as TerrainConditions,
+  showStreams: false,
+  showContours: true,
+};
+const VIEW_ALLOWED = {
+  presetId: [...SPECIES_PRESETS.map((p) => p.id), CUSTOM_PRESET_ID],
+  base: ['offline', 'hillshademap', 'std', 'seamlessphoto'],
+  fieldLogFilter: FIELD_LOG_FILTERS,
+  coverageWidth: COVERAGE_WIDTHS_M,
+  purposeFilter: ['all', ...Object.keys(PURPOSE_LABEL)],
+  period: ['all', 'thisYear', 'last30'],
+  spotKinds: KIND_CHOICES.map((k) => k.id),
+};
+
 function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving: savingAny, areaError, onShowOverview, onSaveArea, onDeleteArea, onOpenArea, onPos }: AreaMapProps) {
   const { idToken, staffMe } = useAuth();
 
@@ -264,19 +312,22 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   const saved = area.saved;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const saving = savingAny?.areaId === area.areaId ? savingAny.text : null;
+  // 前回の表示の設定（開いた時に 1 回だけ読む）
+  const savedView = useMemo(() => loadView(VIEW_DEFAULTS, VIEW_ALLOWED), []);
 
-  const [presetId, setPresetId] = useState<string>(SPECIES_PRESETS[0].id);
-  const [conditions, setConditions] = useState<ExplorationConditions>(SPECIES_PRESETS[0].conditions);
-  const [show, setShow] = useState({ A: true, B: true, C: true, ridge: false, sun: false, road: true, trail: true });
+  const [presetId, setPresetId] = useState<string>(savedView.presetId ?? VIEW_DEFAULTS.presetId);
+  const [conditions, setConditions] = useState<ExplorationConditions>(savedView.conditions ?? VIEW_DEFAULTS.conditions);
+  const [show, setShow] = useState(savedView.show ?? VIEW_DEFAULTS.show);
   // 地図をすっきりさせるため、Field Log は最初は出さない（見るタブで選ぶ）
-  const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>('none');
-  const [base, setBase] = useState<Base>('offline');
+  const [fieldLogFilter, setFieldLogFilter] = useState<FieldLogFilter>(savedView.fieldLogFilter ?? VIEW_DEFAULTS.fieldLogFilter);
+  const [base, setBase] = useState<Base>(savedView.base ?? VIEW_DEFAULTS.base);
   const [panelOpen, setPanelOpen] = useState(() => !!openGpxDraftId || initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [watching, setWatching] = useState(false);
-  const [follow, setFollow] = useState(true);
+  // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
+  const [follow, setFollow] = useState(() => !loadCamera(area.areaId, area.bounds));
   const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const watchId = useRef<number | null>(null);
@@ -318,9 +369,9 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   // ---- 環境スポット（S3）: この木（地形・その他）がここにある、という現地の記録と、時間つきの観察 ----
   const spotBbox = useMemo<[number, number, number, number] | null>(() => (manifest ? [manifest.bounds.south, manifest.bounds.west, manifest.bounds.north, manifest.bounds.east] : null), [manifest]);
   const envSpots = useEnvironmentSpots(idToken, spotBbox);
-  const [showSpots, setShowSpots] = useState(true);
-  const [spotKinds, setSpotKinds] = useState<SpotKindChoice[]>(KIND_CHOICES.map((k) => k.id));
-  const [spotSpecies, setSpotSpecies] = useState<string>('all');
+  const [showSpots, setShowSpots] = useState(savedView.showSpots ?? VIEW_DEFAULTS.showSpots);
+  const [spotKinds, setSpotKinds] = useState<SpotKindChoice[]>(savedView.spotKinds ?? VIEW_DEFAULTS.spotKinds);
+  const [spotSpecies, setSpotSpecies] = useState<string>(savedView.spotSpecies ?? VIEW_DEFAULTS.spotSpecies);
   const [recordLoc, setRecordLoc] = useState<RecordLocation | null>(null);
   // 撮った写真から記録（山から戻ってから）: 写真の撮影時の GPS と日時を使う
   const [recordInit, setRecordInit] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
@@ -407,10 +458,10 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   const visibleSpots = useMemo(() => (showSpots ? envSpots.markers.filter((m) => spotKinds.includes(kindOf(m)) && (spotSpecies === 'all' || m.treeSpeciesId === spotSpecies)) : []), [showSpots, envSpots.markers, spotKinds, spotSpecies]);
   const selectedMarker = envSpots.markers.find((m) => m.key === selectedSpot) ?? null;
   const unsentSpots = envSpots.markers.filter((m) => m.origin === 'device' && m.status !== 'registered').length + envSpots.pendingObs.filter((o) => o.stage !== 'registered').length;
-  const [showHistory, setShowHistory] = useState(true);
-  const [coverageWidth, setCoverageWidth] = useState<CoverageWidth>(DEFAULT_COVERAGE_WIDTH);
-  const [purposeFilter, setPurposeFilter] = useState<Purpose | 'all'>('all');
-  const [period, setPeriod] = useState<PeriodFilter>('all');
+  const [showHistory, setShowHistory] = useState(savedView.showHistory ?? VIEW_DEFAULTS.showHistory);
+  const [coverageWidth, setCoverageWidth] = useState<CoverageWidth>(savedView.coverageWidth ?? VIEW_DEFAULTS.coverageWidth);
+  const [purposeFilter, setPurposeFilter] = useState<Purpose | 'all'>(savedView.purposeFilter ?? VIEW_DEFAULTS.purposeFilter);
+  const [period, setPeriod] = useState<PeriodFilter>(savedView.period ?? VIEW_DEFAULTS.period);
   const visibleHistory = useMemo<HistoryEntry[]>(() => history.entries.filter((e) =>
     e.track && (purposeFilter === 'all' || e.purpose === purposeFilter) && inPeriod(e.exploredOn, period, new Date())),
   [history.entries, purposeFilter, period]);
@@ -421,11 +472,11 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   const stats = useMemo(() => (manifest && loaded && cc ? candidateStats(manifest, loaded.grid, cc, coverage) : null), [manifest, loaded, cc, coverage]);
 
   // ---- S4a: 探す対象・対象ごとの探索実績・条件を重ねる（AND）・仮説（端末） ----
-  const [targetId, setTargetId] = useState<string | null>(null);
+  const [targetId, setTargetId] = useState<string | null>(savedView.targetId ?? VIEW_DEFAULTS.targetId);
   const [hyp, setHyp] = useState<HypothesisConditions>(NO_HYPOTHESIS_CONDITIONS);
   const [terrainUse, setTerrainUse] = useState({ candidate: false, dem: false });
-  const [showTargetLayer, setShowTargetLayer] = useState(true);
-  const [showMatch, setShowMatch] = useState(true);
+  const [showTargetLayer, setShowTargetLayer] = useState(savedView.showTargetLayer ?? VIEW_DEFAULTS.showTargetLayer);
+  const [showMatch, setShowMatch] = useState(savedView.showMatch ?? VIEW_DEFAULTS.showMatch);
   const [savedHyps, setSavedHyps] = useState<HypothesisSnapshot[]>([]);
   const [hypNote, setHypNote] = useState<string | null>(null);
   useEffect(() => { listHypotheses().then(setSavedHyps, () => undefined); }, []);
@@ -523,13 +574,17 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     ? [[manifest.bounds.south, manifest.bounds.west], [manifest.bounds.north, manifest.bounds.east]]
     : null), [manifest]);
   // 範囲の外へ遠く離れないようにする（外側はデータなし）
+  // この山域で前回見ていた中心・ズーム（開いた時に 1 回だけ読む）。動かしたら覚える
+  const camera = useMemo(() => (manifest ? loadCamera(manifest.areaId, manifest.bounds) : null), [manifest?.areaId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const areaIdForCamera = manifest?.areaId ?? null;
+  const onMoved = useCallback((c: Camera) => { if (areaIdForCamera) saveCamera(areaIdForCamera, c); }, [areaIdForCamera]);
   const maxBounds = useMemo<L.LatLngBoundsExpression | null>(() => (manifest
     ? [[manifest.bounds.south - 0.05, manifest.bounds.west - 0.07], [manifest.bounds.north + 0.05, manifest.bounds.east + 0.07]]
     : null), [manifest]);
   const roadGroups = useMemo(() => (loaded ? groupByClass(loaded.roads) : null), [loaded]);
 
   // ---- 森林（S1）: レイヤーはすべて独立（ミズナラ 1〜3 位を 1 色に潰さない）。既定はすべて OFF ----
-  const [forestLayers, setForestLayers] = useState<ForestLayers>(NO_FOREST_LAYERS);
+  const [forestLayers, setForestLayers] = useState<ForestLayers>(savedView.forestLayers ?? VIEW_DEFAULTS.forestLayers);
   const forest = loaded?.forest ?? null;
   const communities = useMemo(() => (forest ? mizunaraCommunities(forest) : []), [forest]);
   const forestHa = useMemo(() => {
@@ -576,8 +631,8 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     return () => { revoked = true; };
   }, [forest, forestLayers]);
   // ---- DEM 由来の地形（S2）: 条件どうしは AND、1 つの条件の中は OR。既定は条件なし ----
-  const [terrainCond, setTerrainCond] = useState<TerrainConditions>(NO_TERRAIN_CONDITIONS);
-  const [showStreams, setShowStreams] = useState(false);
+  const [terrainCond, setTerrainCond] = useState<TerrainConditions>(savedView.terrainCond ?? VIEW_DEFAULTS.terrainCond);
+  const [showStreams, setShowStreams] = useState(savedView.showStreams ?? VIEW_DEFAULTS.showStreams);
   const hydro = loaded?.hydro ?? null;
   const [hydroUrl, setHydroUrl] = useState<string | null>(null);
   const [terrainMatchKm2, setTerrainMatchKm2] = useState<number | null>(null);
@@ -664,8 +719,18 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     setForestLayers((l) => ({ ...l, vegMizunara: e.target.checked ? [...l.vegMizunara, name] : l.vegMizunara.filter((n) => n !== name) }));
 
   // ---- 等高線（既定 ON。表示している時だけ読み込む。2026-09-29 より前の版には無い） ----
-  const [showContours, setShowContours] = useState(true); // 2026-10-04 から既定 ON（ユーザー要望）。「最小に」で消せる
+  const [showContours, setShowContours] = useState(savedView.showContours ?? VIEW_DEFAULTS.showContours); // 2026-10-04 から既定 ON（ユーザー要望）。「最小に」で消せる
   const [contours, setContours] = useState<{ version: string; data: Contours } | null>(null);
+
+  // 表示の設定を覚える（変えてから少し待って 1 回だけ書く）
+  useEffect(() => {
+    const t = window.setTimeout(() => saveView({
+      presetId, conditions, show, fieldLogFilter, base, showSpots, spotKinds, spotSpecies, showHistory, coverageWidth, purposeFilter, period,
+      targetId, showTargetLayer, showMatch, forestLayers, terrainCond, showStreams, showContours,
+    }), 500);
+    return () => window.clearTimeout(t);
+  }, [presetId, conditions, show, fieldLogFilter, base, showSpots, spotKinds, spotSpecies, showHistory, coverageWidth, purposeFilter, period,
+    targetId, showTargetLayer, showMatch, forestLayers, terrainCond, showStreams, showContours]);
   const [contourError, setContourError] = useState<string | null>(null);
   const contourBlob = loaded?.pkg.files['contours.json'] ?? null;
   const contourVersion = manifest?.version ?? null;
@@ -1020,7 +1085,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     setPromoteFrom(null);
     setPromoteMsg(null);
     setHypNote(null);
-    setFollow(true);
+    setFollow(!loadCamera(area.areaId, area.bounds)); // 前回の画面を復元した山域では追従しない
   }, [area.areaId]);
 
   const onlineBase = base !== 'offline';
@@ -1041,7 +1106,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         style={headingMode && rotor > 0 ? { width: rotor, height: rotor, left: anchor.x - rotor / 2, top: anchor.y - rotor / 2 } : undefined}
       >
       <MapContainer key={manifest.areaId} className={styles.map} bounds={bounds} maxBounds={maxBounds ?? undefined} maxBoundsViscosity={0.8} minZoom={10} preferCanvas zoomControl attributionControl>
-        <FitOnce bounds={bounds} />
+        <FitOnce bounds={bounds} camera={camera} onMoved={onMoved} />
         {onlineBase && (
           <TileLayer
             key={base}
@@ -1130,7 +1195,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
             <CircleMarker center={[pos.lat, pos.lng]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }} />
           </>
         )}
-        <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} bounds={manifest.bounds} />
+        <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} bounds={manifest.bounds} restored={!!camera} />
         <ClickProbe onClick={onMapClick} disabled={headingMode} />
         <HeadingSync on={headingMode} size={headingMode ? rotor : 0} pos={pos ? [pos.lat, pos.lng] : null} mapRef={mapRef} />
       </MapContainer>
