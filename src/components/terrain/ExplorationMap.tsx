@@ -53,6 +53,7 @@ import { readPhotoMeta } from '../../environmentSpots/photoMeta';
 import { photoFromFile } from '../../environmentSpots/sync';
 import { resolveTerrainSnapshot, type DecodedArea, type TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { loadCamera, loadView, saveCamera, saveView, type Camera } from '../../terrain/viewState';
+import { sunLines } from '../../terrain/sun';
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
 import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import { buildStatusChips, type StatusChipId } from '../../terrain/statusChips';
@@ -1088,6 +1089,20 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     setFollow(!loadCamera(area.areaId, area.bounds)); // 前回の画面を復元した山域では追従しない
   }, [area.areaId]);
 
+  // ---- 日没・薄明（Field Navigation v1 PR4）: 端末の中で計算（ネット不要）。30 秒ごとに残り時間を更新し、日付が変われば計算し直す。
+  // 現在地が取れればそこで、無ければ表示中の山域の中心で（その時は「約」「山域基準」）。安全な時刻の判断はしない
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
+  const sun = useMemo(() => {
+    if (pos) return sunLines(nowMs, pos.lat, pos.lng, 'here');
+    if (!manifest) return null;
+    const b = manifest.bounds;
+    return sunLines(nowMs, (b.south + b.north) / 2, (b.west + b.east) / 2, 'area');
+  }, [nowMs, pos?.lat, pos?.lng, manifest]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
 
@@ -1271,8 +1286,14 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         />
       )}
       {/* 地図の上の状態チップ（いま重ねている表示。タップで該当タブ、× でその表示だけ消す） */}
-      {statusChips.length > 0 && !probe && !recordLoc && !selectedMarker && (
+      {(statusChips.length > 0 || sun) && !probe && !recordLoc && !selectedMarker && (
         <div className={styles.statusChips} aria-label="地図に表示中">
+          {sun && (
+            <span className={styles.sunPill} role="status" aria-label="日没と薄明">
+              <span>{sun.sunset}</span>
+              {sun.dusk && <span className={styles.sunDusk}>{sun.dusk}</span>}
+            </span>
+          )}
           {statusChips.map((c) => (
             <span key={c.id} className={styles.statusChip}>
               <button className={styles.statusChipMain} onClick={() => openChip(c.tab)}>
