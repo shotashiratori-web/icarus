@@ -1,4 +1,4 @@
-import { FIELD_MAP_GEOJSON_URL, FIELD_DELETE_ENTRIES_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
+import { FIELD_MAP_GEOJSON_URL, FIELD_CLASSIFY_PHOTO_URL } from '../config';
 import { buildFieldLogId, type FieldLogEntry, type FieldLogGeoJson } from '../types/zukan';
 import { TokenExpiredError } from './icarusApi';
 
@@ -54,49 +54,13 @@ export async function fetchFieldLogEntries(idToken: string): Promise<FieldLogEnt
   });
 }
 
-export interface FieldDeleteResultItem {
-  eventId: string;
-  status: 'deleted' | 'not_found';
-  row?: number;
-  notionArchived?: boolean;
-  notionError?: string;
-}
-
-export interface FieldDeleteResult {
-  deleted: number;
-  notFound: number;
-  results: FieldDeleteResultItem[];
-}
-
-// Field Log行の削除（管理者限定）。Sheets行の削除と対応するNotionページのアーカイブをまとめて行う
-export async function deleteFieldLogEntries(eventIds: string[], idToken: string): Promise<FieldDeleteResult> {
-  const res = await fetch(FIELD_DELETE_ENTRIES_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({ eventIds }),
-  });
-  let json: { status: string; message?: string } & Partial<FieldDeleteResult>;
-  try {
-    json = await res.json();
-  } catch {
-    throw new Error(`削除に失敗しました (HTTP ${res.status})`);
-  }
-  if (json.status !== 'success') {
-    throw new Error(json.message || '削除に失敗しました');
-  }
-  return { deleted: json.deleted ?? 0, notFound: json.notFound ?? 0, results: json.results ?? [] };
-}
-
 export interface ClassifyFieldPhotoResult {
   isFieldSubject: boolean;
   reason: string;
 }
 
 // 一括写真整理のAI一次判定（管理者限定）。「食材写真かどうか」だけを判定し、種の同定はしない。
-// あくまで参考表示であり、削除は既存の管理者操作（deleteFieldLogEntries）を人が実行する。
+// あくまで参考表示であり、無効化は管理者が人の判断で行う（icarus_field_log_void_design.md）。
 export async function classifyFieldPhoto(photoUrl: string, idToken: string): Promise<ClassifyFieldPhotoResult> {
   let res: Response;
   try {

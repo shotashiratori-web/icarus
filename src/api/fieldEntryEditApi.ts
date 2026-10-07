@@ -102,6 +102,19 @@ export async function voidFieldEntry(
   return { updatedAt: str(json.updatedAt), linkedSpotCount: typeof json.linkedSpotCount === 'number' ? json.linkedSpotCount : 0 };
 }
 
+// 一覧（地図の重複・一括写真整理）から無効化する時: その時点の updatedAt を読み直してから無効化する（楽観ロック）。
+// 既に無効化されていれば FieldEntryVoidedError
+export async function voidFieldEntryLatest(
+  eventId: string,
+  reason: string,
+  idToken: string,
+  requestId: string = crypto.randomUUID(),
+): Promise<{ updatedAt: string; linkedSpotCount: number }> {
+  const d = await fetchFieldEntryDetail(eventId, idToken);
+  if (d.status === 'voided') throw new FieldEntryVoidedError();
+  return voidFieldEntry(eventId, { requestId, expectedUpdatedAt: d.updatedAt, reason }, idToken);
+}
+
 export async function fetchFieldEntryDetail(eventId: string, idToken: string): Promise<FieldEntryDetail> {
   const json = await request(`${FIELD_ENTRIES_URL}/${encodeURIComponent(eventId)}`, idToken, { method: 'GET' });
   return parseFieldEntryDetail((json.entry as Record<string, unknown>) ?? {});
