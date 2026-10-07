@@ -226,9 +226,9 @@ function FitOnce({ bounds, camera, onMoved }: { bounds: L.LatLngBoundsExpression
   }, [map, bounds, camera]);
   useEffect(() => {
     let t = 0;
-    let initial = true; // 開いた時の setView／fitBounds による移動は覚えない（利用者が動かした所だけ）
+    // 開いた時の setView／fitBounds は上の effect で同期的に moveend を出し、この listener を付ける前に終わる。
+    // なので最初の moveend を読み飛ばすと、利用者が最初に動かした分が消える（2026-10-07 本番で確認した不具合）
     const save = () => {
-      if (initial) { initial = false; return; }
       window.clearTimeout(t);
       t = window.setTimeout(() => { const c = map.getCenter(); onMoved({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }); }, 800);
     };
