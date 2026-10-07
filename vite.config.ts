@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 
 import { cloudflare } from "@cloudflare/vite-plugin";
 import type { Plugin } from 'vite'
+import { assetManifestFiles } from './build/assetManifest.js'
 
 // 2026-09-28 Exploration Mode Stage 1: その版のファイル一覧を出す。Service Worker（public/sw.js）が
 // これを見て、遅延読み込みの分も含めて全部を端末に保存し、前の版のファイルを消す（圏外でもどの画面も開ける）
@@ -11,7 +12,7 @@ function assetManifest(): Plugin {
     name: 'icarus-asset-manifest',
     apply: 'build',
     generateBundle(_options, bundle) {
-      const files = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort()
+      const files = assetManifestFiles(Object.keys(bundle)) // PC だけの 3D は外す（build/assetManifest.ts）
       this.emitFile({ type: 'asset', fileName: 'asset-manifest.json', source: JSON.stringify({ files }) })
     },
   }
