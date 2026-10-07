@@ -831,8 +831,11 @@ label.btn {
 }
 
 .view3dMap {
+  /* maplibre-gl.css の .maplibregl-map { position: relative } が後から読まれて absolute を上書きするので、大きさも指定する */
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .view3dBar {

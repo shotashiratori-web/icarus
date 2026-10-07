@@ -1099,7 +1099,15 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     try { webgl2 = !!document.createElement('canvas').getContext('webgl2'); } catch { /* 無ければ出さない */ }
     return canShow3D({ matchMedia: window.matchMedia?.bind(window), webgl2 });
   }, []);
-  const [show3d, setShow3d] = useState(false);
+  // 3D の初めの視点。「3D」を押した時の 2D の中心・ズームを 1 回だけ取る（null = 閉じている）
+  const [view3d, setView3d] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  const open3d = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const c = map.getCenter();
+    setView3d({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
+  };
+  useEffect(() => setView3d(null), [manifest?.areaId]); // 山域が替わったら 3D を閉じる（前の山域の地図は消えている）
 
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
@@ -1322,7 +1330,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
       <div className={styles.toolbar}>
         <button className={styles.tool} onClick={showWholeArea}>範囲全体</button>
         {can3d && !headingMode && (
-          <button className={styles.tool} onClick={() => setShow3d(true)} disabled={!online} title={online ? '山肌を立体で見る（PC だけ）' : '3D は電波が必要です'}>3D</button>
+          <button className={styles.tool} onClick={open3d} disabled={!online} title={online ? '山肌を立体で見る（PC だけ）' : '3D は電波が必要です'}>3D</button>
         )}
         <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={goToCurrent} aria-pressed={watching}>現在地</button>
         {(pos || headingMode) && (
@@ -1343,7 +1351,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         </div>
       )}
       {headingMsg && <div className={styles.toast} role="status" onClick={() => setHeadingMsg(null)}>{headingMsg}</div>}
-      {show3d && manifest && (
+      {view3d && manifest && (
         <Suspense fallback={<div className={styles.view3d}><p className={styles.view3dNote}>3D を読み込み中…</p></div>}>
           <Terrain3DView
             bounds={manifest.bounds}
@@ -1352,12 +1360,8 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
             tracks={showHistory ? visibleHistory.flatMap((e) => e.track ?? []) : []}
             spots={visibleSpots.map((m) => ({ lat: m.lat, lng: m.lng, label: m.remote?.title ?? m.label, color: SPOT_COLORS[kindOf(m)], mizunara: m.treeSpeciesId === 'tree-mizunara' }))}
             points={logPoints.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName || '無題'}（${e.date}）` }))}
-            initial={(() => {
-              const c = mapRef.current?.getCenter();
-              const b = manifest.bounds;
-              return c ? { lat: c.lat, lng: c.lng, zoom: mapRef.current!.getZoom() } : { lat: (b.south + b.north) / 2, lng: (b.west + b.east) / 2, zoom: 13 };
-            })()}
-            onClose={() => setShow3d(false)}
+            initial={view3d}
+            onClose={() => setView3d(null)}
           />
         </Suspense>
       )}
