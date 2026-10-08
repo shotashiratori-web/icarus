@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -53,6 +53,11 @@ import { readPhotoMeta } from '../../environmentSpots/photoMeta';
 import { photoFromFile } from '../../environmentSpots/sync';
 import { resolveTerrainSnapshot, type DecodedArea, type TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { loadCamera, loadView, saveCamera, saveView, type Camera } from '../../terrain/viewState';
+import { canShow3D } from '../../terrain/gsiDem';
+import { inspectSpot, renderDemStreams, renderTwi } from '../../terrain/forestWater';
+
+// 3D（PC だけ・見るだけ）。押した時だけ読み込む（MapLibre を 2D・iPhone の本体に含めない。icarus_3d_terrain_view_technical_audit.md §8）
+const Terrain3DView = lazy(() => import('./Terrain3DView'));
 import { coordText, googleMapsDirectionsUrl } from '../../terrain/externalMaps';
 import { coneLabel, compassUnstable, headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
 import FacingCone, { type ConeElements } from './FacingCone';
@@ -1196,6 +1201,48 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   // 距離・現在地が変わったら向きの行も書き直す（向きのセンサーが止まっていても方角は出す）
   useEffect(() => { applyNav(headingRef.current); }, [nav?.b, !!nav, navTarget, applyNav]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- 3D（PC だけ）: 2D で今表示している層・探索履歴・環境スポット（木など）・Field Log を山肌に重ねて見る ----
+  const can3d = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    let webgl2 = false;
+    try { webgl2 = !!document.createElement('canvas').getContext('webgl2'); } catch { /* 無ければ出さない */ }
+    return canShow3D({ matchMedia: window.matchMedia?.bind(window), webgl2 });
+  }, []);
+  // 3D の初めの視点。「3D」を押した時の 2D の中心・ズームを 1 回だけ取る（null = 閉じている）
+  const [view3d, setView3d] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  const open3d = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const c = map.getCenter();
+    setView3d({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
+  };
+  useEffect(() => setView3d(null), [manifest?.areaId]); // 山域が替わったら 3D を閉じる（前の山域の地図は消えている）
+  // 3D だけの水の画像（3D-2）。開いた時に作り、閉じたら捨てる。沢の目安は 3D では別の色・別の層（地図の河川と分ける）
+  const [water3d, setWater3d] = useState<{ twi: string | null; streams: string | null; match: string | null } | null>(null);
+  const open3dOn = view3d !== null;
+  useEffect(() => {
+    if (!open3dOn || !hydro || !manifest) return;
+    let cancelled = false;
+    const made: string[] = [];
+    const toUrl = (draw: (d: Uint8ClampedArray) => boolean | void) => new Promise<string | null>((resolve) => {
+      const c = document.createElement('canvas');
+      c.width = hydro.width;
+      c.height = hydro.height;
+      const ctx = c.getContext('2d');
+      if (!ctx) return resolve(null);
+      const img = ctx.createImageData(hydro.width, hydro.height);
+      if (draw(img.data) === false) return resolve(null);
+      ctx.putImageData(img, 0, 0);
+      c.toBlob((b) => { if (!b) return resolve(null); const u = URL.createObjectURL(b); made.push(u); resolve(u); });
+    });
+    void Promise.all([
+      toUrl((d) => renderTwi(manifest, hydro, d)),
+      toUrl((d) => renderDemStreams(hydro, d)),
+      anyTerrainCondition(terrainCond) ? toUrl((d) => { renderHydro(manifest, hydro, terrainCond, false, d); }) : Promise.resolve(null),
+    ]).then(([twi, streams, match]) => { if (!cancelled) setWater3d({ twi, streams, match }); });
+    return () => { cancelled = true; made.forEach((u) => URL.revokeObjectURL(u)); setWater3d(null); };
+  }, [open3dOn, hydro, manifest, terrainCond]);
+
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
 
@@ -1424,6 +1471,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       {!probe && !recordLoc && !selectedMarker && (
       <div className={styles.toolbar}>
         <button className={styles.tool} onClick={showWholeArea}>範囲全体</button>
+        {can3d && !headingMode && (
+          <button className={styles.tool} onClick={open3d} disabled={!online} title={online ? '山肌を立体で見る（PC だけ）' : '3D は電波が必要です'}>3D</button>
+        )}
         <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={goToCurrent} aria-pressed={watching}>現在地</button>
         {(pos || headingMode || facingOn) && !headingMode && (
           <button className={`${styles.tool} ${facingOn ? styles.toolOn : ''}`} onClick={onConeButton} aria-pressed={facingOn}>向いている方向</button>
@@ -1463,6 +1513,25 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             <button className={styles.btn} onClick={stopNavigate}>案内を終了</button>
           </div>
         </div>
+      )}
+      {view3d && manifest && (!hydro || water3d) && (
+        <Suspense fallback={<div className={styles.view3d}><p className={styles.view3dNote}>3D を読み込み中…</p></div>}>
+          <Terrain3DView
+            bounds={manifest.bounds}
+            areaName={manifest.name}
+            overlays={[forestUrl, overlayUrl, hydro ? water3d?.match : hydroUrl, targetUrl, matchUrl].filter((u): u is string => !!u)}
+            twiUrl={water3d?.twi ?? null}
+            streamsUrl={water3d?.streams ?? null}
+            tracks={showHistory ? visibleHistory.flatMap((e) => e.track ?? []) : []}
+            spots={visibleSpots.map((m) => ({
+              lat: m.lat, lng: m.lng, label: m.remote?.title ?? m.label, color: SPOT_COLORS[kindOf(m)], mizunara: m.treeSpeciesId === 'tree-mizunara',
+              inspector: inspectSpot({ label: m.remote?.title ?? m.label, envType: m.envType, lifeState: m.lifeState, remote: m.remote, manifest, areaName: (id) => areaList.find((a) => a.areaId === id)?.name ?? id }),
+            }))}
+            points={logPoints.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName || '無題'}（${e.date}）` }))}
+            initial={view3d}
+            onClose={() => setView3d(null)}
+          />
+        </Suspense>
       )}
 
       <section className={`${styles.panel} ${panelOpen ? '' : styles.collapsed}`} aria-label="地形探索の条件と操作">
