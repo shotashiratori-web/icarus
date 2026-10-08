@@ -843,6 +843,14 @@ label.btn {
   stroke-width: 1.5;
 }
 
+/* 向いている方向の矢印（扇形と一緒に回る） */
+.coneWedge .facingArrow {
+  fill: #0b57d0;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
 .coneLabel {
   position: absolute;
   left: 50%;
