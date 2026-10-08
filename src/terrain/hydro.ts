@@ -93,7 +93,8 @@ export function matchTerrain(m: TerrainManifest, h: HydroGrid, i: number, c: Ter
 
 // 地形の条件に合う範囲は点（ドット）で塗る（森林の塗りと重ねても両方読めるように）。沢の線は青
 export const TERRAIN_MATCH_COLOR: [number, number, number, number] = [255, 111, 0, 235];
-export const STREAM_COLOR: [number, number, number, number] = [25, 118, 210, 230];
+// 沢の目安（DEM の推定）は水色。地図の河川（濃紺の実線、River Basemap v1）と色で分ける
+export const STREAM_COLOR: [number, number, number, number] = [79, 195, 247, 235];
 
 export function renderHydro(m: TerrainManifest, h: HydroGrid, c: TerrainConditions, showStreams: boolean, out?: Uint8ClampedArray): { image: Uint8ClampedArray; matchCells: number } {
   const o = out ?? new Uint8ClampedArray(h.width * h.height * 4);

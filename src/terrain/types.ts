@@ -43,7 +43,7 @@ export interface TerrainManifest {
 }
 
 export type BaseFileName = 'terrain.png' | 'access.png' | 'roads.json' | 'hillshade.jpg';
-export type OptionalFileName = 'contours.json' | 'forest.png' | 'forest.json' | 'terrain2.png';
+export type OptionalFileName = 'contours.json' | 'forest.png' | 'forest.json' | 'terrain2.png' | 'rivers.json'; // rivers.json は 2026-10-08 の版から（River Basemap v1）
 export type TerrainFileName = BaseFileName | OptionalFileName;
 
 export interface TerrainAreaSummary {

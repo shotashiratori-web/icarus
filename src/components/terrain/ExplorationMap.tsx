@@ -15,6 +15,7 @@ import {
   type AreaPackage, type SavedArea,
 } from '../../terrain/areaStore';
 import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
+import { decodeRivers, mapRiverDistanceM, RIVER_COLOR, RIVER_EDGE_COLOR, riverDistanceText, type RiverLines } from '../../terrain/rivers';
 import {
   anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
   type ForestData, type ForestLayers, type ForestStand,
@@ -92,6 +93,7 @@ interface Loaded {
   forestError: string | null;
   hydro: HydroGrid | null; // DEM 由来の地形（terrain2.png）。無い版もある
   hydroError: string | null;
+  rivers: RiverLines | null; // 地図の河川（River Basemap v1）。2026-10-08 より前の版には無い
 }
 
 async function decodeHydroPkg(pkg: AreaPackage): Promise<{ hydro: HydroGrid | null; hydroError: string | null }> {
@@ -339,10 +341,11 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
 
   // ---- 読み込み: 保存済みがあればそれを先に使い、電波とログインがあれば新しい版を確かめる ----
   const load = useCallback(async (pkg: AreaPackage) => {
-    const [grid, roads, fr, hy] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg)]);
+    // 地図の河川は読めなくても他は使える（表示しないだけ）
+    const [grid, roads, fr, hy, rivers] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg), decodeRivers(pkg).catch(() => null)]);
     setLoaded((prev) => {
       if (prev) URL.revokeObjectURL(prev.hillshadeUrl);
-      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr, ...hy };
+      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr, ...hy, rivers };
     });
   }, []);
 
@@ -782,6 +785,10 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
     if (loaded.hydro) lines.push(...describeHydro(manifest, loaded.hydro, i));
+    if (loaded.rivers) {
+      const rm = mapRiverDistanceM(loaded.rivers, lat, lng);
+      if (rm !== null) lines.push(`地図の河川から${riverDistanceText(rm)}（地理院 1/25,000。沢の目安とは別）`);
+    }
     // S4a: 重ねた条件のグループごとの ✓／✗（どこで外れたかが分かるように）
     if (compiledHyp && compiledHyp.groups.length) {
       const r = compiledHyp.test(i);
@@ -812,8 +819,8 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     if (otherArea.current?.key !== key) {
       const p = loadSavedArea(areaId).then(async (pkg) => {
         if (!pkg) return null;
-        const [grid, fr, hy] = await Promise.all([decodeGrid(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg)]);
-        return { manifest: pkg.manifest, grid, hydro: hy.hydro, forest: fr.forest };
+        const [grid, fr, hy, rivers] = await Promise.all([decodeGrid(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg), decodeRivers(pkg).catch(() => null)]);
+        return { manifest: pkg.manifest, grid, hydro: hy.hydro, forest: fr.forest, rivers };
       }).catch(() => {
         otherArea.current = null;
         return null;
@@ -824,7 +831,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   }, [areaList]);
   const terrainAt = useCallback((lat: number, lng: number): Promise<TerrainSnapshot> => resolveTerrainSnapshot(lat, lng, {
     areaList,
-    current: loaded ? { manifest: loaded.pkg.manifest, grid: loaded.grid, hydro: loaded.hydro, forest: loaded.forest } : null,
+    current: loaded ? { manifest: loaded.pkg.manifest, grid: loaded.grid, hydro: loaded.hydro, forest: loaded.forest, rivers: loaded.rivers } : null,
     loadSaved: loadSavedDecoded,
   }), [areaList, loaded, loadSavedDecoded]);
 
@@ -1169,6 +1176,13 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         {targetUrl && <ImageOverlay url={targetUrl} bounds={bounds} opacity={1} zIndex={7} />}
         {matchUrl && <ImageOverlay url={matchUrl} bounds={bounds} opacity={1} zIndex={8} />}
         {showContours && contours && contours.version === manifest.version && <ContourLayer contours={contours.data} />}
+        {/* 地図の河川（River Basemap v1）: 常に表示（切り替えなし）。道の下・候補の上。沢の目安（水色の画像）とは別 */}
+        {loaded?.rivers && (
+          <>
+            <Polyline positions={loaded.rivers.e} pathOptions={{ color: RIVER_EDGE_COLOR, weight: 1.2, opacity: 0.9, interactive: false }} />
+            <Polyline positions={loaded.rivers.c} pathOptions={{ color: RIVER_COLOR, weight: 2, opacity: 0.9, interactive: false }} />
+          </>
+        )}
         {roadGroups && show.road && (
           <>
             <Polyline positions={roadGroups.road} pathOptions={{ color: '#495057', weight: 1.6, opacity: 0.9, interactive: false }} />
@@ -1652,6 +1666,9 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
               <input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} />
               <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />地形上の水の集まり道（沢の目安・集水 10ha 以上）
             </label>
+            {loaded?.rivers
+              ? <p className={styles.sub}><span className={styles.line} style={{ background: RIVER_COLOR }} />地図の河川（国土地理院 1/25,000）は常に表示。沢の目安（DEM の推定）とは別の情報です</p>
+              : <p className={styles.sub}>地図の河川は、この山域の地形データを新しい版で保存し直すと表示されます</p>}
             <h3 className={styles.h}>環境スポット</h3>
             <label className={styles.check}><input type="checkbox" checked={showSpots} onChange={(e) => setShowSpots(e.target.checked)} />地図に表示</label>
             <div className={styles.chips}>
