@@ -874,6 +874,97 @@ label.btn {
   color: #9c6500;
 }
 
+/* ここへ行く（Field Navigation v1 PR3）: 画面の上に小さな帯。検索のパネルは閉じる */
+.navBanner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  width: min(420px, calc(100% - 24px));
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  color: #222;
+}
+
+.navHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.navName {
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navDist {
+  font-weight: 800;
+  font-size: 20px;
+  color: #d93025;
+  white-space: nowrap;
+}
+
+.navBig {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  line-height: 1.15;
+}
+
+.navBig .navDist {
+  font-size: 28px;
+}
+
+.navGuide {
+  font-size: 28px;
+  font-weight: 800;
+  color: #0b57d0;
+  white-space: nowrap;
+}
+
+/* 目的地の方向の矢印（赤）。現在地の青点から伸びる。向いている方向の矢印（青）より少し長い */
+.navArrow {
+  width: 140px;
+  height: 140px;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+
+.navArrow path {
+  fill: #d93025;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+/* 二次操作（外部地図など）: 主な操作より控えめに */
+.btnSub {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.navArrive {
+  margin-top: 2px;
+  font-weight: 700;
+  color: #188038;
+}
+
+.navFoot {
+  margin-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 3D（PC だけ・見るだけ）。2D の上に全面で重ねる */
 .view3d {
   position: absolute;

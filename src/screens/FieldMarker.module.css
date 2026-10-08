@@ -86,3 +86,11 @@
   background: var(--color-primary);
   color: var(--color-primary-fg);
 }
+
+/* 🧭 ここへ行く（ボタン。他のアイコンのリンクと同じ見た目） */
+button.popupAct {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+}

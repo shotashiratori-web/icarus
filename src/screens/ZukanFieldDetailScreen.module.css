@@ -576,3 +576,9 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
 }
+
+/* 二次操作（外部地図で開く）: 主な「ここへ行く」より控えめに */
+.linkSub {
+  font-weight: 400;
+  opacity: 0.8;
+}

@@ -682,8 +682,17 @@ export default function ZukanFieldDetailScreen({ go, entry, from }: Props) {
               📍 地図で見る
             </button>
             {hasGps && (
-              <a className={styles.linkBtn} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer">
-                🧭 経路案内
+              <button
+                className={styles.linkBtn}
+                onClick={() => go({ name: 'zukanFieldMap', from: { name: 'zukanFieldDetail', entry, from }, navigateTo: { kind: 'fieldlog', name: entry.foodName || '無題', lat: entry.lat, lng: entry.lng } })}
+              >
+                🧭 ここへ行く
+              </button>
+            )}
+            {hasGps && (
+              // 二次操作: 林道まで車で行く時など（座標が Google に渡る）
+              <a className={`${styles.linkBtn} ${styles.linkSub}`} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer">
+                外部地図で開く
               </a>
             )}
             {canEditBase && (

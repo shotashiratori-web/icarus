@@ -5,10 +5,6 @@ import { fieldMarkerIcon, fieldMarkerIconMatched } from '../utils/fieldMarkerIco
 import type { FieldLogEntry } from '../types/zukan';
 import styles from './FieldMarker.module.css';
 
-function buildDirectionsUrl(lat: number, lng: number): string {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-}
-
 // ポップアップの高さは中身（写真の有無等）で変わり、開く前には実測できないため、
 // フル版ポップアップ・簡易版ポップアップそれぞれのおおよその高さを見込んで確保する
 const ESTIMATED_POPUP_HEIGHT = 340;
@@ -20,6 +16,7 @@ type Props = {
   dimMode: boolean;
   shouldOpen: boolean;
   onOpenDetail: (entry: FieldLogEntry) => void;
+  onNavigate?: (entry: FieldLogEntry) => void; // 🧭 ここへ行く（Icarus の案内）。外部地図（Google マップ）は詳細画面の二次操作
   compact?: boolean; // trueの場合、名前・日付・詳細ボタンのみの簡易ポップアップ（狭いミニマップ向け）
   highlighted?: boolean; // trueの場合、検索に一致したピンとして赤色で強調表示する
   popupTopPadding?: number; // 地図に重ねた検索・絞り込みバーの実測高さ
@@ -27,7 +24,7 @@ type Props = {
 };
 
 export default function FieldMarker({
-  entry, matched, dimMode, shouldOpen, onOpenDetail, compact = false, highlighted = false,
+  entry, matched, dimMode, shouldOpen, onOpenDetail, onNavigate, compact = false, highlighted = false,
   popupTopPadding = 0, popupBottomFraction = 0,
 }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
@@ -112,7 +109,9 @@ export default function FieldMarker({
               {entry.photoUrl && !entry.imageExpired && (
                 <a className={styles.popupAct} href={entry.photoUrl} target="_blank" rel="noreferrer" title="写真を見る">📷</a>
               )}
-              <a className={styles.popupAct} href={buildDirectionsUrl(entry.lat, entry.lng)} target="_blank" rel="noreferrer" title="経路案内">🧭</a>
+              {onNavigate && (
+                <button type="button" className={styles.popupAct} onClick={() => onNavigate(entry)} title="ここへ行く" aria-label="ここへ行く">🧭</button>
+              )}
               {entry.notionUrl && (
                 <a className={styles.popupAct} href={entry.notionUrl} target="_blank" rel="noreferrer" title="Notionで開く">📖</a>
               )}
