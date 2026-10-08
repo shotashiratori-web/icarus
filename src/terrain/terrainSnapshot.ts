@@ -3,6 +3,7 @@ import { cellIndex, cellValues, latLngToGrid } from './engine';
 import type { ForestData } from './forest';
 import { aspectDeg, directionOf, DIRECTION_LABEL, LANDFORMS, twiValue, type HydroGrid } from './hydro';
 import type { TerrainGrid, TerrainManifest } from './types';
+import { mapRiverDistanceM, riverDistanceText, type RiverLines } from './rivers';
 
 // 記録時の地形の値（Spot の terrain_json）。設計: icarus_spot_terrain_snapshot_area_design.md
 // 原則: 「今画面で何を見ているか」と「記録した地点がどこにあるか」を分ける。表示中の山域を地点の判定に使わない。
@@ -17,6 +18,7 @@ export interface DecodedArea {
   grid: TerrainGrid;
   hydro: HydroGrid | null;
   forest: ForestData | null;
+  rivers?: RiverLines | null; // 地図の河川（2026-10-08 の版から）
 }
 
 export type TerrainSnapshot = Record<string, unknown>;
@@ -50,6 +52,8 @@ export function snapshotFrom(d: DecodedArea, lat: number, lng: number): TerrainS
     snap.forestStand = st ? { owner: st.owner, year: st.year, species: st.species.map(([n]) => n), mizunaraRank: st.mizunaraRank } : null;
     snap.vegetation = vg ? { name: vg.name, year: vg.year } : null;
   }
+  // 地図の河川までの距離（River Basemap v1）。沢の目安（streamM、DEM）とは別の値
+  if (d.rivers) snap.riverM = mapRiverDistanceM(d.rivers, lat, lng);
   return snap;
 }
 
@@ -123,6 +127,7 @@ export function terrainRows(t: TerrainSnapshot | null | undefined, areaName: (ar
     { label: '方位', value: t.aspect ? String(t.aspect) : dash },
     { label: '斜面の位置', value: t.landform ? String(t.landform) : dash },
     { label: '沢の目安', value: t.stream ? String(t.stream) : dash },
+    { label: '地図の河川', value: typeof t.riverM === 'number' ? riverDistanceText(t.riverM) : dash },
     { label: '湿潤度 TWI', value: num(t.twi, '') },
     { label: '日射', value: num(t.sun, '') },
     { label: '尾根まで', value: num(t.ridgeM, 'm') },

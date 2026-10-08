@@ -1,5 +1,6 @@
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
+import { nearestLineDistanceM, riverDistanceText, type LatLng } from './rivers';
 
 // 地図の河川（国土地理院 ベクトルタイル experimental_bvmap の river 層、1/25,000）。3D だけで使う（電波が必要）
 // 52xx = 水涯線（幅のある川の岸）、53xx = 河川中心線。設計: icarus_3d2_forest_water_context_audit.md §2-1
@@ -10,24 +11,7 @@ export const RIVER_CENTER_CODES = [5301, 5302, 5321, 5322];
 export const RIVER_EDGE_CODES = [5201, 5202, 5203];
 const Z = 14; // パッケージ作成と同じ（地図の河川線はこのズームで全部入っている）
 
-export type LatLng = [number, number];
-
-// 点から折れ線までの最短距離（m）。短い範囲なので経緯度を局所的に平面とみなす
-export function nearestLineDistanceM(p: LatLng, lines: LatLng[][]): number | null {
-  const kx = Math.cos((p[0] * Math.PI) / 180) * 111320, ky = 110540;
-  let best: number | null = null;
-  for (const ln of lines) {
-    for (let i = 1; i < ln.length; i++) {
-      const ax = (ln[i - 1][1] - p[1]) * kx, ay = (ln[i - 1][0] - p[0]) * ky;
-      const bx = (ln[i][1] - p[1]) * kx, by = (ln[i][0] - p[0]) * ky;
-      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
-      const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2));
-      const d = Math.hypot(ax + t * dx, ay + t * dy);
-      if (best === null || d < best) best = d;
-    }
-  }
-  return best;
-}
+export { nearestLineDistanceM };
 
 export function tileOf(lat: number, lng: number, z = Z): { x: number; y: number } {
   const n = 2 ** z;
@@ -76,6 +60,5 @@ export async function nearestMapRiver(lat: number, lng: number): Promise<{ m: nu
 }
 
 export function mapRiverText(r: { m: number; beyond: boolean }): string {
-  const v = r.m >= 1000 ? `${(r.m / 1000).toFixed(1)}km` : `${Math.round(r.m / 10) * 10}m`;
-  return `地図の河川 約${v}${r.beyond ? ' 以上' : ''}`;
+  return `地図の河川 ${riverDistanceText(r.m)}${r.beyond ? ' 以上' : ''}`;
 }

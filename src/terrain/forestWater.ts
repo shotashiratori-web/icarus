@@ -1,7 +1,7 @@
 import type { EnvironmentSpot, EnvType, LifeState, ObsResult } from '../environmentSpots/types';
 import { LIFE_LABEL, RESULT_LABEL, STAGE_LABEL } from '../environmentSpots/types';
 import type { HydroGrid } from './hydro';
-import { twiValue } from './hydro';
+import { STREAM_COLOR, twiValue } from './hydro';
 import { terrainRows, terrainState, type TerrainSnapshot } from './terrainSnapshot';
 import type { TerrainManifest } from './types';
 
@@ -110,7 +110,7 @@ export function inspectSpot({ label, envType, lifeState, remote: s, manifest, ar
 
 // ---- 3D に重ねる画像（パッケージの値から作る。2D は変えない） ----
 export const TWI_COLOR: [number, number, number] = [0, 137, 123];
-export const DEM_STREAM_COLOR: [number, number, number, number] = [79, 195, 247, 235]; // 3D では地図の河川（濃紺の線）と分ける
+export const DEM_STREAM_COLOR = STREAM_COLOR; // 2D と同じ水色（地図の河川の濃紺と分ける）
 
 // 湿りやすさ: 上位 10% は濃く、上位 33% は薄く
 export function renderTwi(m: TerrainManifest, h: HydroGrid, out: Uint8ClampedArray): boolean {
