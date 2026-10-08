@@ -60,7 +60,8 @@ import { inspectSpot, renderDemStreams, renderTwi } from '../../terrain/forestWa
 // 3D（PC だけ・見るだけ）。押した時だけ読み込む（MapLibre を 2D・iPhone の本体に含めない。icarus_3d_terrain_view_technical_audit.md §8）
 const Terrain3DView = lazy(() => import('./Terrain3DView'));
 import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
-import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
+import { coneLabel, compassUnstable, headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
+import FacingCone, { type ConeElements } from './FacingCone';
 import { buildStatusChips, type StatusChipId } from '../../terrain/statusChips';
 import { ALL_SPECIES, FIELD_LOG_FILTER_LABEL, FIELD_LOG_FILTERS, filterBySpecies, matchesFieldLogFilter, speciesKey, speciesOptions, type FieldLogFilter } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
@@ -185,12 +186,12 @@ const FOREST_ATTRIBUTION_DOYURIN = '国土数値情報（国有林野）・北�
 
 
 function ClickProbe({ onClick, disabled }: { onClick: (lat: number, lng: number) => void; disabled?: boolean }) {
-  // 進行方向モードでは Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
+  // 「向いている方向を上に」（地図の回転）では Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
   useMapEvents({ click: (e) => { if (!disabled) onClick(e.latlng.lat, e.latlng.lng); } });
   return null;
 }
 
-// 進行方向モード: 地図の大きさが変わったら知らせ、ドラッグを止めてズームは中心（=自分）を軸にする
+// 「向いている方向を上に」（地図の回転）: 地図の大きさが変わったら知らせ、ドラッグを止めてズームは中心（=自分）を軸にする
 function HeadingSync({ on, size, pos, mapRef }: { on: boolean; size: number; pos: [number, number] | null; mapRef: React.MutableRefObject<L.Map | null> }) {
   const map = useMap();
   useEffect(() => { mapRef.current = map; }, [map, mapRef]);
@@ -932,9 +933,13 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     setShowTargetLayer(false);
   };
 
-  // ---- 進行方向モード: iPhone を向けている方向を画面の上にする（地図を回す）。方向センサーは押した時だけ許可を求める ----
+  // ---- 向いている方向（iPhone の方位センサー。Field Navigation v1 PR2）。方向センサーは押した時だけ許可を求める ----
+  // 通常: 北が上の地図のまま、現在地に扇形（facingOn）。必要な時だけ「向いている方向を上に」で地図そのものを回す（headingMode）。
+  // 扇形・地図の回転・案内中などは前回の画面の復元に入れない（開き直したら OFF）
   const [headingMode, setHeadingMode] = useState(false);
-  const [headingAsk, setHeadingAsk] = useState(false);
+  const [facingOn, setFacingOn] = useState(false);
+  const [sensorAsk, setSensorAsk] = useState<'cone' | 'rotate' | null>(null);
+  const coneRef = useRef<ConeElements | null>(null);
   const [headingMsg, setHeadingMsg] = useState<string | null>(null);
   const sensorOk = useRef(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -959,25 +964,47 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     if (northRef.current) northRef.current.style.transform = `rotate(${-deg}deg)`;
     if (labelRef.current) labelRef.current.textContent = headingLabel(deg);
   }, []);
+  // 扇形: 回すのは扇形だけ（「NW 310°」の文字は回さない）。方向が不安定な時は薄くして知らせる
+  const coneUnstable = useRef(false);
+  const applyCone = useCallback((deg: number) => {
+    const c = coneRef.current;
+    if (!c) return;
+    c.wedge.style.transform = `rotate(${deg}deg)`;
+    c.label.textContent = coneLabel(deg, coneUnstable.current);
+    c.root.classList.toggle(styles.coneUnstable, coneUnstable.current);
+  }, []);
+  const onConeReady = useCallback((el: ConeElements | null) => {
+    coneRef.current = el;
+    if (el && headingRef.current !== null) applyCone(headingRef.current);
+  }, [applyCone]);
+  const sensorActive = headingMode || facingOn;
   useEffect(() => {
-    if (!headingMode) return;
+    if (!sensorActive) return;
     let raf = 0;
     let got = false;
     const onOri = (e: DeviceOrientationEvent) => {
       const angle = (typeof screen !== 'undefined' && screen.orientation ? screen.orientation.angle : 0) || 0;
-      const h = headingFromEvent(e as DeviceOrientationEvent & { webkitCompassHeading?: number }, angle);
+      const ev = e as DeviceOrientationEvent & { webkitCompassHeading?: number; webkitCompassAccuracy?: number };
+      const h = headingFromEvent(ev, angle);
       if (h === null) return;
       got = true;
+      coneUnstable.current = compassUnstable(ev.webkitCompassAccuracy);
       headingRef.current = smoothAngle(headingRef.current, h);
-      if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (headingRef.current !== null) applyHeading(headingRef.current); });
+      if (!raf) raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (headingRef.current === null) return;
+        if (headingMode) applyHeading(headingRef.current);
+        else applyCone(headingRef.current);
+      });
     };
     const absEvent = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
     window.addEventListener(absEvent, onOri as EventListener);
     const t = setTimeout(() => { if (!got) setHeadingMsg('方向センサーの値が届きません。iPhone を水平に持って 8 の字に動かすと直ることがあります'); }, 4000);
     return () => { window.removeEventListener(absEvent, onOri as EventListener); cancelAnimationFrame(raf); clearTimeout(t); };
-  }, [headingMode, applyHeading]);
-  const enterHeading = async () => {
-    setHeadingAsk(false);
+  }, [sensorActive, headingMode, applyHeading, applyCone]);
+  // 方向センサーを使い始める（扇形 or 地図を回す）。iOS は押した操作の中で許可を求める
+  const startSensor = async (kind: 'cone' | 'rotate') => {
+    setSensorAsk(null);
     const r = await requestOrientationPermission(); // 押した操作の中で呼ぶ（iOS の条件）
     if (r !== 'granted') {
       setHeadingMsg(r === 'unsupported' ? 'この端末では方向センサーを使えません' : '方向センサーが許可されていません（アプリを開き直すと、もう一度たずねます）');
@@ -985,8 +1012,12 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     }
     sensorOk.current = true;
     setHeadingMsg(null);
-    headingRef.current = null;
     if (watchId.current === null) { startGps(); rememberGps(true); }
+    if (kind === 'cone') {
+      setFacingOn(true);
+      return;
+    }
+    headingRef.current = null;
     setFollow(true);
     setHeadingMode(true);
   };
@@ -998,8 +1029,13 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   };
   const onHeadingButton = () => {
     if (headingMode) exitHeading();
-    else if (sensorOk.current) void enterHeading();
-    else setHeadingAsk(true);
+    else if (sensorOk.current) void startSensor('rotate');
+    else setSensorAsk('rotate');
+  };
+  const onConeButton = () => {
+    if (facingOn) setFacingOn(false);
+    else if (sensorOk.current) void startSensor('cone');
+    else setSensorAsk('cone');
   };
   // 回っている地図のタップ: 画面の点 → 回転を戻す → 地図の座標
   const onRootClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1259,6 +1295,8 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} bounds={manifest.bounds} restored={!!camera} />
         <ClickProbe onClick={onMapClick} disabled={headingMode} />
         <HeadingSync on={headingMode} size={headingMode ? rotor : 0} pos={pos ? [pos.lat, pos.lng] : null} mapRef={mapRef} />
+        {/* 扇形は北が上の時だけ（地図を回している間は常に上を向くだけなので出さない） */}
+        {facingOn && !headingMode && pos && <FacingCone pos={[pos.lat, pos.lng]} onReady={onConeReady} />}
       </MapContainer>
       </div>
       {headingMode && (
@@ -1364,7 +1402,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
           )}
         </div>
       )}
-      {/* 地図の上のボタンは 1 か所にまとめる（範囲全体・現在地・進行方向・記録） */}
+      {/* 地図の上のボタンは 1 か所にまとめる（範囲全体・現在地・向いている方向・向いている方向を上に・記録） */}
       {/* 地点情報・記録・詳細を開いている間はボタンを隠す（スマホで地点情報の見出しと閉じるボタンに重なるため） */}
       {!probe && !recordLoc && !selectedMarker && (
       <div className={styles.toolbar}>
@@ -1373,20 +1411,23 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
           <button className={styles.tool} onClick={open3d} disabled={!online} title={online ? '山肌を立体で見る（PC だけ）' : '3D は電波が必要です'}>3D</button>
         )}
         <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={goToCurrent} aria-pressed={watching}>現在地</button>
+        {(pos || headingMode || facingOn) && !headingMode && (
+          <button className={`${styles.tool} ${facingOn ? styles.toolOn : ''}`} onClick={onConeButton} aria-pressed={facingOn}>向いている方向</button>
+        )}
         {(pos || headingMode) && (
-          <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '進行方向'}</button>
+          <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '向いている方向を上に'}</button>
         )}
         {pos && !headingMode && !recordLoc && (
           <button className={styles.tool} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
         )}
       </div>
       )}
-      {headingAsk && (
-        <div className={styles.headingAsk} role="dialog" aria-label="進行方向モード">
-          <p>地図を向いている方向に合わせるため、方向センサーを使用します。</p>
+      {sensorAsk && (
+        <div className={styles.headingAsk} role="dialog" aria-label="方向センサーの使用">
+          <p>{sensorAsk === 'cone' ? '自分が向いている方向を地図に表示するため、方向センサーを使用します。' : '地図を向いている方向に合わせるため、方向センサーを使用します。'}</p>
           <div className={styles.row}>
-            <button className={`${styles.btn} ${styles.primary}`} onClick={() => void enterHeading()}>使う</button>
-            <button className={styles.btn} onClick={() => setHeadingAsk(false)}>やめる</button>
+            <button className={`${styles.btn} ${styles.primary}`} onClick={() => void startSensor(sensorAsk)}>使う</button>
+            <button className={styles.btn} onClick={() => setSensorAsk(null)}>やめる</button>
           </div>
         </div>
       )}
