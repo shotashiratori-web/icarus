@@ -23,6 +23,7 @@ import styles from './ZukanFieldMapScreen.module.css';
 
 // 地形探索（Exploration Mode Stage 1）。通常モードの bundle を増やさないよう遅延読み込み
 const ExplorationMap = lazy(() => import('../components/terrain/ExplorationMap'));
+import type { NavTarget } from '../terrain/navigate';
 
 type MapMode = 'normal' | 'terrain';
 const MAP_MODE_KEY = 'icarus:field-map-mode';
@@ -35,11 +36,12 @@ function loadMapMode(): MapMode {
 }
 
 // openGpxDraftId: 「🌲 環境を記録」から YAMAP の GPX を選んだ時。地形探索の「記録」タブでその記録の入力を開く
-type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string };
+// navigateTo: 図鑑の詳細などの「ここへ行く」。地形探索を開いて、その地点への案内を始める（Field Navigation v1 本番前調整 ④）
+type Props = { go: (s: Screen) => void; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string; navigateTo?: NavTarget };
 
 const VOID_REASON_DUPLICATE = '重複';
 
-export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraftId }: Props) {
+export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraftId, navigateTo }: Props) {
   const {
     entries: allEntries, loadState, errorMessage, ensureLoaded, reload,
     dataAsOf, refreshState, silentRefresh, refreshIfStale, recheckImageExpiry,
@@ -52,7 +54,9 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
   const { idToken, staffMe, handleTokenExpired } = useAuth();
   const isAdmin = staffMe?.role === 'admin';
 
-  const [mapMode, setMapMode] = useState<MapMode>(() => (focusEntry ? 'normal' : openGpxDraftId ? 'terrain' : loadMapMode()));
+  const [mapMode, setMapMode] = useState<MapMode>(() => (navigateTo ? 'terrain' : focusEntry ? 'normal' : openGpxDraftId ? 'terrain' : loadMapMode()));
+  // 案内の目的地（地図の点の「ここへ行く」でも入る）。地形探索を開いた時に案内を始める
+  const [navTo, setNavTo] = useState<NavTarget | undefined>(navigateTo);
   const switchMapMode = (m: MapMode) => {
     setMapMode(m);
     try { localStorage.setItem(MAP_MODE_KEY, m); } catch { /* 保存できなくても切り替えは有効 */ }
@@ -242,7 +246,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
       <main className={styles.main}>
         {mapMode === 'terrain' && (
           <Suspense fallback={<div className={styles.loading}>地形探索を読み込み中…</div>}>
-            <ExplorationMap entries={allEntries} openGpxDraftId={openGpxDraftId} />
+            <ExplorationMap entries={allEntries} openGpxDraftId={openGpxDraftId} navigateTo={navTo} />
           </Suspense>
         )}
 
@@ -319,6 +323,7 @@ export default function ZukanFieldMapScreen({ go, focusEntry, from, openGpxDraft
                     dimMode={dimMode}
                     shouldOpen={focusEntry?.id === entry.id}
                     onOpenDetail={openDetail}
+                    onNavigate={(e) => { setNavTo({ kind: 'fieldlog', name: e.foodName || '無題', lat: e.lat, lng: e.lng }); switchMapMode('terrain'); }}
                     highlighted={!!searchQuery.trim() && matchedIds.has(entry.id)}
                     popupTopPadding={controlsHeight}
                     popupBottomFraction={SNAP_FRACTION[sheetSnap]}

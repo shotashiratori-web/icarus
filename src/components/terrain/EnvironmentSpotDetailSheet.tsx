@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { editErrorMessage, fetchEnvironmentSpot, patchEnvironmentSpot, patchSpotObservation, SpotNetworkError } from '../../api/environmentSpotsApi';
 import EnvironmentSpotEditForm from './EnvironmentSpotEditForm';
 import SpotTerrainSection from './SpotTerrainSection';
+import { googleMapsDirectionsUrl } from '../../terrain/externalMaps';
 import type { TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { addPhotosToSpot } from '../../environmentSpots/sync';
 import {
@@ -184,6 +185,8 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
       {onNavigate && (
         <div className={styles.actions}>
           <button className={`${styles.btn} ${styles.primary}`} onClick={onNavigate}>ここへ行く</button>
+          {/* 二次操作: 林道まで車で行く時など（座標が Google に渡る） */}
+          <a className={styles.chip} href={googleMapsDirectionsUrl(marker.lat, marker.lng)} target="_blank" rel="noreferrer">外部地図で開く</a>
         </div>
       )}
       {marker.origin === 'device' && (

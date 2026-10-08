@@ -912,11 +912,43 @@ label.btn {
   white-space: nowrap;
 }
 
+.navBig {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  line-height: 1.15;
+}
+
+.navBig .navDist {
+  font-size: 28px;
+}
+
 .navGuide {
-  margin-top: 2px;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   color: #0b57d0;
+  white-space: nowrap;
+}
+
+/* 目的地の方向の矢印（赤）。現在地の青点から伸びる。向いている方向の矢印（青）より少し長い */
+.navArrow {
+  width: 140px;
+  height: 140px;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+
+.navArrow path {
+  fill: #d93025;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+/* 二次操作（外部地図など）: 主な操作より控えめに */
+.btnSub {
+  font-size: 12px;
+  opacity: 0.85;
 }
 
 .navArrive {
