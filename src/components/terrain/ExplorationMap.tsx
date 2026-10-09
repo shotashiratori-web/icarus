@@ -54,6 +54,7 @@ import { readPhotoMeta } from '../../environmentSpots/photoMeta';
 import { photoFromFile } from '../../environmentSpots/sync';
 import { resolveTerrainSnapshot, type DecodedArea, type TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { loadCamera, loadView, saveCamera, saveView, type Camera } from '../../terrain/viewState';
+import { sunLines } from '../../terrain/sun';
 import { canShow3D } from '../../terrain/gsiDem';
 import { inspectSpot, renderDemStreams, renderTwi } from '../../terrain/forestWater';
 
@@ -1203,6 +1204,20 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     setFollow(!loadCamera(area.areaId, area.bounds)); // 前回の画面を復元した山域では追従しない
   }, [area.areaId]);
 
+  // ---- 日没・薄明（Field Navigation v1 PR4）: 端末の中で計算（ネット不要）。30 秒ごとに残り時間を更新し、日付が変われば計算し直す。
+  // GPS を使っている間に現在地が取れればそこで、無ければ表示中の山域の中心で（その時は「約」「山域基準」）。安全な時刻の判断はしない。
+  // GPS を止めたら、最後の現在地を「現在地基準」として使い続けず山域基準へ戻す（青い点の扱いは今までどおり）
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
+  const sun = useMemo(() => {
+    if (pos && watching) return sunLines(nowMs, pos.lat, pos.lng, 'here');
+    if (!manifest) return null;
+    const b = manifest.bounds;
+    return sunLines(nowMs, (b.south + b.north) / 2, (b.west + b.east) / 2, 'area');
+  }, [nowMs, pos?.lat, pos?.lng, watching, manifest]); // eslint-disable-line react-hooks/exhaustive-deps
   const nav = navTarget && pos ? { d: distanceM(pos, navTarget), b: bearingDeg(pos, navTarget) } : null;
   navBearing.current = nav ? nav.b : null;
   // 距離・現在地が変わったら向きの行も書き直す（向きのセンサーが止まっていても方角は出す）
@@ -1448,8 +1463,14 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         />
       )}
       {/* 地図の上の状態チップ（いま重ねている表示。タップで該当タブ、× でその表示だけ消す） */}
-      {statusChips.length > 0 && !probe && !recordLoc && !selectedMarker && (
+      {(statusChips.length > 0 || sun) && !probe && !recordLoc && !selectedMarker && (
         <div className={styles.statusChips} aria-label="地図に表示中">
+          {sun && (
+            <span className={styles.sunPill} role="status" aria-label="日没と薄明">
+              <span>{sun.sunset}</span>
+              {sun.dusk && <span className={styles.sunDusk}>{sun.dusk}</span>}
+            </span>
+          )}
           {statusChips.map((c) => (
             <span key={c.id} className={styles.statusChip}>
               <button className={styles.statusChipMain} onClick={() => openChip(c.tab)}>
