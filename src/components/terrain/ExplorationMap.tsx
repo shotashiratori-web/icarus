@@ -31,7 +31,7 @@ import {
 import { forestSpeciesOptions, genusOnlyNotice, standRanks } from '../../terrain/forestSpecies';
 import { CUSTOM_PRESET_ID, SPECIES_PRESETS, matchPreset, presetById } from '../../terrain/presets';
 import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
-import { describeRoad, groupByClass, indexRoads, nearestRoad, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
+import { describeRoad, groupByClass, indexRoads, nearestRoad, ROAD_ORANGE, ROAD_STYLE, roadCasing, roadLine, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
 import type { RoadLine, TerrainAreaSummary, TerrainGrid } from '../../terrain/types';
 import { isEnvironmentEntry, type FieldLogEntry } from '../../types/zukan';
 import { addEnvironmentSpotPhotos, editErrorMessage } from '../../api/environmentSpotsApi';
@@ -1306,15 +1306,18 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             <Polyline positions={loaded.rivers.c} pathOptions={{ color: RIVER_COLOR, weight: 2, opacity: 0.9, interactive: false }} />
           </>
         )}
+        {/* 道: 白い縁取りを先に全部描き、その上に色の線（縁取りが隣の道の色を消さないように） */}
         {roadGroups && show.road && (
           <>
-            <Polyline positions={roadGroups.road} pathOptions={{ color: '#495057', weight: 1.6, opacity: 0.9, interactive: false }} />
-            <Polyline positions={roadGroups.narrow} pathOptions={{ color: '#8d5524', weight: 1.3, opacity: 0.85, dashArray: '6 3', interactive: false }} />
-            <Polyline positions={roadGroups.forest} pathOptions={{ color: '#8d5524', weight: 2.6, opacity: 0.95, interactive: false }} />
+            {VEHICLE_CLASSES.map((c) => <Polyline key={`${c}-casing`} positions={roadGroups[c]} pathOptions={roadCasing(c)} />)}
+            {VEHICLE_CLASSES.map((c) => <Polyline key={c} positions={roadGroups[c]} pathOptions={roadLine(c)} />)}
           </>
         )}
         {roadGroups && show.trail && (
-          <Polyline positions={roadGroups.trail} pathOptions={{ color: '#212529', weight: 2, opacity: 0.9, dashArray: '2 5', lineCap: 'round', interactive: false }} />
+          <>
+            <Polyline positions={roadGroups.trail} pathOptions={roadCasing('trail')} />
+            <Polyline positions={roadGroups.trail} pathOptions={roadLine('trail')} />
+          </>
         )}
         {showHistory && visibleHistory.map((e) => (
           <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9, interactive: false }} />
@@ -1787,7 +1790,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             <h3 className={styles.h}>地図に重ねる</h3>
             <label className={styles.check}><input type="checkbox" checked={show.ridge} onChange={(e) => setShow((s) => ({ ...s, ridge: e.target.checked }))} /><span className={styles.swatch} style={{ background: '#7b2cbf' }} />尾根線</label>
             <label className={styles.check}><input type="checkbox" checked={show.sun} onChange={(e) => setShow((s) => ({ ...s, sun: e.target.checked }))} /><span className={styles.swatch} style={{ background: 'linear-gradient(90deg,#1c3f95,#f6d743)' }} />日射量</label>
-            <label className={styles.check}><input type="checkbox" checked={show.road} onChange={(e) => setShow((s) => ({ ...s, road: e.target.checked }))} /><span className={styles.line} style={{ background: '#495057' }} />道路・林道<span className={styles.sub}>（茶=林道・幅3m未満）</span></label>
+            <label className={styles.check}><input type="checkbox" checked={show.road} onChange={(e) => setShow((s) => ({ ...s, road: e.target.checked }))} /><span className={styles.line} style={{ background: ROAD_STYLE.road.color, boxShadow: '0 0 0 1px #fff' }} />道路・林道<span className={styles.sub}>（<span style={{ color: ROAD_ORANGE }}>オレンジ</span>=林道、破線=幅3m未満）</span></label>
             <label className={styles.check}><input type="checkbox" checked={show.trail} onChange={(e) => setShow((s) => ({ ...s, trail: e.target.checked }))} /><span className={styles.line} style={{ background: 'repeating-linear-gradient(90deg,#212529 0 3px,transparent 3px 6px)' }} />登山道・徒歩道</label>
             <label className={styles.check}>
               <input type="checkbox" checked={showContours} disabled={!contourBlob} onChange={(e) => setShowContours(e.target.checked)} />

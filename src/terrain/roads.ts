@@ -12,6 +12,26 @@ export const ROAD_CLASS_LABEL: Record<RoadClass, string> = {
   trail: '登山道・徒歩道',
 };
 
+// 道の見た目。森林・陰影・等高線（茶）のどれを重ねても形が残るよう、全種類に白い縁取りを付け、等高線にない色にする
+// （一般道 = 濃灰、林道・作業道 = オレンジ実線、幅3m未満 = オレンジ破線、登山道 = 黒点線）。縁取りは破線にせず、道の形を保つ
+export const ROAD_CASING = { color: '#fff', extra: 3, opacity: 0.9 } as const;
+export const ROAD_ORANGE = '#f08c00';
+export const ROAD_STYLE: Record<RoadClass, { color: string; weight: number; dashArray?: string; lineCap?: 'round' }> = {
+  road: { color: '#343a40', weight: 2.2 },
+  narrow: { color: ROAD_ORANGE, weight: 2, dashArray: '6 4' },
+  forest: { color: ROAD_ORANGE, weight: 3 },
+  trail: { color: '#212529', weight: 2, dashArray: '2 5', lineCap: 'round' },
+};
+
+// Leaflet の Polyline に渡す形（縁取り・色の線）
+export function roadCasing(c: RoadClass) {
+  return { color: ROAD_CASING.color, weight: ROAD_STYLE[c].weight + ROAD_CASING.extra, opacity: ROAD_CASING.opacity, lineCap: 'round' as const, interactive: false };
+}
+export function roadLine(c: RoadClass) {
+  const st = ROAD_STYLE[c];
+  return { color: st.color, weight: st.weight, opacity: 1, ...(st.dashArray ? { dashArray: st.dashArray } : {}), ...(st.lineCap ? { lineCap: st.lineCap } : {}), interactive: false };
+}
+
 // 種類ごとに線をまとめる（Leaflet には種類ごとに 1 本の MultiPolyline として渡す。3 万本を個別に持たない）
 export function groupByClass(lines: RoadLine[]): Record<RoadClass, [number, number][][]> {
   const g: Record<RoadClass, [number, number][][]> = { road: [], narrow: [], forest: [], trail: [] };
