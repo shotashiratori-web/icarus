@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -15,6 +15,7 @@ import {
   type AreaPackage, type SavedArea,
 } from '../../terrain/areaStore';
 import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
+import { decodeRivers, mapRiverDistanceM, RIVER_COLOR, RIVER_EDGE_COLOR, riverDistanceText, type RiverLines } from '../../terrain/rivers';
 import {
   anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
   type ForestData, type ForestLayers, type ForestStand,
@@ -54,8 +55,15 @@ import { photoFromFile } from '../../environmentSpots/sync';
 import { resolveTerrainSnapshot, type DecodedArea, type TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { loadCamera, loadView, saveCamera, saveView, type Camera } from '../../terrain/viewState';
 import { sunLines } from '../../terrain/sun';
-import { coordText, googleMapsDirectionsUrl, googleMapsPinUrl } from '../../terrain/externalMaps';
-import { headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
+import { canShow3D } from '../../terrain/gsiDem';
+import { inspectSpot, renderDemStreams, renderTwi } from '../../terrain/forestWater';
+
+// 3D（PC だけ・見るだけ）。押した時だけ読み込む（MapLibre を 2D・iPhone の本体に含めない。icarus_3d_terrain_view_technical_audit.md §8）
+const Terrain3DView = lazy(() => import('./Terrain3DView'));
+import { coordText, googleMapsDirectionsUrl } from '../../terrain/externalMaps';
+import { coneLabel, compassUnstable, headingFromEvent, headingLabel, requestOrientationPermission, rotorSize, screenToMapPoint, smoothAngle } from '../../terrain/heading';
+import FacingCone, { type ConeElements } from './FacingCone';
+import { absoluteGuide, bearingDeg, distanceM, formatDistance, nearArrival, relativeDeg, relativeGuide, type NavTarget } from '../../terrain/navigate';
 import { buildStatusChips, type StatusChipId } from '../../terrain/statusChips';
 import { ALL_SPECIES, FIELD_LOG_FILTER_LABEL, FIELD_LOG_FILTERS, filterBySpecies, matchesFieldLogFilter, speciesKey, speciesOptions, type FieldLogFilter } from '../../terrain/speciesFilter';
 import { CONTOUR_STYLE, decodeContours, LABEL_MIN_ZOOM, MAJOR_MIN_ZOOM, MINOR_MIN_ZOOM, type Contours } from '../../terrain/contours';
@@ -74,7 +82,25 @@ import styles from './ExplorationMap.module.css';
 // 地形探索（Exploration Mode Stage 1）。Field Map のモードの 1 つ。地図は通常モードと別に持つ（通常モードを変えない）。
 // 「地形探索条件に合う場所」を出すだけで、発生を予測しない。設計: icarus_mushroom_sansai_exploration_mode_final_design.md
 
-type Props = { entries: FieldLogEntry[]; openGpxDraftId?: string };
+// 目的地の方向の矢印（Field Navigation v1 本番前調整 ②）。方角 1° ごとにアイコンを覚えておく
+export const NAV_ARROW = 'M-2.5 -10 L2.5 -10 L2.5 -50 L8 -50 L0 -66 L-8 -50 L-2.5 -50 Z';
+const navArrowIcons = new Map<number, L.DivIcon>();
+function navArrowIcon(bearing: number): L.DivIcon {
+  const b = ((Math.round(bearing) % 360) + 360) % 360;
+  let icon = navArrowIcons.get(b);
+  if (!icon) {
+    icon = L.divIcon({
+      className: '',
+      html: `<div class="${styles.navArrow}" aria-label="目的地の方向" style="transform: rotate(${b}deg)"><svg viewBox="-70 -70 140 140" width="140" height="140" aria-hidden="true"><path d="${NAV_ARROW}"/></svg></div>`,
+      iconSize: [140, 140], iconAnchor: [70, 70],
+    });
+    navArrowIcons.set(b, icon);
+  }
+  return icon;
+}
+
+// navigateTo: 地形探索の外（図鑑・フィールドマップ）の「ここへ行く」。開いたらその地点への案内を始める
+type Props = { entries: FieldLogEntry[]; openGpxDraftId?: string; navigateTo?: NavTarget };
 
 type Base = 'offline' | 'hillshademap' | 'std' | 'seamlessphoto';
 
@@ -88,6 +114,7 @@ interface Loaded {
   forestError: string | null;
   hydro: HydroGrid | null; // DEM 由来の地形（terrain2.png）。無い版もある
   hydroError: string | null;
+  rivers: RiverLines | null; // 地図の河川（River Basemap v1）。2026-10-08 より前の版には無い
 }
 
 async function decodeHydroPkg(pkg: AreaPackage): Promise<{ hydro: HydroGrid | null; hydroError: string | null }> {
@@ -179,12 +206,12 @@ const FOREST_ATTRIBUTION_DOYURIN = '国土数値情報（国有林野）・北�
 
 
 function ClickProbe({ onClick, disabled }: { onClick: (lat: number, lng: number) => void; disabled?: boolean }) {
-  // 進行方向モードでは Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
+  // 「向いている方向を上に」（地図の回転）では Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
   useMapEvents({ click: (e) => { if (!disabled) onClick(e.latlng.lat, e.latlng.lng); } });
   return null;
 }
 
-// 進行方向モード: 地図の大きさが変わったら知らせ、ドラッグを止めてズームは中心（=自分）を軸にする
+// 「向いている方向を上に」（地図の回転）: 地図の大きさが変わったら知らせ、ドラッグを止めてズームは中心（=自分）を軸にする
 function HeadingSync({ on, size, pos, mapRef }: { on: boolean; size: number; pos: [number, number] | null; mapRef: React.MutableRefObject<L.Map | null> }) {
   const map = useMap();
   useEffect(() => { mapRef.current = map; }, [map, mapRef]);
@@ -305,7 +332,7 @@ const VIEW_ALLOWED = {
   spotKinds: KIND_CHOICES.map((k) => k.id),
 };
 
-function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving: savingAny, areaError, onShowOverview, onSaveArea, onDeleteArea, onOpenArea, onPos }: AreaMapProps) {
+function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, online, saving: savingAny, areaError, onShowOverview, onSaveArea, onDeleteArea, onOpenArea, onPos }: AreaMapProps) {
   const { idToken, staffMe } = useAuth();
 
   const [status, setStatus] = useState<string>('地形データを読み込み中…');
@@ -335,10 +362,11 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
 
   // ---- 読み込み: 保存済みがあればそれを先に使い、電波とログインがあれば新しい版を確かめる ----
   const load = useCallback(async (pkg: AreaPackage) => {
-    const [grid, roads, fr, hy] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg)]);
+    // 地図の河川は読めなくても他は使える（表示しないだけ）
+    const [grid, roads, fr, hy, rivers] = await Promise.all([decodeGrid(pkg), decodeRoads(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg), decodeRivers(pkg).catch(() => null)]);
     setLoaded((prev) => {
       if (prev) URL.revokeObjectURL(prev.hillshadeUrl);
-      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr, ...hy };
+      return { pkg, grid, roads, roadIndex: indexRoads(roads), hillshadeUrl: URL.createObjectURL(pkg.files['hillshade.jpg']), ...fr, ...hy, rivers };
     });
   }, []);
 
@@ -778,6 +806,10 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     lines.push(`最寄りの車道・林道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, VEHICLE_CLASSES))}`);
     lines.push(`最寄りの登山道・徒歩道 ${describeRoad(nearestRoad(loaded.roadIndex, lat, lng, TRAIL_CLASSES))}`);
     if (loaded.hydro) lines.push(...describeHydro(manifest, loaded.hydro, i));
+    if (loaded.rivers) {
+      const rm = mapRiverDistanceM(loaded.rivers, lat, lng);
+      if (rm !== null) lines.push(`地図の河川から${riverDistanceText(rm)}（地理院 1/25,000。沢の目安とは別）`);
+    }
     // S4a: 重ねた条件のグループごとの ✓／✗（どこで外れたかが分かるように）
     if (compiledHyp && compiledHyp.groups.length) {
       const r = compiledHyp.test(i);
@@ -808,8 +840,8 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     if (otherArea.current?.key !== key) {
       const p = loadSavedArea(areaId).then(async (pkg) => {
         if (!pkg) return null;
-        const [grid, fr, hy] = await Promise.all([decodeGrid(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg)]);
-        return { manifest: pkg.manifest, grid, hydro: hy.hydro, forest: fr.forest };
+        const [grid, fr, hy, rivers] = await Promise.all([decodeGrid(pkg), decodeForestPkg(pkg), decodeHydroPkg(pkg), decodeRivers(pkg).catch(() => null)]);
+        return { manifest: pkg.manifest, grid, hydro: hy.hydro, forest: fr.forest, rivers };
       }).catch(() => {
         otherArea.current = null;
         return null;
@@ -820,7 +852,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   }, [areaList]);
   const terrainAt = useCallback((lat: number, lng: number): Promise<TerrainSnapshot> => resolveTerrainSnapshot(lat, lng, {
     areaList,
-    current: loaded ? { manifest: loaded.pkg.manifest, grid: loaded.grid, hydro: loaded.hydro, forest: loaded.forest } : null,
+    current: loaded ? { manifest: loaded.pkg.manifest, grid: loaded.grid, hydro: loaded.hydro, forest: loaded.forest, rivers: loaded.rivers } : null,
     loadSaved: loadSavedDecoded,
   }), [areaList, loaded, loadSavedDecoded]);
 
@@ -921,9 +953,13 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     setShowTargetLayer(false);
   };
 
-  // ---- 進行方向モード: iPhone を向けている方向を画面の上にする（地図を回す）。方向センサーは押した時だけ許可を求める ----
+  // ---- 向いている方向（iPhone の方位センサー。Field Navigation v1 PR2）。方向センサーは押した時だけ許可を求める ----
+  // 通常: 北が上の地図のまま、現在地に扇形（facingOn）。必要な時だけ「向いている方向を上に」で地図そのものを回す（headingMode）。
+  // 扇形・地図の回転・案内中などは前回の画面の復元に入れない（開き直したら OFF）
   const [headingMode, setHeadingMode] = useState(false);
-  const [headingAsk, setHeadingAsk] = useState(false);
+  const [facingOn, setFacingOn] = useState(false);
+  const [sensorAsk, setSensorAsk] = useState<'cone' | 'rotate' | null>(null);
+  const coneRef = useRef<ConeElements | null>(null);
   const [headingMsg, setHeadingMsg] = useState<string | null>(null);
   const sensorOk = useRef(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -948,25 +984,72 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     if (northRef.current) northRef.current.style.transform = `rotate(${-deg}deg)`;
     if (labelRef.current) labelRef.current.textContent = headingLabel(deg);
   }, []);
+  // 扇形: 回すのは扇形だけ（「NW 310°」の文字は回さない）。方向が不安定な時は薄くして知らせる
+  const coneUnstable = useRef(false);
+  const applyCone = useCallback((deg: number) => {
+    const c = coneRef.current;
+    if (!c) return;
+    c.wedge.style.transform = `rotate(${deg}deg)`;
+    c.label.textContent = coneLabel(deg, coneUnstable.current);
+    c.root.classList.toggle(styles.coneUnstable, coneUnstable.current);
+  }, []);
+  const onConeReady = useCallback((el: ConeElements | null) => {
+    coneRef.current = el;
+    if (el && headingRef.current !== null) applyCone(headingRef.current);
+  }, [applyCone]);
+
+  // ---- ここへ行く（Field Navigation v1 PR3）: 直線距離・方角・向いている方向から見た向き。道は探さない。オフラインで動く ----
+  // 目的地は保存しない（前回の画面の復元に入れない）。「案内を終了」で終わる（着いても自動では終わらない）
+  const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
+  const navBearing = useRef<number | null>(null);
+  const navGuideRef = useRef<HTMLSpanElement | null>(null);
+  const navSubRef = useRef<HTMLSpanElement | null>(null);
+  // 上部の大きな案内（地図を見る余裕がない時はここを見る）。向いている方向が分かれば「↖ 左前方」＋距離、
+  // 分からなければ「↖ NW 305°」＋距離。下の小さな行に方位、または「向きなし」の説明
+  const applyNav = useCallback((heading: number | null) => {
+    const el = navGuideRef.current;
+    const sub = navSubRef.current;
+    const b = navBearing.current;
+    if (!el || b === null) return;
+    const abs = absoluteGuide(b);
+    if (heading === null) {
+      el.textContent = `${abs.arrow} ${abs.text}`;
+      if (sub) sub.textContent = '向きなし（「向いている方向」をオンにすると左右で案内）';
+      return;
+    }
+    const rel = relativeGuide(relativeDeg(b, heading));
+    el.textContent = `${rel.arrow} ${rel.text}`;
+    if (sub) sub.textContent = abs.text;
+  }, []);
+  const sensorActive = headingMode || facingOn;
   useEffect(() => {
-    if (!headingMode) return;
+    if (!sensorActive) return;
     let raf = 0;
     let got = false;
     const onOri = (e: DeviceOrientationEvent) => {
       const angle = (typeof screen !== 'undefined' && screen.orientation ? screen.orientation.angle : 0) || 0;
-      const h = headingFromEvent(e as DeviceOrientationEvent & { webkitCompassHeading?: number }, angle);
+      const ev = e as DeviceOrientationEvent & { webkitCompassHeading?: number; webkitCompassAccuracy?: number };
+      const h = headingFromEvent(ev, angle);
       if (h === null) return;
       got = true;
+      coneUnstable.current = compassUnstable(ev.webkitCompassAccuracy);
       headingRef.current = smoothAngle(headingRef.current, h);
-      if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (headingRef.current !== null) applyHeading(headingRef.current); });
+      if (!raf) raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (headingRef.current === null) return;
+        if (headingMode) applyHeading(headingRef.current);
+        else applyCone(headingRef.current);
+        applyNav(headingRef.current);
+      });
     };
     const absEvent = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
     window.addEventListener(absEvent, onOri as EventListener);
     const t = setTimeout(() => { if (!got) setHeadingMsg('方向センサーの値が届きません。iPhone を水平に持って 8 の字に動かすと直ることがあります'); }, 4000);
     return () => { window.removeEventListener(absEvent, onOri as EventListener); cancelAnimationFrame(raf); clearTimeout(t); };
-  }, [headingMode, applyHeading]);
-  const enterHeading = async () => {
-    setHeadingAsk(false);
+  }, [sensorActive, headingMode, applyHeading, applyCone, applyNav]);
+  // 方向センサーを使い始める（扇形 or 地図を回す）。iOS は押した操作の中で許可を求める
+  const startSensor = async (kind: 'cone' | 'rotate') => {
+    setSensorAsk(null);
     const r = await requestOrientationPermission(); // 押した操作の中で呼ぶ（iOS の条件）
     if (r !== 'granted') {
       setHeadingMsg(r === 'unsupported' ? 'この端末では方向センサーを使えません' : '方向センサーが許可されていません（アプリを開き直すと、もう一度たずねます）');
@@ -974,8 +1057,12 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     }
     sensorOk.current = true;
     setHeadingMsg(null);
-    headingRef.current = null;
     if (watchId.current === null) { startGps(); rememberGps(true); }
+    if (kind === 'cone') {
+      setFacingOn(true);
+      return;
+    }
+    headingRef.current = null;
     setFollow(true);
     setHeadingMode(true);
   };
@@ -987,8 +1074,36 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
   };
   const onHeadingButton = () => {
     if (headingMode) exitHeading();
-    else if (sensorOk.current) void enterHeading();
-    else setHeadingAsk(true);
+    else if (sensorOk.current) void startSensor('rotate');
+    else setSensorAsk('rotate');
+  };
+  const onConeButton = () => {
+    if (facingOn) setFacingOn(false);
+    else if (sensorOk.current) void startSensor('cone');
+    else setSensorAsk('cone');
+  };
+  // 案内を始める: パネル・地点情報・詳細を閉じ、現在地と向いている方向（扇形）を使い始める（押した操作の中で許可を求める）
+  const startNavigate = (t: NavTarget) => {
+    setNavTarget(t);
+    setPanelOpen(false);
+    setProbe(null);
+    setSelectedSpot(null);
+    if (watchId.current === null) { startGps(); rememberGps(true); }
+    if (!facingOn && !headingMode) {
+      if (sensorOk.current) void startSensor('cone');
+      else setSensorAsk('cone');
+    }
+  };
+  // 地形探索の外から「ここへ行く」で開いた時: 地形を読み終えたら 1 回だけ案内を始める
+  const navFromOutside = useRef<NavTarget | null>(null);
+  useEffect(() => {
+    if (!navigateTo || !loaded || navFromOutside.current === navigateTo) return;
+    navFromOutside.current = navigateTo;
+    startNavigate(navigateTo);
+  }, [navigateTo, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stopNavigate = () => {
+    setNavTarget(null);
+    navBearing.current = null;
   };
   // 回っている地図のタップ: 画面の点 → 回転を戻す → 地図の座標
   const onRootClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1103,6 +1218,52 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
     const b = manifest.bounds;
     return sunLines(nowMs, (b.south + b.north) / 2, (b.west + b.east) / 2, 'area');
   }, [nowMs, pos?.lat, pos?.lng, watching, manifest]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nav = navTarget && pos ? { d: distanceM(pos, navTarget), b: bearingDeg(pos, navTarget) } : null;
+  navBearing.current = nav ? nav.b : null;
+  // 距離・現在地が変わったら向きの行も書き直す（向きのセンサーが止まっていても方角は出す）
+  useEffect(() => { applyNav(headingRef.current); }, [nav?.b, !!nav, navTarget, applyNav]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- 3D（PC だけ）: 2D で今表示している層・探索履歴・環境スポット（木など）・Field Log を山肌に重ねて見る ----
+  const can3d = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    let webgl2 = false;
+    try { webgl2 = !!document.createElement('canvas').getContext('webgl2'); } catch { /* 無ければ出さない */ }
+    return canShow3D({ matchMedia: window.matchMedia?.bind(window), webgl2 });
+  }, []);
+  // 3D の初めの視点。「3D」を押した時の 2D の中心・ズームを 1 回だけ取る（null = 閉じている）
+  const [view3d, setView3d] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  const open3d = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const c = map.getCenter();
+    setView3d({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
+  };
+  useEffect(() => setView3d(null), [manifest?.areaId]); // 山域が替わったら 3D を閉じる（前の山域の地図は消えている）
+  // 3D だけの水の画像（3D-2）。開いた時に作り、閉じたら捨てる。沢の目安は 3D では別の色・別の層（地図の河川と分ける）
+  const [water3d, setWater3d] = useState<{ twi: string | null; streams: string | null; match: string | null } | null>(null);
+  const open3dOn = view3d !== null;
+  useEffect(() => {
+    if (!open3dOn || !hydro || !manifest) return;
+    let cancelled = false;
+    const made: string[] = [];
+    const toUrl = (draw: (d: Uint8ClampedArray) => boolean | void) => new Promise<string | null>((resolve) => {
+      const c = document.createElement('canvas');
+      c.width = hydro.width;
+      c.height = hydro.height;
+      const ctx = c.getContext('2d');
+      if (!ctx) return resolve(null);
+      const img = ctx.createImageData(hydro.width, hydro.height);
+      if (draw(img.data) === false) return resolve(null);
+      ctx.putImageData(img, 0, 0);
+      c.toBlob((b) => { if (!b) return resolve(null); const u = URL.createObjectURL(b); made.push(u); resolve(u); });
+    });
+    void Promise.all([
+      toUrl((d) => renderTwi(manifest, hydro, d)),
+      toUrl((d) => renderDemStreams(hydro, d)),
+      anyTerrainCondition(terrainCond) ? toUrl((d) => { renderHydro(manifest, hydro, terrainCond, false, d); }) : Promise.resolve(null),
+    ]).then(([twi, streams, match]) => { if (!cancelled) setWater3d({ twi, streams, match }); });
+    return () => { cancelled = true; made.forEach((u) => URL.revokeObjectURL(u)); setWater3d(null); };
+  }, [open3dOn, hydro, manifest, terrainCond]);
 
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
@@ -1138,6 +1299,13 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         {targetUrl && <ImageOverlay url={targetUrl} bounds={bounds} opacity={1} zIndex={7} />}
         {matchUrl && <ImageOverlay url={matchUrl} bounds={bounds} opacity={1} zIndex={8} />}
         {showContours && contours && contours.version === manifest.version && <ContourLayer contours={contours.data} />}
+        {/* 地図の河川（River Basemap v1）: 常に表示（切り替えなし）。道の下・候補の上。沢の目安（水色の画像）とは別 */}
+        {loaded?.rivers && (
+          <>
+            <Polyline positions={loaded.rivers.e} pathOptions={{ color: RIVER_EDGE_COLOR, weight: 1.2, opacity: 0.9, interactive: false }} />
+            <Polyline positions={loaded.rivers.c} pathOptions={{ color: RIVER_COLOR, weight: 2, opacity: 0.9, interactive: false }} />
+          </>
+        )}
         {roadGroups && show.road && (
           <>
             <Polyline positions={roadGroups.road} pathOptions={{ color: '#495057', weight: 1.6, opacity: 0.9, interactive: false }} />
@@ -1196,12 +1364,12 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
             position={[e.lat, e.lng]}
             icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<span class="${styles.envCapture}" aria-label="環境の記録（未整理）">🌲</span>` })}
           >
-            <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<br />「記録」タブの「Spot にする候補」から整理できます</Popup>
+            <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<br />「記録」タブの「Spot にする候補」から整理できます<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '名前なし', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </Marker>
         ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
-            <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}{e.subCategory && e.subCategory !== '不明' ? `・${e.largeCategory}/${e.subCategory}` : ''}</Popup>
+            <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}{e.subCategory && e.subCategory !== '不明' ? `・${e.largeCategory}/${e.subCategory}` : ''}<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '無題', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </CircleMarker>
         ))}
         {probe && <CircleMarker center={[probe.lat, probe.lng]} radius={5} pathOptions={{ color: '#8d5524', weight: 2, fill: false }} />}
@@ -1214,6 +1382,13 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
         <Follow pos={pos ? [pos.lat, pos.lng] : null} follow={follow} bounds={manifest.bounds} restored={!!camera} />
         <ClickProbe onClick={onMapClick} disabled={headingMode} />
         <HeadingSync on={headingMode} size={headingMode ? rotor : 0} pos={pos ? [pos.lat, pos.lng] : null} mapRef={mapRef} />
+        {/* 扇形は北が上の時だけ（地図を回している間は常に上を向くだけなので出さない） */}
+        {facingOn && !headingMode && pos && <FacingCone pos={[pos.lat, pos.lng]} onReady={onConeReady} />}
+        {/* 案内: 現在地 → 目的地の直線（点線）と目的地の印 */}
+        {navTarget && pos && <Polyline positions={[[pos.lat, pos.lng], [navTarget.lat, navTarget.lng]]} pathOptions={{ color: '#d93025', weight: 3, dashArray: '6 8', interactive: false }} />}
+        {/* 目的地の方向の矢印: 北が上の地図で目的地の方角に固定（自分が回っても目的地を指したまま）。青い矢印を重ねるように体を向ける */}
+        {navTarget && pos && nav && <Marker position={[pos.lat, pos.lng]} icon={navArrowIcon(nav.b)} interactive={false} keyboard={false} zIndexOffset={-500} />}
+        {navTarget && <CircleMarker center={[navTarget.lat, navTarget.lng]} radius={11} pathOptions={{ color: '#d93025', weight: 3, fill: false, interactive: false }} />}
       </MapContainer>
       </div>
       {headingMode && (
@@ -1284,6 +1459,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
           onChanged={() => void envSpots.refreshRemote()}
           terrainAt={terrainAt}
           areaName={(id) => areaList.find((a) => a.areaId === id)?.name ?? id}
+          onNavigate={() => startNavigate({ kind: 'spot', name: selectedMarker.remote?.title ?? selectedMarker.label, lat: selectedMarker.lat, lng: selectedMarker.lng })}
         />
       )}
       {/* 地図の上の状態チップ（いま重ねている表示。タップで該当タブ、× でその表示だけ消す） */}
@@ -1325,30 +1501,73 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
           )}
         </div>
       )}
-      {/* 地図の上のボタンは 1 か所にまとめる（範囲全体・現在地・進行方向・記録） */}
+      {/* 地図の上のボタンは 1 か所にまとめる（範囲全体・現在地・向いている方向・向いている方向を上に・記録） */}
       {/* 地点情報・記録・詳細を開いている間はボタンを隠す（スマホで地点情報の見出しと閉じるボタンに重なるため） */}
       {!probe && !recordLoc && !selectedMarker && (
       <div className={styles.toolbar}>
         <button className={styles.tool} onClick={showWholeArea}>範囲全体</button>
+        {can3d && !headingMode && (
+          <button className={styles.tool} onClick={open3d} disabled={!online} title={online ? '山肌を立体で見る（PC だけ）' : '3D は電波が必要です'}>3D</button>
+        )}
         <button className={`${styles.tool} ${watching ? styles.toolOn : ''}`} onClick={goToCurrent} aria-pressed={watching}>現在地</button>
+        {(pos || headingMode || facingOn) && !headingMode && (
+          <button className={`${styles.tool} ${facingOn ? styles.toolOn : ''}`} onClick={onConeButton} aria-pressed={facingOn}>向いている方向</button>
+        )}
         {(pos || headingMode) && (
-          <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '進行方向'}</button>
+          <button className={`${styles.tool} ${headingMode ? styles.toolOn : ''}`} onClick={onHeadingButton} aria-pressed={headingMode}>{headingMode ? '北を上に' : '向いている方向を上に'}</button>
         )}
         {pos && !headingMode && !recordLoc && (
           <button className={styles.tool} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
         )}
       </div>
       )}
-      {headingAsk && (
-        <div className={styles.headingAsk} role="dialog" aria-label="進行方向モード">
-          <p>地図を向いている方向に合わせるため、方向センサーを使用します。</p>
+      {sensorAsk && (
+        <div className={styles.headingAsk} role="dialog" aria-label="方向センサーの使用">
+          <p>{sensorAsk === 'cone' ? '自分が向いている方向を地図に表示するため、方向センサーを使用します。' : '地図を向いている方向に合わせるため、方向センサーを使用します。'}</p>
           <div className={styles.row}>
-            <button className={`${styles.btn} ${styles.primary}`} onClick={() => void enterHeading()}>使う</button>
-            <button className={styles.btn} onClick={() => setHeadingAsk(false)}>やめる</button>
+            <button className={`${styles.btn} ${styles.primary}`} onClick={() => void startSensor(sensorAsk)}>使う</button>
+            <button className={styles.btn} onClick={() => setSensorAsk(null)}>やめる</button>
           </div>
         </div>
       )}
       {headingMsg && <div className={styles.toast} role="status" onClick={() => setHeadingMsg(null)}>{headingMsg}</div>}
+      {navTarget && (
+        <div className={styles.navBanner} role="status" aria-label="ここへ行く">
+          {/* 案内の文字は applyNav だけが書く（向きのセンサーの値ごとに更新。React では描かない） */}
+          <div className={styles.navBig}>
+            {nav && <span ref={navGuideRef} className={styles.navGuide} />}
+            <span className={styles.navDist}>{nav ? formatDistance(nav.d) : '現在地を取得中…'}</span>
+          </div>
+          <div className={styles.navHead}>
+            <span className={styles.navName}>◎ {navTarget.name}</span>
+            {nav && <span ref={navSubRef} className={styles.sub} />}
+          </div>
+          {nav && pos && nearArrival(nav.d, pos.accuracy) && <div className={styles.navArrive}>到着の近くです（GPS ±{Math.round(pos.accuracy)}m）</div>}
+          <div className={styles.navFoot}>
+            <span className={styles.sub}>{pos ? `GPS ±${Math.round(pos.accuracy)}m・` : ''}直線の向きです。谷や崖は等高線で確かめてください</span>
+            <button className={styles.btn} onClick={stopNavigate}>案内を終了</button>
+          </div>
+        </div>
+      )}
+      {view3d && manifest && (!hydro || water3d) && (
+        <Suspense fallback={<div className={styles.view3d}><p className={styles.view3dNote}>3D を読み込み中…</p></div>}>
+          <Terrain3DView
+            bounds={manifest.bounds}
+            areaName={manifest.name}
+            overlays={[forestUrl, overlayUrl, hydro ? water3d?.match : hydroUrl, targetUrl, matchUrl].filter((u): u is string => !!u)}
+            twiUrl={water3d?.twi ?? null}
+            streamsUrl={water3d?.streams ?? null}
+            tracks={showHistory ? visibleHistory.flatMap((e) => e.track ?? []) : []}
+            spots={visibleSpots.map((m) => ({
+              lat: m.lat, lng: m.lng, label: m.remote?.title ?? m.label, color: SPOT_COLORS[kindOf(m)], mizunara: m.treeSpeciesId === 'tree-mizunara',
+              inspector: inspectSpot({ label: m.remote?.title ?? m.label, envType: m.envType, lifeState: m.lifeState, remote: m.remote, manifest, areaName: (id) => areaList.find((a) => a.areaId === id)?.name ?? id }),
+            }))}
+            points={logPoints.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName || '無題'}（${e.date}）` }))}
+            initial={view3d}
+            onClose={() => setView3d(null)}
+          />
+        </Suspense>
+      )}
 
       <section className={`${styles.panel} ${panelOpen ? '' : styles.collapsed}`} aria-label="地形探索の条件と操作">
         <div className={styles.panelHead}>
@@ -1605,6 +1824,9 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
               <input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} />
               <span className={styles.line} style={{ background: `rgb(${STREAM_COLOR.slice(0, 3).join(',')})` }} />地形上の水の集まり道（沢の目安・集水 10ha 以上）
             </label>
+            {loaded?.rivers
+              ? <p className={styles.sub}><span className={styles.line} style={{ background: RIVER_COLOR }} />地図の河川（国土地理院 1/25,000）は常に表示。沢の目安（DEM の推定）とは別の情報です</p>
+              : <p className={styles.sub}>地図の河川は、この山域の地形データを新しい版で保存し直すと表示されます</p>}
             <h3 className={styles.h}>環境スポット</h3>
             <label className={styles.check}><input type="checkbox" checked={showSpots} onChange={(e) => setShowSpots(e.target.checked)} />地図に表示</label>
             <div className={styles.chips}>
@@ -1754,9 +1976,10 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
           )}
           {probe.lines.map((l) => <div key={l}>{l}</div>)}
           <div className={styles.probeActions}>
+            <button className={`${styles.btn} ${styles.primary}`} onClick={() => startNavigate({ kind: 'point', name: '地図の地点', lat: probe.lat, lng: probe.lng })}>ここへ行く</button>
             <button className={styles.btn} onClick={() => { setRecordLoc({ lat: probe.lat, lng: probe.lng, source: 'map', accuracyM: null }); setProbe(null); }}>ここを記録</button>
-            <a className={styles.btn} href={googleMapsPinUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">Googleマップで開く</a>
-            <a className={styles.btn} href={googleMapsDirectionsUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">ここへの経路</a>
+            {/* 主な案内は Icarus の「ここへ行く」。Google マップは林道まで車で行く時などの二次操作 */}
+            <a className={`${styles.btn} ${styles.btnSub}`} href={googleMapsDirectionsUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">外部地図で開く</a>
             <button
               className={styles.btn}
               onClick={() => {
@@ -1767,7 +1990,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
               {copied === coordText(probe.lat, probe.lng) ? 'コピーしました' : '座標をコピー'}
             </button>
           </div>
-          <div className={styles.sub}>{coordText(probe.lat, probe.lng)}（Googleマップを開いた時だけ座標が Google に渡ります）</div>
+          <div className={styles.sub}>{coordText(probe.lat, probe.lng)}（外部地図で開いた時だけ座標が Google に渡ります）</div>
         </div>
       )}
       {envSpots.notice && (
@@ -1785,7 +2008,7 @@ function AreaMap({ entries, openGpxDraftId, pkg, area, areaList, online, saving:
 // 開いた時: 保存済みの山域（前回 → 現在地 → 北から）を直接開く。保存済みが無ければ全体図から選ぶ（未保存の山域を黙って取りに行かない）。
 // 保存・削除は山域ごと。全体図は地図の上に重ねて出し、地図（条件・現在地の取得）はそのまま残す。
 // 設計: icarus/docs/architecture/icarus_terrain_multi_area_ui_design.md
-export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
+export default function ExplorationMap({ entries, openGpxDraftId, navigateTo }: Props) {
   const { idToken, handleTokenExpired } = useAuth();
   const [savedList, setSavedList] = useState<SavedArea[] | null>(null);
   const [remote, setRemote] = useState<TerrainAreaSummary[] | null>(null);
@@ -1840,7 +2063,9 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
       const list = await refreshSaved();
       if (cancelled) return;
       const offlineList = mergeAreas(null, list, cachedAreasIndex());
-      const choice = chooseInitialArea(offlineList, lastArea(), null);
+      // 「ここへ行く」で開いた時は、目的地を含む保存済みの山域を先に（無ければ今までどおり）
+      const navArea = navigateTo ? offlineList.find((a) => a.saved && insideBounds(a.bounds, navigateTo.lat, navigateTo.lng)) : undefined;
+      const choice = navArea ? { kind: 'open' as const, areaId: navArea.areaId } : chooseInitialArea(offlineList, lastArea(), null);
       if (choice.kind === 'open') await openArea(choice.areaId, 'saved', offlineList);
       else {
         setOverview(true);
@@ -1904,7 +2129,7 @@ export default function ExplorationMap({ entries, openGpxDraftId }: Props) {
     <div className={styles.root}>
       {current && area && (
         <AreaMap
-          entries={entries} openGpxDraftId={openGpxDraftId}
+          entries={entries} openGpxDraftId={openGpxDraftId} navigateTo={navigateTo}
           pkg={current.pkg} area={area} areaList={areaList} online={online} saving={saving} areaError={error}
           onShowOverview={() => setOverview(true)}
           onSaveArea={(id) => void saveArea(id)}

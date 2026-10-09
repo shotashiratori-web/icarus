@@ -1,4 +1,7 @@
-// 進行方向モード（地形探索）: iPhone を向けている方向を画面の上にして地図を回す。
+// 向いている方向（地形探索）: iPhone の方位センサーで「向いている方向」を読む。使い道は 2 つ（Field Navigation v1 PR2）:
+//   - 扇形: 北が上の地図のまま、現在地に視野 約 60° の扇形（通常）
+//   - 向いている方向を上に: 地図そのものを回す（必要な時だけ）
+// 「進んでいる方向」（GPS の移動）とは別物。以下、地図の回転について:
 // 地図の回転は CSS（回転プラグイン leaflet-rotate は GPL-3.0 のため使わない）。回転中は地図を自分の位置に固定し、
 // ドラッグは使わず、ズームは画面中央（=自分）を軸にする。タップ位置は回転を戻してから地図の座標にする
 
@@ -26,6 +29,13 @@ export function smoothAngle(prev: number | null, next: number, k = 0.25): number
   return (((prev + d * k) % 360) + 360) % 360;
 }
 
+// iOS の webkitCompassAccuracy（度。-1 = 使えない）。大きい・負なら「方向が不安定」（金属・車内・ケースの磁石など）
+export const COMPASS_UNSTABLE_DEG = 25;
+export function compassUnstable(accuracy: number | null | undefined): boolean {
+  if (typeof accuracy !== 'number' || Number.isNaN(accuracy)) return false; // 値の無い端末は判定しない
+  return accuracy < 0 || accuracy > COMPASS_UNSTABLE_DEG;
+}
+
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 
@@ -33,6 +43,12 @@ const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 export function headingLabel(deg: number): string {
   const k = Math.round(deg / 45) % 8;
   return `${ARROWS[k]} ${DIRS[k]} ${Math.round(deg) % 360}°`;
+}
+
+// 扇形の横に出す短い表示。例: 'NW 310°'、不安定なら 'NW 310°（不安定）'
+export function coneLabel(deg: number, unstable = false): string {
+  const k = Math.round(deg / 45) % 8;
+  return `${DIRS[k]} ${Math.round(deg) % 360}°${unstable ? '（不安定）' : ''}`;
 }
 
 // 画面の点 → 回転前の地図コンテナの点。地図（一辺 size の正方形）は中心が画面の anchor に来るよう置き、rotate(-heading) している

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { editErrorMessage, fetchEnvironmentSpot, patchEnvironmentSpot, patchSpotObservation, SpotNetworkError } from '../../api/environmentSpotsApi';
 import EnvironmentSpotEditForm from './EnvironmentSpotEditForm';
 import SpotTerrainSection from './SpotTerrainSection';
+import { googleMapsDirectionsUrl } from '../../terrain/externalMaps';
 import type { TerrainSnapshot } from '../../terrain/terrainSnapshot';
 import { addPhotosToSpot } from '../../environmentSpots/sync';
 import {
@@ -26,6 +27,7 @@ type Props = {
   onChanged?: () => void; // 訂正・無効化の後に一覧を取り直す
   terrainAt?: (lat: number, lng: number) => Promise<TerrainSnapshot>; // 「地形情報を再取得」（地点を含む山域で計算）
   areaName?: (areaId: string) => string;
+  onNavigate?: () => void; // 「ここへ行く」（Field Navigation v1 PR3）
 };
 
 interface Row { key: string; observedAt: string; target: string; result: ObsResult; foundStage: FoundStage | null; memo: string; by: string; device: boolean; updatedAt: string | null }
@@ -52,7 +54,7 @@ const fmt = (iso: string) => {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs, idToken, onObserve, onClose, isAdmin = false, here = null, onChanged, terrainAt, areaName = (id) => id }: Props) {
+export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs, idToken, onObserve, onClose, isAdmin = false, here = null, onChanged, terrainAt, areaName = (id) => id, onNavigate }: Props) {
   const [detail, setDetail] = useState<EnvironmentSpot | null>(marker.remote);
   const [adding, setAdding] = useState(false);
   const [targetId, setTargetId] = useState<string | null>(null);
@@ -180,6 +182,13 @@ export default function EnvironmentSpotDetailSheet({ marker, species, pendingObs
         <h3>{s?.title ?? `${marker.label}${marker.envType === 'tree' ? `（${LIFE_LABEL[lifeState]}）` : ''}`}</h3>
         <button className={styles.btn} onClick={onClose}>閉じる</button>
       </div>
+      {onNavigate && (
+        <div className={styles.actions}>
+          <button className={`${styles.btn} ${styles.primary}`} onClick={onNavigate}>ここへ行く</button>
+          {/* 二次操作: 林道まで車で行く時など（座標が Google に渡る） */}
+          <a className={styles.chip} href={googleMapsDirectionsUrl(marker.lat, marker.lng)} target="_blank" rel="noreferrer">外部地図で開く</a>
+        </div>
+      )}
       {marker.origin === 'device' && (
         <p className={marker.status === 'failed' ? styles.warn : styles.sub}>
           {marker.status === 'failed' ? `送信できませんでした: ${marker.error}` : 'この端末に保存済み・未送信（電波のある所で自動的に送信します）'}

@@ -44,6 +44,7 @@ import type { WineEntity } from './types/wineEntity';
 import type { SpotEntity } from './types/spotEntity';
 import type { FoodEntity } from './types/knowledge';
 import UpdateBanner from './components/UpdateBanner';
+import type { NavTarget } from './terrain/navigate';
 
 // admin 専用の取り込み画面は遅延読み込み（通常画面の初回 JS を増やさない）
 const ExplorationImportScreen = lazy(() => import('./screens/ExplorationImportScreen'));
@@ -74,7 +75,7 @@ export type Screen =
   | { name: 'zukan' }
   // マップは唯一の入口（フィールドマップ統一方針）。詳細画面同様「どこから来たか」を持つハブ構造で、
   // 将来AI検索・関連料理等の入口が増えても、戻る操作は常にfromへ辿るだけで済む（Phase7A-2/7C要件）。
-  | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string }
+  | { name: 'zukanFieldMap'; focusEntry?: FieldLogEntry; from: Screen; openGpxDraftId?: string; navigateTo?: NavTarget }
   | { name: 'environmentHub' }
   | { name: 'zukanFieldDetail'; entry: FieldLogEntry; from: Screen }
   // Phase8: Wine Entity（Icarus最初の正式Entity。Food/Process/Dish/Producer等の将来Entityも同じ形の画面になる想定）
@@ -228,7 +229,7 @@ function AppRoutes() {
   if (screen.name === 'environmentHub') return <EnvironmentHubScreen go={go} />;
   if (screen.name === 'zukanFieldMap') return (
     <Suspense fallback={mapLoadingFallback}>
-      <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} openGpxDraftId={screen.openGpxDraftId} />
+      <ZukanFieldMapScreen go={go} focusEntry={screen.focusEntry} from={screen.from} openGpxDraftId={screen.openGpxDraftId} navigateTo={screen.navigateTo} />
     </Suspense>
   );
   if (screen.name === 'zukanFieldDetail') return <ZukanFieldDetailScreen go={go} entry={screen.entry} from={screen.from} />;
