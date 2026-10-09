@@ -31,6 +31,7 @@ import {
 import { forestSpeciesOptions, genusOnlyNotice, standRanks } from '../../terrain/forestSpecies';
 import { CUSTOM_PRESET_ID, SPECIES_PRESETS, matchPreset, presetById } from '../../terrain/presets';
 import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
+import { TRACK_CASING, TRACK_LINE, TRACK_UNSENT_DASH } from '../../terrain/trackStyle';
 import { describeRoad, groupByClass, indexRoads, nearestRoad, ROAD_ORANGE, ROAD_STYLE, roadCasing, roadLine, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
 import type { RoadLine, TerrainAreaSummary, TerrainGrid } from '../../terrain/types';
 import { isEnvironmentEntry, type FieldLogEntry } from '../../types/zukan';
@@ -1319,11 +1320,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             <Polyline positions={roadGroups.trail} pathOptions={roadLine('trail')} />
           </>
         )}
+        {/* 探索履歴の線: 白縁（押せる幅もここで取る）の上に細い青（trackStyle.ts） */}
         {showHistory && visibleHistory.map((e) => (
-          <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9, interactive: false }} />
-        ))}
-        {showHistory && visibleHistory.map((e) => (
-          <Polyline key={e.key} positions={e.track!} pathOptions={{ color: '#1a73e8', weight: 4, opacity: 1, dashArray: e.origin === 'device' && e.status !== 'registered' ? '8 6' : undefined }}>
+          <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={TRACK_CASING}>
             <Popup>
               <b>{e.exploredOn ?? '日付なし'}・{PURPOSE_LABEL[e.purpose]}</b><br />
               {e.explorerNames.join('、') || '歩いた人未記入'}・{e.distanceM >= 1000 ? `${(e.distanceM / 1000).toFixed(1)}km` : `${Math.round(e.distanceM)}m`}<br />
@@ -1332,6 +1331,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               {e.origin === 'device' && <><br />この端末のみ（{e.status === 'registered' ? '登録済み' : '未登録'}）</>}
             </Popup>
           </Polyline>
+        ))}
+        {showHistory && visibleHistory.map((e) => (
+          <Polyline key={e.key} positions={e.track!} pathOptions={{ ...TRACK_LINE, interactive: false, dashArray: e.origin === 'device' && e.status !== 'registered' ? TRACK_UNSENT_DASH : undefined }} />
         ))}
         {visibleSpots.map((m) => (
           <CircleMarker
