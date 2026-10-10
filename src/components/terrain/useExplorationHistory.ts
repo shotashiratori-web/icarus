@@ -7,6 +7,7 @@ import {
 import { resumeExplorationPending, submitExploration } from '../../exploration/submit';
 import type { HypothesisSnapshot } from '../../terrain/hypothesis';
 import type { TerrainBounds } from '../../terrain/types';
+import { clipTrack, isTimed, toLatLng, trackDistanceM, type TimedTrack, type UseRange } from '../../exploration/trackRange';
 
 const overlaps = (a: TerrainBounds, b: TerrainBounds) => !(a.north < b.south || a.south > b.north || a.east < b.west || a.west > b.east);
 import { displayStatus, type DisplayStatus, type ExplorationSession, type PendingExploration, type Purpose, type TargetResult, type TrackSegments } from '../../exploration/types';
@@ -14,6 +15,7 @@ import { displayStatus, type DisplayStatus, type ExplorationSession, type Pendin
 // 地形探索の探索履歴レイヤー（Stage 2 Web）。表示するのは:
 //   サーバーの記録（登録済み。圏外用に端末へ写しを持つ）＋ 端末の未送信（自分がまだ送れていない GPX）
 // 「探索済み」はここでは作らない（ExplorationMap が 軌跡 × 探索幅 × 絞り込み から格子に塗る）
+// Track Range v1: サーバーの記録の track は「探索として使う区間」で切ったもの。線・探索範囲・地点情報・仮説の根拠・3D はすべてこれを使う
 
 export interface HistoryEntry {
   key: string;
@@ -24,8 +26,11 @@ export interface HistoryEntry {
   explorerNames: string[];
   purpose: Purpose;
   targets: { target: string; result: TargetResult }[];
-  distanceM: number;
+  distanceM: number; // 使う区間の距離（区間が無ければ記録全体）
+  rawDistanceM: number; // 記録（元の GPX）全体の距離
   track: TrackSegments | null;
+  rawTrack: TimedTrack | null; // 区間の編集用（時刻つき、切る前）。端末の未送信・時刻の無い写しは null
+  useRange: UseRange | null;
   status: DisplayStatus; // サーバーの記録は 'registered'
   updatedAt: string | null; // サーバーの記録の楽観ロック用（端末のものは null）
   hypothesis: HypothesisSnapshot | null; // S4b: この探索に使った仮説
@@ -35,7 +40,7 @@ export interface HistoryEntry {
 export function useExplorationHistory(idToken: string | null, areaId: string | null, bounds: TerrainBounds | null = null) {
   const [pending, setPending] = useState<PendingExploration[]>([]);
   const [remote, setRemote] = useState<ExplorationSession[]>([]);
-  const [tracks, setTracks] = useState<Record<string, TrackSegments>>({});
+  const [tracks, setTracks] = useState<Record<string, TimedTrack | TrackSegments>>({});
   const [remoteAsOf, setRemoteAsOf] = useState<string | null>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
 
@@ -46,7 +51,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
   const loadCachedRemote = useCallback(async () => {
     if (!areaId) return;
     const cached = await listRemoteSessions(areaId).catch(() => ({ items: [] as ExplorationSession[], syncedAt: null }));
-    const t: Record<string, TrackSegments> = {};
+    const t: Record<string, TimedTrack | TrackSegments> = {};
     for (const s of cached.items) {
       const tr = await getRemoteTrack(s.id).catch(() => undefined);
       if (tr) t[s.id] = tr;
@@ -56,15 +61,15 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
     setRemoteAsOf(cached.syncedAt);
   }, [areaId]);
 
-  // 電波とログインがあればサーバーから取り直し、端末に写す（軌跡は変わらないので未取得の分だけ取る）
+  // 電波とログインがあればサーバーから取り直し、端末に写す（軌跡は変わらないので未取得の分だけ取る。時刻なしの古い写しも取り直す）
   const refreshRemote = useCallback(async () => {
     if (!idToken || !areaId || !navigator.onLine) return;
     try {
       const items = await listExplorationSessions({ areaId }, idToken);
-      const t: Record<string, TrackSegments> = {};
+      const t: Record<string, TimedTrack | TrackSegments> = {};
       for (const s of items) {
         let tr = await getRemoteTrack(s.id).catch(() => undefined);
-        if (!tr) {
+        if (!tr || !isTimed(tr)) {
           tr = await fetchExplorationTrack(s.id, idToken);
           await saveRemoteTrack(s.id, tr).catch(() => undefined);
         }
@@ -108,11 +113,19 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
 
   const entries = useMemo<HistoryEntry[]>(() => {
     // 山域を替えた直後（写しを読み直す前）に前の山域の記録を出さない
-    const out: HistoryEntry[] = remote.filter((s) => !areaId || !Array.isArray(s.areaIds) || s.areaIds.includes(areaId)).map((s) => ({
-      key: `s:${s.id}`, origin: 'server', sessionId: s.id, pendingId: null, exploredOn: s.exploredOn, explorerNames: s.explorerNames,
-      purpose: s.purpose, targets: s.targets.map((t) => ({ target: t.target, result: t.result })), distanceM: s.distanceM,
-      track: tracks[s.id] ?? null, status: 'registered', updatedAt: s.updatedAt, hypothesis: s.hypothesis ?? null,
-    }));
+    const out: HistoryEntry[] = remote.filter((s) => !areaId || !Array.isArray(s.areaIds) || s.areaIds.includes(areaId)).map((s) => {
+      const tr = tracks[s.id];
+      const range = s.useRange ?? null;
+      const timed = tr && isTimed(tr) ? tr : null;
+      // 時刻なしの古い写し（圏外で取り直せない間）は切れないので、全区間のまま出す
+      const track = timed ? clipTrack(timed, range) : tr ? toLatLng(tr) : null;
+      return {
+        key: `s:${s.id}`, origin: 'server', sessionId: s.id, pendingId: null, exploredOn: s.exploredOn, explorerNames: s.explorerNames,
+        purpose: s.purpose, targets: s.targets.map((t) => ({ target: t.target, result: t.result })),
+        distanceM: range && timed && track ? trackDistanceM(track) : s.distanceM, rawDistanceM: s.distanceM,
+        track, rawTrack: timed, useRange: range, status: 'registered', updatedAt: s.updatedAt, hypothesis: s.hypothesis ?? null,
+      };
+    });
     const serverShas = new Set(remote.map((s) => s.gpxSha256));
     for (const p of pending) {
       if (serverShas.has(p.sha256)) continue; // サーバーの写しにあるものはそちらで表示
@@ -120,7 +133,7 @@ export function useExplorationHistory(idToken: string | null, areaId: string | n
       out.push({
         key: `p:${p.id}`, origin: 'device', sessionId: p.sessionId, pendingId: p.id, exploredOn: p.exploredOnManual ?? p.preview.exploredOn,
         explorerNames: p.explorerNames, purpose: p.purpose, targets: p.targets.map((t) => ({ target: t.target, result: t.result })),
-        distanceM: p.preview.distanceM, track: p.preview.track, status: displayStatus(p), updatedAt: null, hypothesis: p.hypothesis ?? null,
+        distanceM: p.preview.distanceM, rawDistanceM: p.preview.distanceM, track: p.preview.track, rawTrack: null, useRange: null, status: displayStatus(p), updatedAt: null, hypothesis: p.hypothesis ?? null,
       });
     }
     return out.sort((a, b) => (b.exploredOn ?? '').localeCompare(a.exploredOn ?? ''));

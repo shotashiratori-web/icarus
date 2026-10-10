@@ -31,7 +31,7 @@ import {
 import { forestSpeciesOptions, genusOnlyNotice, standRanks } from '../../terrain/forestSpecies';
 import { CUSTOM_PRESET_ID, SPECIES_PRESETS, matchPreset, presetById } from '../../terrain/presets';
 import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
-import { TRACK_CASING, TRACK_LINE, TRACK_UNSENT_DASH } from '../../terrain/trackStyle';
+import { TRACK_CASING, TRACK_EXCLUDED, TRACK_LINE, TRACK_UNSENT_DASH } from '../../terrain/trackStyle';
 import { describeRoad, groupByClass, indexRoads, nearestRoad, ROAD_ORANGE, ROAD_STYLE, roadCasing, roadLine, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
 import type { RoadLine, TerrainAreaSummary, TerrainGrid } from '../../terrain/types';
 import { isEnvironmentEntry, type FieldLogEntry } from '../../types/zukan';
@@ -45,6 +45,8 @@ import { EXPLORED_COLOR } from '../../terrain/render';
 import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/types';
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
+import type { RangePreview } from './ExplorationRangeEditor';
+import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import ContourLayer from './ContourLayer';
 import { APP_BUILD } from '../../appBuild';
 import { useEnvironmentSpots, type SpotMarker } from './useEnvironmentSpots';
@@ -495,6 +497,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const visibleHistory = useMemo<HistoryEntry[]>(() => history.entries.filter((e) =>
     e.track && (purposeFilter === 'all' || e.purpose === purposeFilter) && inPeriod(e.exploredOn, period, new Date())),
   [history.entries, purposeFilter, period]);
+  // Track Range v1: 区間の編集中だけ、その探索を 使う区間 = 青／外す区間 = 灰色の破線 で描く（探索範囲は確定した区間のまま）
+  const [rangePreview, setRangePreview] = useState<RangePreview | null>(null);
+  const previewLines = useMemo(() => {
+    const e = rangePreview ? history.entries.find((x) => x.key === rangePreview.key) : null;
+    return e?.rawTrack && rangePreview ? { key: e.key, used: clipTrack(e.rawTrack, rangePreview.range), excluded: excludedParts(e.rawTrack, rangePreview.range) } : null;
+  }, [rangePreview, history.entries]);
   const coverage = useMemo(() => (manifest && showHistory && visibleHistory.length > 0
     ? buildCoverageMask(manifest, visibleHistory.map((e) => e.track!), coverageWidth)
     : null), [manifest, showHistory, visibleHistory, coverageWidth]);
@@ -1325,16 +1333,25 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={TRACK_CASING}>
             <Popup>
               <b>{e.exploredOn ?? '日付なし'}・{PURPOSE_LABEL[e.purpose]}</b><br />
-              {e.explorerNames.join('、') || '歩いた人未記入'}・{e.distanceM >= 1000 ? `${(e.distanceM / 1000).toFixed(1)}km` : `${Math.round(e.distanceM)}m`}<br />
+              {e.explorerNames.join('、') || '歩いた人未記入'}・{e.distanceM >= 1000 ? `${(e.distanceM / 1000).toFixed(1)}km` : `${Math.round(e.distanceM)}m`}
+              {e.useRange && `（探索として使用。記録 ${(e.rawDistanceM / 1000).toFixed(1)}km）`}<br />
               {e.targets.map((t) => `${t.target}: ${RESULT_LABEL[t.result]}`).join('、') || '対象未記入'}
               {e.hypothesis && <><br />仮説「{e.hypothesis.name}」（{e.hypothesis.conditionText.join(' かつ ')}）</>}
               {e.origin === 'device' && <><br />この端末のみ（{e.status === 'registered' ? '登録済み' : '未登録'}）</>}
             </Popup>
           </Polyline>
         ))}
-        {showHistory && visibleHistory.map((e) => (
+        {showHistory && visibleHistory.filter((e) => e.key !== previewLines?.key).map((e) => (
           <Polyline key={e.key} positions={e.track!} pathOptions={{ ...TRACK_LINE, interactive: false, dashArray: e.origin === 'device' && e.status !== 'registered' ? TRACK_UNSENT_DASH : undefined }} />
         ))}
+        {previewLines && (
+          <>
+            <Polyline positions={previewLines.excluded} pathOptions={{ ...TRACK_CASING, interactive: false }} />
+            <Polyline positions={previewLines.excluded} pathOptions={{ ...TRACK_EXCLUDED, interactive: false }} />
+            <Polyline positions={previewLines.used} pathOptions={{ ...TRACK_CASING, interactive: false }} />
+            <Polyline positions={previewLines.used} pathOptions={{ ...TRACK_LINE, interactive: false }} />
+          </>
+        )}
         {visibleSpots.map((m) => (
           <CircleMarker
             key={m.key}
@@ -1902,6 +1919,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               exploredKm2={stats && coverage ? stats.exploredKm2.total : null}
               idToken={idToken}
               openDraftId={openGpxDraftId}
+              isAdmin={staffMe?.role === 'admin'}
+              onRangePreview={setRangePreview}
             />
 
               </>

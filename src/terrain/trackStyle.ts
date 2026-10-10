@@ -5,3 +5,5 @@ export const TRACK_COLOR = '#1a73e8';
 export const TRACK_CASING = { color: '#fff', weight: 4.5, opacity: 0.85 } as const;
 export const TRACK_LINE = { color: TRACK_COLOR, weight: 2.5, opacity: 1 } as const;
 export const TRACK_UNSENT_DASH = '8 6'; // 端末にだけある（未送信）の記録
+// 探索として使う区間の編集中だけ: 外す区間（車の移動など）は灰色の破線（Track Range v1）
+export const TRACK_EXCLUDED = { color: '#868e96', weight: 2.5, opacity: 1, dashArray: '6 6' } as const;

@@ -123,4 +123,5 @@ export interface ExplorationSession {
   targets: ExplorationTarget[];
   fieldLogEventIds: string[];
   hypothesis?: HypothesisSnapshot | null; // S4b。古い API の応答には無い
+  useRange?: { fromS: number; toS: number } | null; // Track Range v1: 探索として使う区間（null = 全区間）。古い API の応答には無い
 }

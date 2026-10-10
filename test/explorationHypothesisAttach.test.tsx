@@ -15,12 +15,12 @@ const snap = (id: string, savedAt: string, name = `仮説${id}`): HypothesisSnap
 });
 const entry = (hyp: HypothesisSnapshot | null): HistoryEntry => ({
   key: 's:s1', origin: 'server', sessionId: 's1', pendingId: null, exploredOn: '2026-10-05', explorerNames: ['翔大'], purpose: 'maitake',
-  targets: [], distanceM: 1200, track: null, status: 'registered', updatedAt: 'U1', hypothesis: hyp,
+  targets: [], distanceM: 1200, rawDistanceM: 1200, track: null, rawTrack: null, useRange: null, status: 'registered', updatedAt: 'U1', hypothesis: hyp,
 });
 const history = (e: HistoryEntry) => ({ pending: [], entries: [e], remoteAsOf: null, remoteError: null, refreshLocal: vi.fn(async () => undefined), refreshRemote: vi.fn(async () => undefined), send: vi.fn(async () => undefined) });
 const props = (h: ReturnType<typeof history>) => ({
   history: h as never, staffName: '翔大', show: true, onShowChange: vi.fn(), width: 50 as const, onWidthChange: vi.fn(),
-  purposeFilter: 'all' as const, onPurposeFilterChange: vi.fn(), period: 'all' as const, onPeriodChange: vi.fn(), exploredKm2: null, idToken: 'tok',
+  purposeFilter: 'all' as const, onPurposeFilterChange: vi.fn(), period: 'all' as const, onPeriodChange: vi.fn(), exploredKm2: null, idToken: 'tok', isAdmin: false, onRangePreview: vi.fn(),
 });
 
 afterEach(async () => { vi.restoreAllMocks(); await closeHypothesisStoreForTest(); indexedDB.deleteDatabase('icarus-hypotheses'); });

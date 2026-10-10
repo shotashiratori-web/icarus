@@ -71,7 +71,7 @@ describe('ExplorationHistoryPanel: 選んだ GPX の入力を開く', () => {
     const history = { pending: [rec], entries: [], remoteAsOf: null, remoteError: null, refreshLocal: vi.fn(async () => undefined), refreshRemote: vi.fn(async () => undefined), send: vi.fn(async () => undefined) };
     render(<ExplorationHistoryPanel
       history={history as never} staffName="翔大" show onShowChange={vi.fn()} width={50} onWidthChange={vi.fn()}
-      purposeFilter="all" onPurposeFilterChange={vi.fn()} period="all" onPeriodChange={vi.fn()} exploredKm2={null} idToken="tok" openDraftId={id}
+      purposeFilter="all" onPurposeFilterChange={vi.fn()} period="all" onPeriodChange={vi.fn()} exploredKm2={null} idToken="tok" openDraftId={id} isAdmin={false} onRangePreview={vi.fn()}
     />);
     expect(await screen.findByLabelText('探索の記録を入力')).toBeInTheDocument();
     expect(screen.getByText(/yamap_2026-10-06.gpx/)).toBeInTheDocument();
