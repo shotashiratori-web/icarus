@@ -2,6 +2,7 @@ import type { HypothesisSnapshot } from '../terrain/hypothesis';
 import { WORKER_URL } from '../config';
 import { TokenExpiredError } from './icarusApi';
 import type { ExplorationSession, Purpose, TargetInput } from '../exploration/types';
+import type { TimedTrack } from '../exploration/trackRange';
 
 // Exploration History（icarus-api /exploration/*）。2 段送信: ① 原本 PUT（サーバーで hash 照合）② 登録 POST（冪等）
 
@@ -85,17 +86,24 @@ export async function listExplorationSessions(params: Record<string, string>, id
 }
 
 // 表示用の間引いた軌跡: [[lat, lng, ele|null, 秒|null], …] のセグメント配列
-export async function fetchExplorationTrack(sessionId: string, idToken: string): Promise<[number, number][][]> {
-  const raw = (await (await request(`${EXPLORATION_URL}/sessions/${encodeURIComponent(sessionId)}/track`, { method: 'GET' }, idToken)).json()) as number[][][];
-  return raw.map((seg) => seg.map((p) => [p[0], p[1]] as [number, number]));
+// 表示用の軌跡。時刻（UNIX 秒）も持つ（探索として使う区間で切る・車の区間の候補を出すのに使う）
+export async function fetchExplorationTrack(sessionId: string, idToken: string): Promise<TimedTrack> {
+  const raw = (await (await request(`${EXPLORATION_URL}/sessions/${encodeURIComponent(sessionId)}/track`, { method: 'GET' }, idToken)).json()) as (number | null)[][][];
+  return raw.map((seg) => seg.map((p) => [p[0] as number, p[1] as number, p[3] ?? null] as [number, number, number | null]));
 }
 
 // 探索の記録の訂正（共通の編集契約）。S4b では仮説の付け替え・外す（null）に使う。端末には保存しない（電波のある時だけ）
 export async function patchExplorationSession(
-  sessionId: string, body: { requestId: string; expectedUpdatedAt: string; changes: Record<string, unknown> }, idToken: string,
+  sessionId: string, body: { requestId: string; expectedUpdatedAt: string; changes: Record<string, unknown>; reason?: string }, idToken: string,
 ): Promise<{ outcome: string; updatedAt?: string }> {
   const res = await request(`${EXPLORATION_URL}/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, idToken);
   return res.json();
+}
+
+// 探索の記録の変更履歴（区間の変更の前後・実施者・日時・理由）
+export interface ExplorationHistoryItem { id: string; editedAt: string; editedByName: string; reason: string | null; changes: { field: string; old: string | null; new: string | null }[] }
+export async function fetchExplorationHistory(sessionId: string, idToken: string): Promise<ExplorationHistoryItem[]> {
+  return ((await (await request(`${EXPLORATION_URL}/sessions/${encodeURIComponent(sessionId)}/history`, { method: 'GET' }, idToken)).json()) as { items: ExplorationHistoryItem[] }).items;
 }
 
 export async function fetchExplorationSession(sessionId: string, idToken: string): Promise<ExplorationSession> {

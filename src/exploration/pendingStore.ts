@@ -1,5 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { ExplorationSession, PendingExploration, TrackSegments } from './types';
+import type { TimedTrack } from './trackRange';
 
 // Exploration History の端末保存（Stage 2 Web、§4）。端末の pending が正本で、送信はここから行う。
 // - GPX 原本は IndexedDB（Service Worker の Cache には入れない。SW はアプリ本体だけの責務）
@@ -98,10 +99,11 @@ export async function listRemoteSessions(areaId: string): Promise<{ items: Explo
   return { items, syncedAt: (await d.get(META, syncKey(areaId))) ?? (await d.get(META, 'lastRemoteSync')) ?? null };
 }
 
-export async function saveRemoteTrack(sessionId: string, track: TrackSegments): Promise<void> {
+// 軌跡の写しは時刻つき（TimedTrack）。区間の機能より前に写したものは時刻なし（TrackSegments）のまま残っていることがある
+export async function saveRemoteTrack(sessionId: string, track: TimedTrack): Promise<void> {
   await (await db()).put(TRACKS, track, sessionId);
 }
 
-export async function getRemoteTrack(sessionId: string): Promise<TrackSegments | undefined> {
+export async function getRemoteTrack(sessionId: string): Promise<TimedTrack | TrackSegments | undefined> {
   return (await db()).get(TRACKS, sessionId);
 }

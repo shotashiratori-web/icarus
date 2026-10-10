@@ -10,6 +10,7 @@ import {
 } from '../../exploration/types';
 import { COVERAGE_WIDTHS_M, PERIOD_LABEL, type CoverageWidth, type PeriodFilter } from '../../terrain/coverage';
 import type { useExplorationHistory } from './useExplorationHistory';
+import ExplorationRangeEditor, { type RangePreview } from './ExplorationRangeEditor';
 import styles from './ExplorationMap.module.css';
 
 // 探索履歴（Stage 2 Web）: GPX の記録（端末保存 → 送信）・端末の状態・探索範囲の表示条件。
@@ -31,6 +32,8 @@ interface Props {
   exploredKm2: number | null;
   idToken: string | null;
   openDraftId?: string; // この端末の下書き（GPX を選んだだけ）の入力を最初から開く
+  isAdmin: boolean; // 探索として使う区間の確定は管理者のみ
+  onRangePreview: (p: RangePreview | null) => void;
 }
 
 interface TargetRow { target: string; result: TargetResult }
@@ -291,6 +294,8 @@ export default function ExplorationHistoryPanel(p: Props) {
           <p className={styles.sub}>付けた仮説は、その時点の内容がそのまま残ります（あとで端末の仮説を直しても変わりません）。付け替え・外しは履歴に残ります</p>
         </div>
       )}
+
+      {p.isAdmin && <ExplorationRangeEditor entries={p.history.entries} idToken={p.idToken} onPreview={p.onRangePreview} onSaved={p.history.refreshRemote} />}
 
       <div className={styles.row}>
         <label className={styles.field}><span>探索範囲（線から）</span>
