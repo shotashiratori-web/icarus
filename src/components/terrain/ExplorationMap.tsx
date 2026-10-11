@@ -17,7 +17,7 @@ import {
 import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
 import { decodeRivers, mapRiverDistanceM, RIVER_COLOR, RIVER_EDGE_COLOR, riverDistanceText, type RiverLines } from '../../terrain/rivers';
 import {
-  AGE_CLASS_LABEL, AGE_CLASSES, ageClass, anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_AGE_COLORS, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
+  AGE_CLASS_LABEL, AGE_CLASSES, ageClass, anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_AGE_COLORS, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, oldStands, parseForestJson, renderForest, renderStandOutline, vegColor,
   type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
@@ -26,7 +26,7 @@ import {
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
 } from '../../terrain/hydro';
 import {
-  bearingName, cellIndex, cellValues, compileConditions, isCandidateRaw, accessClassRaw, latLngToGrid,
+  bearingName, cellIndex, cellValues, compileConditions, isCandidateRaw, accessClassRaw, gridToLatLng, latLngToGrid,
   nearestCandidate, candidateStats, type ExplorationConditions, type AccessClass,
 } from '../../terrain/engine';
 import { forestSpeciesOptions, genusOnlyNotice, standRanks } from '../../terrain/forestSpecies';
@@ -672,6 +672,36 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     const haPerCell = (manifest.grid.pxM * manifest.grid.pxM) / 10000;
     return AGE_CLASSES.map((c) => ({ c, stands: stands[c], ha: Math.round(cells[c] * haPerCell) }));
   }, [forest, manifest, forestLayers.species, forestLayers.mz1, forestLayers.mz2, forestLayers.mz3]);
+  // 林齢の古い林分（林齢で見る時の一覧）。押すとその林分へ寄せて輪郭で囲む。木 1 本の樹齢ではなく林分の林齢
+  const ageView = forestView === 'age' && !!forestLayers.species;
+  const oldList = useMemo(() => {
+    if (!forest || !manifest || !ageView) return [];
+    const sel = standRanks(forest, forestLayers.species);
+    const on = (r: number) => (r === 1 && forestLayers.mz1) || (r === 2 && forestLayers.mz2) || (r === 3 && forestLayers.mz3);
+    return oldStands(forest, sel, on, manifest.grid.pxM);
+  }, [forest, manifest, ageView, forestLayers.species, forestLayers.mz1, forestLayers.mz2, forestLayers.mz3]);
+  const [showAllOld, setShowAllOld] = useState(false);
+  const [focusStand, setFocusStand] = useState<number | null>(null);
+  useEffect(() => { setFocusStand(null); setShowAllOld(false); }, [forestLayers.species, forestView]);
+  const [outlineUrl, setOutlineUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!forest || focusStand === null) { setOutlineUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; }); return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = forest.width;
+    canvas.height = forest.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(forest.width, forest.height);
+    renderStandOutline(forest, focusStand, img.data);
+    ctx.putImageData(img, 0, 0);
+    let revoked = false;
+    canvas.toBlob((blob) => {
+      if (!blob || revoked) return;
+      const url = URL.createObjectURL(blob);
+      setOutlineUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
+    });
+    return () => { revoked = true; };
+  }, [forest, focusStand]);
   const forestSpeciesOpts = useMemo(() => (forest ? forestSpeciesOptions(forest) : []), [forest]);
   const speciesNotice = useMemo(() => (forest ? genusOnlyNotice(forest, forestLayers.species) : null), [forest, forestLayers.species]);
   const [forestUrl, setForestUrl] = useState<string | null>(null);
@@ -1340,7 +1370,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         )}
         {!onlineBase && <ImageOverlay url={loaded.hillshadeUrl} bounds={bounds} attribution={attribution} />}
         {forestUrl && <ImageOverlay url={forestUrl} bounds={bounds} opacity={1} zIndex={4} attribution={forest?.sources.doyurin ? FOREST_ATTRIBUTION_DOYURIN : FOREST_ATTRIBUTION} />}
-        {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={1} zIndex={5} />}
+        {/* 林齢で見る間は候補・探索済みの塗りを控えめに（林齢を主役にする。消さない） */}
+        {overlayUrl && <ImageOverlay url={overlayUrl} bounds={bounds} opacity={ageView ? 0.3 : 1} zIndex={5} />}
+        {outlineUrl && <ImageOverlay url={outlineUrl} bounds={bounds} opacity={1} zIndex={9} />}
         {hydroUrl && <ImageOverlay url={hydroUrl} bounds={bounds} opacity={1} zIndex={6} />}
         {targetUrl && <ImageOverlay url={targetUrl} bounds={bounds} opacity={1} zIndex={7} />}
         {matchUrl && <ImageOverlay url={matchUrl} bounds={bounds} opacity={1} zIndex={8} />}
@@ -1850,12 +1882,42 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                   <div aria-label="林齢（林分）の凡例">
                     <p className={styles.sub}>林齢（林分）</p>
                     {ageStats.filter((a) => a.c !== 'none' || a.stands > 0).map((a) => (
-                      <p key={a.c} className={styles.sub}>
-                        <span className={styles.swatch} style={{ background: `rgba(${FOREST_AGE_COLORS[a.c].slice(0, 3).join(',')},0.95)` }} />{AGE_CLASS_LABEL[a.c]}
+                      <div key={a.c} className={styles.check}>
+                        <span className={styles.swatch} style={{ background: `rgba(${FOREST_AGE_COLORS[a.c].slice(0, 3).join(',')},${Math.max(0.25, FOREST_AGE_COLORS[a.c][3] / 255)})`, outline: '1px solid #9e9e9e' }} />{AGE_CLASS_LABEL[a.c]}
                         <span className={styles.num}>{a.stands.toLocaleString()} 林分・{a.ha.toLocaleString()} ha</span>
-                      </p>
+                      </div>
                     ))}
-                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。林齢で林分を消すことはしていません</p>
+                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。林齢で林分を消すことはしていません。この間は候補・探索済みの塗りと植生の斜線を薄くしています</p>
+                    {oldList.length > 0 && (
+                      <div aria-label="林齢の古い林分">
+                        <h3 className={styles.h}>林齢の古い林分から見る</h3>
+                        <p className={styles.sub}>古いミズナラが期待できる林分を選び、現地で大木を探すための一覧です（林齢の高い順）。押すとその林分へ移動して輪郭で囲みます</p>
+                        {(showAllOld ? (() => { const old = oldList.filter((o) => o.age >= 150); return old.length > 8 ? old : oldList.slice(0, 8); })() : oldList.slice(0, 8)).map((o) => (
+                          <button
+                            key={o.stand}
+                            className={`${styles.btn} ${focusStand === o.stand ? styles.primary : ''}`}
+                            style={{ display: 'flex', width: '100%', justifyContent: 'space-between', marginTop: 4 }}
+                            aria-label={`林齢（林分）${o.age}年の林分へ移動`}
+                            onClick={() => {
+                              setFocusStand(o.stand);
+                              if (manifest) {
+                                const a = gridToLatLng(manifest, o.box.x0, o.box.y0), b = gridToLatLng(manifest, o.box.x1 + 1, o.box.y1 + 1);
+                                mapRef.current?.fitBounds([[a.lat, a.lng], [b.lat, b.lng]], { padding: [40, 40], maxZoom: 16 });
+                              }
+                            }}
+                          >
+                            <span>{o.age}年　{forestLayers.species}{o.rank}位　{o.type ?? '林種不明'}</span>
+                            <span>{o.ha.toLocaleString()}ha →</span>
+                          </button>
+                        ))}
+                        {oldList.filter((o) => o.age >= 150).length > 8 && (
+                          <button className={styles.btn} style={{ marginTop: 4 }} onClick={() => setShowAllOld((v) => !v)}>
+                            {showAllOld ? '上位 8 件に戻す' : `すべて見る（150年以上 ${oldList.filter((o) => o.age >= 150).length} 林分）`}
+                          </button>
+                        )}
+                        {focusStand !== null && <button className={styles.btn} style={{ marginTop: 4 }} onClick={() => setFocusStand(null)}>輪郭を消す</button>}
+                      </div>
+                    )}
                   </div>
                 )}
                 {speciesNotice && <p className={styles.sub}>{speciesNotice}</p>}

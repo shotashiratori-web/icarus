@@ -116,15 +116,18 @@ export const FOREST_COLORS: Record<'mz1' | 'mz2' | 'mz3' | 'kokuyuNoMizunara' | 
   todo: [60, 130, 150, 190],
   vegOther: [96, 125, 139, 150],
 };
-// 林齢（林分）の階級: 同じ緑の系統で古いほど濃い。記録なしは灰色（消さない）
+// 林齢（林分）の階級: 古いほど目に飛び込むように、均等な濃淡にしない（若い林分はほぼ透けて、100 年から急に濃く）。
+// 記録なしは灰色（消さない）
 export const FOREST_AGE_COLORS: Record<AgeClass, RGBA> = {
-  lt80: [200, 230, 201, 190],
-  a80: [129, 199, 132, 200],
-  a100: [56, 142, 60, 210],
-  a120: [27, 94, 32, 220],
-  a150: [8, 48, 20, 235],
-  none: [158, 158, 158, 170],
+  lt80: [200, 230, 201, 45], // かなり薄い
+  a80: [165, 214, 167, 100], // 薄い
+  a100: [67, 160, 71, 175], // 中程度
+  a120: [20, 90, 30, 235], // 濃い
+  a150: [0, 35, 8, 255], // かなり濃い
+  none: [158, 158, 158, 120],
 };
+// 林齢で見る間は植生図の斜線を弱くする（林齢を主役にする。消さない）
+const VEG_ALPHA_AGE_VIEW = 70;
 // ミズナラ系の群落は斜線（林分の塗りと重ねても両方読めるように）。群落ごとに色を変える
 export const VEG_MIZUNARA_PALETTE: RGBA[] = [[123, 31, 162, 235], [194, 24, 91, 235], [21, 101, 192, 235], [0, 121, 107, 235], [230, 81, 0, 235]];
 
@@ -171,7 +174,10 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
       const vi = f.veg[i];
       if (vi && vegShow[vi - 1]) {
         const v = f.vegs[vi - 1];
-        if (v.mizunara ? (x + y) % 4 === 0 : !c) c = vegCol[vi - 1]; // ミズナラ系は斜線、その他は下地（林分の塗りが無い所だけ）
+        if (v.mizunara ? (x + y) % 4 === 0 : !c) {
+          // ミズナラ系は斜線、その他は下地（林分の塗りが無い所だけ）。林齢で見る間の斜線は弱く
+          c = l.view === 'age' && v.mizunara ? [vegCol[vi - 1][0], vegCol[vi - 1][1], vegCol[vi - 1][2], VEG_ALPHA_AGE_VIEW] : vegCol[vi - 1];
+        }
       }
       if (c) {
         const j = i * 4;
@@ -247,4 +253,56 @@ export function forestAreaHa(f: ForestData, pxM: number, pred: (s: ForestStand |
     if (pred(si ? f.stands[si - 1] : null, vi ? f.vegs[vi - 1] : null)) n++;
   }
   return Math.round((n * pxM * pxM) / 1e4);
+}
+
+// ---- 林齢の古い林分（一覧で「次に見に行く林分」を選ぶ）。木 1 本の樹齢ではなく、林分の林齢 ----
+export interface OldStand {
+  stand: number; // 林分番号（1 始まり。forest.stand の値）
+  age: number;
+  rank: number; // 選んだ樹種の順位
+  type: string | null;
+  name: string;
+  ha: number;
+  box: { x0: number; y0: number; x1: number; y1: number }; // 格子の範囲（両端を含む）
+}
+
+// 選んだ樹種の順位がチェックされた林分を、林齢の高い順（同じなら面積の大きい順）に。林齢の記録が無い林分は入れない
+export function oldStands(f: ForestData, ranks: Uint8Array, include: (rank: number) => boolean, pxM: number): OldStand[] {
+  const n = f.stands.length;
+  const cells = new Uint32Array(n + 1);
+  const x0 = new Int32Array(n + 1).fill(f.width), y0 = new Int32Array(n + 1).fill(f.height), x1 = new Int32Array(n + 1).fill(-1), y1 = new Int32Array(n + 1).fill(-1);
+  for (let y = 0; y < f.height; y++) {
+    for (let x = 0; x < f.width; x++) {
+      const si = f.stand[y * f.width + x];
+      if (!si || !include(ranks[si - 1])) continue;
+      cells[si]++;
+      if (x < x0[si]) x0[si] = x; if (x > x1[si]) x1[si] = x;
+      if (y < y0[si]) y0[si] = y; if (y > y1[si]) y1[si] = y;
+    }
+  }
+  const haPerCell = (pxM * pxM) / 10000;
+  const out: OldStand[] = [];
+  for (let si = 1; si <= n; si++) {
+    const s = f.stands[si - 1];
+    if (!cells[si] || s.age === null || !Number.isFinite(s.age)) continue;
+    out.push({ stand: si, age: s.age, rank: ranks[si - 1], type: s.type, name: s.name, ha: Math.round(cells[si] * haPerCell * 10) / 10, box: { x0: x0[si], y0: y0[si], x1: x1[si], y1: y1[si] } });
+  }
+  return out.sort((a, b) => b.age - a.age || b.ha - a.ha);
+}
+
+// 選んだ林分の輪郭（林分の格子のうち、隣が別の林分の格子）。地図で囲んで見せる
+export const STAND_OUTLINE_COLOR: RGBA = [0, 229, 255, 255];
+export function renderStandOutline(f: ForestData, stand: number, out?: Uint8ClampedArray): Uint8ClampedArray {
+  const o = out ?? new Uint8ClampedArray(f.width * f.height * 4);
+  o.fill(0);
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= f.width || y >= f.height ? 0 : f.stand[y * f.width + x]);
+  for (let y = 0; y < f.height; y++) {
+    for (let x = 0; x < f.width; x++) {
+      if (at(x, y) !== stand) continue;
+      if (at(x - 1, y) === stand && at(x + 1, y) === stand && at(x, y - 1) === stand && at(x, y + 1) === stand) continue;
+      const j = (y * f.width + x) * 4;
+      o[j] = STAND_OUTLINE_COLOR[0]; o[j + 1] = STAND_OUTLINE_COLOR[1]; o[j + 2] = STAND_OUTLINE_COLOR[2]; o[j + 3] = STAND_OUTLINE_COLOR[3];
+    }
+  }
+  return o;
 }
