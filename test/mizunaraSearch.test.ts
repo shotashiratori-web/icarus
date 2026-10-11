@@ -97,7 +97,8 @@ describe('林齢の古い林分（A: 目立たせ方・B: 一覧と輪郭）', (
   it('古いほど濃く、若い林分はほぼ透ける（均等にしない）', () => {
     const a = (['lt80', 'a80', 'a100', 'a120', 'a150'] as const).map((c) => FOREST_AGE_COLORS[c][3]);
     expect(a).toEqual([...a].sort((x, y) => x - y));
-    expect(a[0]).toBeLessThan(60);
+    expect(a[0]).toBeLessThan(120); // かなり薄い（ただし林分があると分かる）
+    expect(a[1]).toBeGreaterThanOrEqual(120); // 80〜99 年（初舞茸 95 年）が地面に溶けない
     expect(a[4]).toBe(255);
   });
 

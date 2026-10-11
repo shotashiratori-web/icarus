@@ -1887,7 +1887,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                         <span className={styles.num}>{a.stands.toLocaleString()} 林分・{a.ha.toLocaleString()} ha</span>
                       </div>
                     ))}
-                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。林齢で林分を消すことはしていません。この間は候補・探索済みの塗りと植生の斜線を薄くしています</p>
+                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。薄い色の林分も探索の対象から外れていません（初舞茸の林分は 95 年）。この間は候補・探索済みの塗りと植生の斜線を薄くしています</p>
                     {oldList.length > 0 && (
                       <div aria-label="林齢の古い林分">
                         <h3 className={styles.h}>林齢の古い林分から見る</h3>
