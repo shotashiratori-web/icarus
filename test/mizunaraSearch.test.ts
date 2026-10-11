@@ -126,5 +126,10 @@ describe('林齢の古い林分（A: 目立たせ方・B: 一覧と輪郭）', (
     expect(px(o, 4)).toEqual([0, 0, 0, 0]); // 真ん中
     expect(px(o, 0)).toEqual(STAND_OUTLINE_COLOR);
     expect(Array.from(renderStandOutline(g, 2)).every((v) => v === 0)).toBe(true);
+    // 外側の境目も塗る（太く見せる）: 3x1 の 林分1・なし・なし → 林分1 と隣の格子、離れた格子は塗らない
+    const r3 = new Uint8ClampedArray(3 * 4); r3[1] = 1; r3[3] = 255;
+    const h = forestFromPixels({ grid: { width: 3, height: 1, pxM: 20 } } as never, r3, 3, 1, parseForestJson(json as never));
+    const oh = renderStandOutline(h, 1);
+    expect([px(oh, 0)[3], px(oh, 1)[3], px(oh, 2)[3]]).toEqual([255, 255, 0]);
   });
 });

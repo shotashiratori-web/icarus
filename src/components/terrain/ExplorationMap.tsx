@@ -1902,7 +1902,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                               setFocusStand(o.stand);
                               if (manifest) {
                                 const a = gridToLatLng(manifest, o.box.x0, o.box.y0), b = gridToLatLng(manifest, o.box.x1 + 1, o.box.y1 + 1);
-                                mapRef.current?.fitBounds([[a.lat, a.lng], [b.lat, b.lng]], { padding: [40, 40], maxZoom: 16 });
+                                // 周りの道・河川も見えるように余白を広く、寄りすぎない（格子 約 21m が粗く見えない程度）
+                                mapRef.current?.fitBounds([[a.lat, a.lng], [b.lat, b.lng]], { padding: [120, 120], maxZoom: 15 });
                               }
                             }}
                           >

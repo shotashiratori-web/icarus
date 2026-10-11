@@ -290,16 +290,19 @@ export function oldStands(f: ForestData, ranks: Uint8Array, include: (rank: numb
   return out.sort((a, b) => b.age - a.age || b.ha - a.ha);
 }
 
-// 選んだ林分の輪郭（林分の格子のうち、隣が別の林分の格子）。地図で囲んで見せる
-export const STAND_OUTLINE_COLOR: RGBA = [0, 229, 255, 255];
+// 選んだ林分の輪郭。地図で囲んで見せる。境目の内側と外側の 2 格子（約 40m）で太く描く。
+// 色は赤（水の線＝濃紺・水色、道＝橙・黒と見分ける。候補の赤は林齢で見る間は薄くしている）
+export const STAND_OUTLINE_COLOR: RGBA = [255, 23, 68, 255];
 export function renderStandOutline(f: ForestData, stand: number, out?: Uint8ClampedArray): Uint8ClampedArray {
   const o = out ?? new Uint8ClampedArray(f.width * f.height * 4);
   o.fill(0);
   const at = (x: number, y: number) => (x < 0 || y < 0 || x >= f.width || y >= f.height ? 0 : f.stand[y * f.width + x]);
   for (let y = 0; y < f.height; y++) {
     for (let x = 0; x < f.width; x++) {
-      if (at(x, y) !== stand) continue;
-      if (at(x - 1, y) === stand && at(x + 1, y) === stand && at(x, y - 1) === stand && at(x, y + 1) === stand) continue;
+      const inside = at(x, y) === stand;
+      const n = [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)];
+      // 内側の境目（隣に林分の外がある）か、外側の境目（隣に林分がある）
+      if (inside ? n.every((v) => v === stand) : !n.includes(stand)) continue;
       const j = (y * f.width + x) * 4;
       o[j] = STAND_OUTLINE_COLOR[0]; o[j + 1] = STAND_OUTLINE_COLOR[1]; o[j + 2] = STAND_OUTLINE_COLOR[2]; o[j + 3] = STAND_OUTLINE_COLOR[3];
     }
