@@ -129,7 +129,7 @@ export function getPhaseOptions(largeCategory: string): readonly string[] {
 
 export const HARVESTED_OPTIONS = ['あり', 'なし', '不明'] as const;
 
-export const MAX_PHOTOS = 5;
+export const MAX_PHOTOS = 10;
 
 // 小分類の選択肢（field_option_values の sub_category、親=大分類）を読めない時の予備。マスタと同じ値
 export const SUB_CATEGORY_FALLBACK: Record<string, string[]> = {
