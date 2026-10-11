@@ -27,7 +27,7 @@ const f = forestFromPixels({ grid: { width: W, height: 1, pxM: 20 } } as unknown
 
 describe('道有林の表示', () => {
   it('1. 地点情報: 「道有林 2022時点」と 1 樹種のみの記録。「1位」と書かない', () => {
-    expect(describeForest(f, 0)[0]).toBe(`森林計画（道有林 2022時点）: 樹種 ミズナラ（${DOYURIN_SPECIES_NOTE}）／林齢 20／人工林`);
+    expect(describeForest(f, 0)[0]).toBe(`森林計画（道有林 2022時点）: 樹種 ミズナラ（${DOYURIN_SPECIES_NOTE}）／林齢（林分）20年／人工林`);
     expect(describeForest(f, 0)[0]).not.toContain('1位');
     expect(describeForest(f, 3)[0]).toContain('人工林（複層林・記録は下から2層目）');
     expect(describeForest(f, 3)[0]).not.toContain('undefined');
@@ -40,14 +40,14 @@ describe('道有林の表示', () => {
 
   it('3. 見出し: 樹種不明でも出どころの行で道有林・1 樹種のみと分かる', () => {
     expect(forestHeadline(f, 1)).toMatchObject({ species: '天然林広葉樹（樹種不明）', note: `森林計画（道有林 2022時点・天然林）・${DOYURIN_SPECIES_NOTE}` });
-    expect(forestHeadline(f, 0)).toMatchObject({ species: `樹種 ミズナラ（${DOYURIN_SPECIES_NOTE}）`, note: '森林計画（道有林 2022時点・林齢20・人工林）' }); // 注記は重ねない
+    expect(forestHeadline(f, 0)).toMatchObject({ species: `樹種 ミズナラ（${DOYURIN_SPECIES_NOTE}）`, note: '森林計画（道有林 2022時点・林齢（林分）20年・人工林）' }); // 注記は重ねない
     expect(forestHeadline(f, 2).note).toBe(`森林計画（道有林 2022時点・未立木地）・${DOYURIN_SPECIES_NOTE}`);
   });
 
   it('4. 国有林・民有林は今までどおり（1〜3 位・割合）', () => {
-    expect(describeForest(f, 4)[0]).toBe('森林計画（民有林 2023時点）: 1位 ミズナラ（6割）・2位 カンバ（4割）／林齢 45／天然林');
-    expect(describeForest(f, 5)[0]).toBe('森林計画（国有林 2018時点）: 1位 カンバ／林齢 90／天然生林');
-    expect(forestHeadline(f, 4).note).toBe('森林計画（民有林 2023時点・林齢45・天然林）');
+    expect(describeForest(f, 4)[0]).toBe('森林計画（民有林 2023時点）: 1位 ミズナラ（6割）・2位 カンバ（4割）／林齢（林分）45年／天然林');
+    expect(describeForest(f, 5)[0]).toBe('森林計画（国有林 2018時点）: 1位 カンバ／林齢（林分）90年／天然生林');
+    expect(forestHeadline(f, 4).note).toBe('森林計画（民有林 2023時点・林齢（林分）45年・天然林）');
   });
 
   it('5. 樹種の塗り: 道有林の樹種は 1 位として塗り、樹種の記録なしは塗らない', () => {

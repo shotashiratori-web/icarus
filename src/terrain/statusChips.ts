@@ -17,6 +17,7 @@ export interface StatusChip {
 export interface StatusChipInput {
   forest: ForestLayers;
   forestAny: boolean;
+  mizunaraSearch?: boolean; // 「ミズナラを探す」の間は森林のチップをこの名前にする（× でまとめて戻す）
   candidates: { A: boolean; B: boolean; C: boolean };
   terrainSummary: string | null; // 地形の条件（無ければ null）
   matchKm2: number | null; // 条件に合う範囲（表示していなければ null）
@@ -51,7 +52,8 @@ const km2Text = (v: number) => (v < 1 ? v.toFixed(2) : v.toFixed(1));
 
 export function buildStatusChips(s: StatusChipInput, forestColor?: string): StatusChip[] {
   const out: StatusChip[] = [];
-  if (s.forestAny) out.push({ id: 'forest', label: forestChipLabel(s.forest), tab: 'search', color: (s.forest.mz1 || s.forest.mz2 || s.forest.mz3) ? forestColor : undefined });
+  if (s.mizunaraSearch) out.push({ id: 'forest', label: `ミズナラを探す${s.forest.view === 'age' ? '・林齢（林分）' : ''}`, tab: 'search', color: forestColor });
+  else if (s.forestAny) out.push({ id: 'forest', label: forestChipLabel(s.forest), tab: 'search', color: (s.forest.mz1 || s.forest.mz2 || s.forest.mz3) ? forestColor : undefined });
   const abc = (['A', 'B', 'C'] as const).filter((k) => s.candidates[k]).join('');
   if (abc) out.push({ id: 'candidates', label: `候補 ${abc}`, tab: 'search' });
   if (s.terrainSummary) out.push({ id: 'terrain', label: `地形 ${s.terrainSummary}`, tab: 'search' });

@@ -80,12 +80,27 @@ export interface ForestLayers {
   todo: boolean;
   vegMizunara: string[]; // 表示するミズナラ系の群落名
   vegOther: boolean;
+  // 選んだ樹種の林分を 順位 で塗るか 林齢（林分）の階級 で塗るか（icarus_forest_stand_age_view_v1_design.md）。
+  // 無い＝順位。林齢で林分を消すことはしない。保存は ExplorationMap の別の項目（forestView）で行う
+  // （ここに足すと、前の版で保存した forestLayers が形の違いで丸ごと読み捨てられるため）
+  view?: 'rank' | 'age';
 }
 
 export const NO_FOREST_LAYERS: ForestLayers = {
   species: null,
   mz1: false, mz2: false, mz3: false, kokuyuNoMizunara: false, broadleafUnknown: false, larch: false, todo: false, vegMizunara: [], vegOther: false,
 };
+
+// ---- 林齢（林分）の階級。森林計画の林分の林齢で、木 1 本の樹齢ではない（画面に「樹齢」と書かない） ----
+export type AgeClass = 'lt80' | 'a80' | 'a100' | 'a120' | 'a150' | 'none';
+export const AGE_CLASSES: AgeClass[] = ['lt80', 'a80', 'a100', 'a120', 'a150', 'none'];
+export const AGE_CLASS_LABEL: Record<AgeClass, string> = {
+  lt80: '80年未満', a80: '80〜99年', a100: '100〜119年', a120: '120〜149年', a150: '150年以上', none: '林齢（林分）：記録なし',
+};
+export function ageClass(age: number | null): AgeClass {
+  if (age === null || !Number.isFinite(age)) return 'none';
+  return age < 80 ? 'lt80' : age < 100 ? 'a80' : age < 120 ? 'a100' : age < 150 ? 'a120' : 'a150';
+}
 
 export const anyForestLayer = (l: ForestLayers) =>
   (!!l.species && (l.mz1 || l.mz2 || l.mz3)) || l.kokuyuNoMizunara || l.broadleafUnknown || l.larch || l.todo || l.vegOther || l.vegMizunara.length > 0;
@@ -100,6 +115,15 @@ export const FOREST_COLORS: Record<'mz1' | 'mz2' | 'mz3' | 'kokuyuNoMizunara' | 
   larch: [212, 165, 55, 190],
   todo: [60, 130, 150, 190],
   vegOther: [96, 125, 139, 150],
+};
+// 林齢（林分）の階級: 同じ緑の系統で古いほど濃い。記録なしは灰色（消さない）
+export const FOREST_AGE_COLORS: Record<AgeClass, RGBA> = {
+  lt80: [200, 230, 201, 190],
+  a80: [129, 199, 132, 200],
+  a100: [56, 142, 60, 210],
+  a120: [27, 94, 32, 220],
+  a150: [8, 48, 20, 235],
+  none: [158, 158, 158, 170],
 };
 // ミズナラ系の群落は斜線（林分の塗りと重ねても両方読めるように）。群落ごとに色を変える
 export const VEG_MIZUNARA_PALETTE: RGBA[] = [[123, 31, 162, 235], [194, 24, 91, 235], [21, 101, 192, 235], [0, 121, 107, 235], [230, 81, 0, 235]];
@@ -132,9 +156,9 @@ export function renderForest(f: ForestData, l: ForestLayers, out?: Uint8ClampedA
         if (s) {
           const r = ranks ? ranks[si - 1] : 0;
           const rk = ranks ? r : s.mizunaraRank; // 「国有林で…なし」の判定用
-          if (r === 1 && l.mz1) c = FOREST_COLORS.mz1;
-          else if (r === 2 && l.mz2) c = FOREST_COLORS.mz2;
-          else if (r === 3 && l.mz3) c = FOREST_COLORS.mz3;
+          const on = (r === 1 && l.mz1) || (r === 2 && l.mz2) || (r === 3 && l.mz3);
+          // 林齢で見る時も塗る林分は同じ（順位のチェックで選ぶ）。色だけを林齢の階級にする
+          if (on) c = l.view === 'age' ? FOREST_AGE_COLORS[ageClass(s.age)] : FOREST_COLORS[r === 1 ? 'mz1' : r === 2 ? 'mz2' : 'mz3'];
           // 重なる時は ミズナラの順位 → 林の種類 → 国有林ミズナラなし の順（具体的な方を見せる）
           if (!c) {
             if (s.cls === FOREST_CLASS.broadleafUnknown && l.broadleafUnknown) c = FOREST_COLORS.broadleafUnknown;
@@ -176,7 +200,7 @@ export function describeForest(f: ForestData, i: number): string[] {
   const s = si ? f.stands[si - 1] : null;
   if (s) {
     const sp = standSpeciesText(s);
-    lines.push(`森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点）: ${sp}${s.age ? `／林齢 ${s.age}` : ''}${s.type ? `／${s.type}` : ''}`);
+    lines.push(`森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点）: ${sp}${s.age ? `／林齢（林分）${s.age}年` : ''}${s.type ? `／${s.type}` : ''}`);
     if (s.cls === FOREST_CLASS.broadleafUnknown) lines.push('天然林広葉樹は樹種不明（ミズナラかどうか分からない）');
   } else {
     lines.push('森林計画: 林分の記録なし');
@@ -190,11 +214,12 @@ export function describeForest(f: ForestData, i: number): string[] {
 // 地点情報の見出し（樹種を一番上に大きく）: 樹種 1〜3 位・出どころと年・林齢・林種、植生（調査年）
 export interface ForestHeadline {
   species: string | null; // 例: 1位 ミズナラ・2位 その他広葉樹・3位 イタヤカエデ
-  note: string | null; // 例: 森林計画（国有林 2018時点・林齢105・天然生林）
+  note: string | null; // 例: 森林計画（国有林 2018時点・林齢（林分）105年・天然生林）
   vegetation: string | null; // 例: エゾイタヤ－ミズナラ群落（2022調査）
 }
 
-export function forestHeadline(f: ForestData, i: number): ForestHeadline {
+// view = 'age'（林齢で見ている時）は林齢の階級を添える
+export function forestHeadline(f: ForestData, i: number, view: ForestLayers['view'] = 'rank'): ForestHeadline {
   const si = f.stand[i];
   const s = si ? f.stands[si - 1] : null;
   const vi = f.veg[i];
@@ -205,7 +230,9 @@ export function forestHeadline(f: ForestData, i: number): ForestHeadline {
     species = s.cls === FOREST_CLASS.broadleafUnknown
       ? '天然林広葉樹（樹種不明）'
       : standSpeciesText(s);
-    note = `森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点${s.age ? `・林齢${s.age}` : ''}${s.type ? `・${s.type}` : ''}）`;
+    const ageText = s.age ? `・林齢（林分）${s.age}年` : view === 'age' ? `・${AGE_CLASS_LABEL.none}` : '';
+    const classText = view === 'age' && s.age ? `・${AGE_CLASS_LABEL[ageClass(s.age)]}の階級` : '';
+    note = `森林計画（${OWNER_LABEL[s.owner]} ${s.year}時点${ageText}${s.type ? `・${s.type}` : ''}${classText}）`;
     if (s.owner === 'd' && !species.includes(DOYURIN_SPECIES_NOTE)) note += `・${DOYURIN_SPECIES_NOTE}`; // 樹種の行に注記が無い時だけ（重ねない）
   }
   return { species, note, vegetation: v ? `${v.name}（${v.year ?? '年不明'}調査）` : null };
