@@ -17,9 +17,10 @@ import {
 import { decodeGrid, decodeRoads, pixels } from '../../terrain/decode';
 import { decodeRivers, mapRiverDistanceM, RIVER_COLOR, RIVER_EDGE_COLOR, riverDistanceText, type RiverLines } from '../../terrain/rivers';
 import {
-  anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
-  type ForestData, type ForestLayers, type ForestStand,
+  AGE_CLASS_LABEL, AGE_CLASSES, ageClass, anyForestLayer, DOYURIN_SPECIES_NOTE, FOREST_AGE_COLORS, FOREST_CLASS, forestHeadline, FOREST_COLORS, forestAreaHa, forestFromPixels, mizunaraCommunities, NO_FOREST_LAYERS, parseForestJson, renderForest, vegColor,
+  type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
+import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
 import {
   anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
@@ -185,6 +186,7 @@ const fmtDate = (iso: string) => {
 };
 
 // 環境スポットの色（種類・生死）。ミズナラは金色の縁
+const MIZUNARA_LOG_COLOR = '#e65100'; // ミズナラを探す の Field Log の点
 const SPOT_COLORS: Record<SpotKindChoice, string> = { alive: '#2e7d32', snag: '#a1887f', fallen: '#5d4037', terrain: '#546e7a', other: '#9e9e9e' };
 
 // 対象の観察があるスポットの輪と印（色だけに頼らない: 見つかった=緑の実線＋✓、見つからず=赤の破線＋×）
@@ -321,6 +323,8 @@ const VIEW_DEFAULTS = {
   showTargetLayer: true,
   showMatch: true,
   forestLayers: NO_FOREST_LAYERS as ForestLayers,
+  forestView: 'rank' as 'rank' | 'age', // 森林計画の塗り: 順位 or 林齢（林分）
+  mizunaraSearch: false, // 「ミズナラを探す」
   terrainCond: NO_TERRAIN_CONDITIONS as TerrainConditions,
   showStreams: false,
   showContours: true,
@@ -328,6 +332,7 @@ const VIEW_DEFAULTS = {
 const VIEW_ALLOWED = {
   presetId: [...SPECIES_PRESETS.map((p) => p.id), CUSTOM_PRESET_ID],
   base: ['offline', 'hillshademap', 'std', 'seamlessphoto'],
+  forestView: ['rank', 'age'],
   fieldLogFilter: FIELD_LOG_FILTERS,
   coverageWidth: COVERAGE_WIDTHS_M,
   purposeFilter: ['all', ...Object.keys(PURPOSE_LABEL)],
@@ -404,6 +409,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [showSpots, setShowSpots] = useState(savedView.showSpots ?? VIEW_DEFAULTS.showSpots);
   const [spotKinds, setSpotKinds] = useState<SpotKindChoice[]>(savedView.spotKinds ?? VIEW_DEFAULTS.spotKinds);
   const [spotSpecies, setSpotSpecies] = useState<string>(savedView.spotSpecies ?? VIEW_DEFAULTS.spotSpecies);
+  // 「ミズナラを探す」の間: 現地確認したミズナラは必ず出し、🌲（Spot にする候補）は隠す（同じ地点を二重に強調しない）。解除で元に戻る
+  const [mizunaraSearch, setMizunaraSearch] = useState(savedView.mizunaraSearch ?? VIEW_DEFAULTS.mizunaraSearch);
   const [recordLoc, setRecordLoc] = useState<RecordLocation | null>(null);
   // 撮った写真から記録（山から戻ってから）: 写真の撮影時の GPS と日時を使う
   const [recordInit, setRecordInit] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
@@ -487,7 +494,10 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     }
   };
   const kindOf = (m: SpotMarker): SpotKindChoice => (m.envType === 'tree' ? (m.lifeState as SpotKindChoice) : m.envType);
-  const visibleSpots = useMemo(() => (showSpots ? envSpots.markers.filter((m) => spotKinds.includes(kindOf(m)) && (spotSpecies === 'all' || m.treeSpeciesId === spotSpecies)) : []), [showSpots, envSpots.markers, spotKinds, spotSpecies]);
+  const visibleSpots = useMemo(() => envSpots.markers.filter((m) =>
+    (showSpots && spotKinds.includes(kindOf(m)) && (spotSpecies === 'all' || m.treeSpeciesId === spotSpecies))
+    || (mizunaraSearch && m.treeSpeciesId === 'tree-mizunara')), [showSpots, envSpots.markers, spotKinds, spotSpecies, mizunaraSearch]);
+  const mizunaraLogs = useMemo(() => (mizunaraSearch ? entries.filter(isMizunaraLog) : []), [mizunaraSearch, entries]);
   const selectedMarker = envSpots.markers.find((m) => m.key === selectedSpot) ?? null;
   const unsentSpots = envSpots.markers.filter((m) => m.origin === 'device' && m.status !== 'registered').length + envSpots.pendingObs.filter((o) => o.stage !== 'registered').length;
   const [showHistory, setShowHistory] = useState(savedView.showHistory ?? VIEW_DEFAULTS.showHistory);
@@ -623,6 +633,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
 
   // ---- 森林（S1）: レイヤーはすべて独立（ミズナラ 1〜3 位を 1 色に潰さない）。既定はすべて OFF ----
   const [forestLayers, setForestLayers] = useState<ForestLayers>(savedView.forestLayers ?? VIEW_DEFAULTS.forestLayers);
+  const [forestView, setForestView] = useState<'rank' | 'age'>(savedView.forestView ?? VIEW_DEFAULTS.forestView);
+  const forestDraw = useMemo<ForestLayers>(() => ({ ...forestLayers, view: forestView }), [forestLayers, forestView]);
   const forest = loaded?.forest ?? null;
   const communities = useMemo(() => (forest ? mizunaraCommunities(forest) : []), [forest]);
   const forestHa = useMemo(() => {
@@ -643,12 +655,29 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       veg,
     };
   }, [forest, manifest, communities, forestLayers.species]);
+  // 林齢（林分）の階級ごとの林分数と面積。塗る林分（選んだ樹種 × チェックした順位）だけを数える。林齢で消さない
+  const ageStats = useMemo(() => {
+    if (!forest || !manifest || !forestLayers.species) return null;
+    const sel = standRanks(forest, forestLayers.species);
+    const on = (r: number) => (r === 1 && forestLayers.mz1) || (r === 2 && forestLayers.mz2) || (r === 3 && forestLayers.mz3);
+    const stands = Object.fromEntries(AGE_CLASSES.map((c) => [c, 0])) as Record<AgeClass, number>;
+    const cells = Object.fromEntries(AGE_CLASSES.map((c) => [c, 0])) as Record<AgeClass, number>;
+    const cls = forest.stands.map((st, k) => (on(sel[k]) ? ageClass(st.age) : null));
+    cls.forEach((c) => { if (c) stands[c]++; });
+    for (let i = 0; i < forest.stand.length; i++) {
+      const si = forest.stand[i];
+      const c = si ? cls[si - 1] : null;
+      if (c) cells[c]++;
+    }
+    const haPerCell = (manifest.grid.pxM * manifest.grid.pxM) / 10000;
+    return AGE_CLASSES.map((c) => ({ c, stands: stands[c], ha: Math.round(cells[c] * haPerCell) }));
+  }, [forest, manifest, forestLayers.species, forestLayers.mz1, forestLayers.mz2, forestLayers.mz3]);
   const forestSpeciesOpts = useMemo(() => (forest ? forestSpeciesOptions(forest) : []), [forest]);
   const speciesNotice = useMemo(() => (forest ? genusOnlyNotice(forest, forestLayers.species) : null), [forest, forestLayers.species]);
   const [forestUrl, setForestUrl] = useState<string | null>(null);
   const forestCanvas = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
-    if (!forest || !anyForestLayer(forestLayers)) {
+    if (!forest || !anyForestLayer(forestDraw)) {
       setForestUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       return;
     }
@@ -658,7 +687,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const img = ctx.createImageData(forest.width, forest.height);
-    renderForest(forest, forestLayers, img.data);
+    renderForest(forest, forestDraw, img.data);
     ctx.putImageData(img, 0, 0);
     let revoked = false;
     canvas.toBlob((blob) => {
@@ -667,7 +696,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       setForestUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
     });
     return () => { revoked = true; };
-  }, [forest, forestLayers]);
+  }, [forest, forestDraw]);
   // ---- DEM 由来の地形（S2）: 条件どうしは AND、1 つの条件の中は OR。既定は条件なし ----
   const [terrainCond, setTerrainCond] = useState<TerrainConditions>(savedView.terrainCond ?? VIEW_DEFAULTS.terrainCond);
   const [showStreams, setShowStreams] = useState(savedView.showStreams ?? VIEW_DEFAULTS.showStreams);
@@ -753,6 +782,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   };
 
   const toggleForest = (k: Exclude<keyof ForestLayers, 'vegMizunara'>) => (e: React.ChangeEvent<HTMLInputElement>) => setForestLayers((l) => ({ ...l, [k]: e.target.checked }));
+  // 「ミズナラを探す」: 根拠を種類ごとにまとめて出す（1〜3 位すべて・順位で見る・群落すべて・確認スポット・Field Log の点。樹種不明は OFF）
+  const startMizunaraSearch = () => {
+    setForestLayers((l) => mizunaraSearchLayers(l, communities));
+    setForestView('rank');
+    setMizunaraSearch(true);
+  };
   const toggleCommunity = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForestLayers((l) => ({ ...l, vegMizunara: e.target.checked ? [...l.vegMizunara, name] : l.vegMizunara.filter((n) => n !== name) }));
 
@@ -764,11 +799,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   useEffect(() => {
     const t = window.setTimeout(() => saveView({
       presetId, conditions, show, fieldLogFilter, base, showSpots, spotKinds, spotSpecies, showHistory, coverageWidth, purposeFilter, period,
-      targetId, showTargetLayer, showMatch, forestLayers, terrainCond, showStreams, showContours,
+      targetId, showTargetLayer, showMatch, forestLayers, forestView, mizunaraSearch, terrainCond, showStreams, showContours,
     }), 500);
     return () => window.clearTimeout(t);
   }, [presetId, conditions, show, fieldLogFilter, base, showSpots, spotKinds, spotSpecies, showHistory, coverageWidth, purposeFilter, period,
-    targetId, showTargetLayer, showMatch, forestLayers, terrainCond, showStreams, showContours]);
+    targetId, showTargetLayer, showMatch, forestLayers, forestView, mizunaraSearch, terrainCond, showStreams, showContours]);
   const [contourError, setContourError] = useState<string | null>(null);
   const contourBlob = loaded?.pkg.files['contours.json'] ?? null;
   const contourVersion = manifest?.version ?? null;
@@ -870,7 +905,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     if (!loaded || !manifest) return undefined;
     const { x, y } = latLngToGrid(manifest, lat, lng);
     const i = cellIndex(loaded.grid, x, y);
-    const fh = loaded.forest && i !== null ? forestHeadline(loaded.forest, i) : null;
+    const fh = loaded.forest && i !== null ? forestHeadline(loaded.forest, i, forestLayers.species ? forestView : 'rank') : null;
     const ky = 111320, kx = 111320 * Math.cos((lat * Math.PI) / 180);
     const near = envSpots.markers
       .map((m) => ({ m, d: Math.hypot((m.lat - lat) * ky, (m.lng - lng) * kx) }))
@@ -880,7 +915,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       .map(({ m, d }) => `${m.label}${m.envType === 'tree' ? `（${({ alive: '生木', snag: '立枯れ', fallen: '倒木', na: '' } as const)[m.lifeState]}）` : ''} 約${Math.max(1, Math.round(d))}m`);
     if (!fh?.species && !fh?.vegetation && near.length === 0) return undefined;
     return { species: fh?.species ?? null, note: fh?.note ?? null, vegetation: fh?.vegetation ?? null, spots: near };
-  }, [loaded, manifest, envSpots.markers]);
+  }, [loaded, manifest, envSpots.markers, forestView, forestLayers.species]);
   const onMapClick = useCallback((lat: number, lng: number) => {
     if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
     setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) });
@@ -926,8 +961,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   };
   // 地図の上の状態チップ（Stage A）: 消し忘れると読めなくなる重ね表示だけ。条件の計算は変えない
   const statusChips = useMemo(() => buildStatusChips({
-    forest: forestLayers,
+    forest: forestDraw,
     forestAny: anyForestLayer(forestLayers),
+    mizunaraSearch,
     candidates: { A: show.A, B: show.B, C: show.C },
     terrainSummary: hydro && anyTerrainCondition(terrainCond) ? `${summarizeTerrain(terrainCond)}${terrainMatchKm2 !== null ? `（${terrainMatchKm2.toFixed(1)}km²）` : ''}` : null,
     matchKm2: matchResult && showMatch ? matchResult.matchKm2 : null,
@@ -935,10 +971,10 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     fieldLogLabel: fieldLogFilter !== 'none' ? FIELD_LOG_FILTER_LABEL[fieldLogFilter] : null,
     ridge: show.ridge,
     sun: show.sun,
-  }, `rgb(${FOREST_COLORS.mz1.slice(0, 3).join(',')})`), [forestLayers, show, hydro, terrainCond, terrainMatchKm2, matchResult, showMatch, target, showTargetLayer, fieldLogFilter]);
+  }, `rgb(${FOREST_COLORS.mz1.slice(0, 3).join(',')})`), [forestDraw, forestLayers, mizunaraSearch, show, hydro, terrainCond, terrainMatchKm2, matchResult, showMatch, target, showTargetLayer, fieldLogFilter]);
   // チップの × : その表示だけを消す（保存した仮説・選んだ対象・樹種の選択は消さない）
   const clearChip = (id: StatusChipId) => {
-    if (id === 'forest') setForestLayers((l) => ({ ...NO_FOREST_LAYERS, species: l.species }));
+    if (id === 'forest') { setForestLayers((l) => ({ ...NO_FOREST_LAYERS, species: l.species })); setMizunaraSearch(false); }
     else if (id === 'candidates') setShow((sh) => ({ ...sh, A: false, B: false, C: false }));
     else if (id === 'terrain') setTerrainCond(NO_TERRAIN_CONDITIONS);
     else if (id === 'match') setShowMatch(false);
@@ -955,6 +991,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     setShow((sh) => ({ ...sh, A: false, B: false, C: false, ridge: false, sun: false }));
     setTerrainCond(NO_TERRAIN_CONDITIONS);
     setForestLayers(NO_FOREST_LAYERS);
+    setMizunaraSearch(false);
     setShowContours(false);
     setShowStreams(false);
     setFieldLogFilter('none');
@@ -1380,7 +1417,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             </Fragment>
           );
         })}
-        {showSpots && envCaptures.map((e) => (
+        {showSpots && !mizunaraSearch && envCaptures.map((e) => (
           <Marker
             key={`env-${e.eventId}`}
             position={[e.lat, e.lng]}
@@ -1388,6 +1425,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           >
             <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<br />「記録」タブの「Spot にする候補」から整理できます<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '名前なし', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </Marker>
+        ))}
+        {/* ミズナラを探す: Field Log のミズナラは小さな点（現地確認の環境スポットより控えめ） */}
+        {mizunaraLogs.map((e) => (
+          <CircleMarker key={`mz-${e.id}`} center={[e.lat, e.lng]} radius={3.5} pathOptions={{ color: '#fff', weight: 1, fillColor: MIZUNARA_LOG_COLOR, fillOpacity: 1 }}>
+            <Popup><b>{e.foodName}</b><br />{e.date}・Field Log（ミズナラの記録）<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || 'ミズナラ', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
+          </CircleMarker>
         ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
@@ -1736,6 +1779,29 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             )}
 
             </details>
+            {forest && (
+              <div className={styles.form} aria-label="ミズナラを探す">
+                {!mizunaraSearch ? (
+                  <button className={`${styles.btn} ${styles.primary}`} onClick={startMizunaraSearch}>ミズナラを探す</button>
+                ) : (
+                  <>
+                    <h3 className={styles.h}>ミズナラを探す</h3>
+                    <p className={styles.sub}>
+                      <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.mz2.slice(0, 3).join(',')})` }} />森林計画（林分）：下の「表示方法」で 順位／林齢（林分） を切り替え<br />
+                      <span className={styles.swatch} style={{ background: 'repeating-linear-gradient(45deg,#7b1fa2 0 2px,transparent 2px 5px)' }} />ミズナラ系植生群落 {forestLayers.vegMizunara.length} 種類<br />
+                      <span className={styles.swatch} style={{ background: SPOT_COLORS.alive, borderRadius: '50%', boxShadow: '0 0 0 2px #f9a825' }} />現地確認したミズナラ（環境スポット） {envSpots.markers.filter((m) => m.treeSpeciesId === 'tree-mizunara').length} 本<br />
+                      <span className={styles.swatch} style={{ background: MIZUNARA_LOG_COLOR, borderRadius: '50%', transform: 'scale(0.6)' }} />Field Log ミズナラ {mizunaraLogs.length} 件
+                    </p>
+                    <label className={styles.check}>
+                      <input type="checkbox" checked={forestLayers.broadleafUnknown} onChange={toggleForest('broadleafUnknown')} />
+                      <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.broadleafUnknown.slice(0, 3).join(',')})` }} />樹種不明の天然林も見る（天然林広葉樹・判別できない）
+                    </label>
+                    <p className={styles.sub}>※ 森林計画に出ないミズナラもあります。林齢は森林計画の林分の値で、木 1 本の樹齢ではありません。この間は 🌲（Spot にする候補）を隠しています</p>
+                    <button className={styles.btn} onClick={() => clearChip('forest')}>ミズナラを探す をやめる</button>
+                  </>
+                )}
+              </div>
+            )}
             <details className={styles.details} open={anyForestLayer(forestLayers)}>
               <summary className={styles.h}>森林（森林計画・植生図）{anyForestLayer(forestLayers) ? '：表示中' : ''}</summary>
             <label className={styles.check}>
@@ -1755,6 +1821,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                     value={forestLayers.species ?? ''}
                     onChange={(e) => {
                       const v = e.target.value || null;
+                      if (v !== MIZUNARA) setMizunaraSearch(false); // 樹種を替えたら「ミズナラを探す」は終わり
                       setForestLayers((l) => (v
                         ? { ...l, species: v, ...(l.mz1 || l.mz2 || l.mz3 ? {} : { mz1: true, mz2: true, mz3: true }) }
                         : { ...l, species: null, mz1: false, mz2: false, mz3: false }));
@@ -1764,13 +1831,33 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                     {forestSpeciesOpts.map((o) => <option key={o.name} value={o.name}>{o.name}{o.group ? '（まとめ）' : ''}（{o.stands.toLocaleString()} 林分）</option>)}
                   </select>
                 </label>
+                {forestLayers.species && (
+                  <div className={styles.row} role="radiogroup" aria-label="森林計画の表示方法">
+                    <span className={styles.sub}>表示方法</span>
+                    <label className={styles.check}><input type="radio" name="forestView" checked={forestView === 'rank'} onChange={() => setForestView('rank')} />順位で見る</label>
+                    <label className={styles.check}><input type="radio" name="forestView" checked={forestView === 'age'} onChange={() => setForestView('age')} />林齢（林分）で見る</label>
+                  </div>
+                )}
+                {forestLayers.species && forestView === 'age' && <p className={styles.sub}>含める順位（林齢では絞りません）</p>}
                 {forestLayers.species && ([['mz1', '1位'], ['mz2', '2位'], ['mz3', '3位']] as const).map(([k, label]) => (
                   <label key={k} className={styles.check}>
                     <input type="checkbox" checked={forestLayers[k]} onChange={toggleForest(k)} />
-                    <span className={styles.swatch} style={{ background: `rgba(${FOREST_COLORS[k].slice(0, 3).join(',')},0.9)` }} />{forestLayers.species} {label}
+                    {forestView === 'rank' && <span className={styles.swatch} style={{ background: `rgba(${FOREST_COLORS[k].slice(0, 3).join(',')},0.9)` }} />}{forestLayers.species} {label}
                     <span className={styles.num}>{forestHa[k].toLocaleString()} ha</span>
                   </label>
                 ))}
+                {forestLayers.species && forestView === 'age' && ageStats && (
+                  <div aria-label="林齢（林分）の凡例">
+                    <p className={styles.sub}>林齢（林分）</p>
+                    {ageStats.filter((a) => a.c !== 'none' || a.stands > 0).map((a) => (
+                      <p key={a.c} className={styles.sub}>
+                        <span className={styles.swatch} style={{ background: `rgba(${FOREST_AGE_COLORS[a.c].slice(0, 3).join(',')},0.95)` }} />{AGE_CLASS_LABEL[a.c]}
+                        <span className={styles.num}>{a.stands.toLocaleString()} 林分・{a.ha.toLocaleString()} ha</span>
+                      </p>
+                    ))}
+                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。林齢で林分を消すことはしていません</p>
+                  </div>
+                )}
                 {speciesNotice && <p className={styles.sub}>{speciesNotice}</p>}
                 <label className={styles.check}>
                   <input type="checkbox" checked={forestLayers.kokuyuNoMizunara} onChange={toggleForest('kokuyuNoMizunara')} />

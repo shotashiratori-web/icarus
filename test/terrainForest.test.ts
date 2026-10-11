@@ -72,7 +72,7 @@ describe('forest', () => {
   });
 
   it('5. 地点情報にデータの年と出どころを必ず出す', () => {
-    expect(describeForest(f, 0)).toEqual(['森林計画（国有林 2018時点）: 1位 ミズナラ・2位 カンバ／林齢 105／天然生林', '植生図（2022調査）: シラカンバ－ミズナラ群落']);
+    expect(describeForest(f, 0)).toEqual(['森林計画（国有林 2018時点）: 1位 ミズナラ・2位 カンバ／林齢（林分）105年／天然生林', '植生図（2022調査）: シラカンバ－ミズナラ群落']);
     expect(describeForest(f, 4)).toContain('天然林広葉樹は樹種不明（ミズナラかどうか分からない）');
     expect(describeForest(f, 5)[0]).toContain('カラマツ（10割）');
     expect(describeForest(f, 2)[0]).toContain('2位 その他広葉樹'); // 他Ｌ の言い換え
