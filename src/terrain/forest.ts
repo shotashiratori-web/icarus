@@ -119,9 +119,10 @@ export const FOREST_COLORS: Record<'mz1' | 'mz2' | 'mz3' | 'kokuyuNoMizunara' | 
 // 林齢（林分）の階級: 古いほど目に飛び込むように、均等な濃淡にしない（若い林分はほぼ透けて、100 年から急に濃く）。
 // 記録なしは灰色（消さない）
 export const FOREST_AGE_COLORS: Record<AgeClass, RGBA> = {
-  lt80: [200, 230, 201, 45], // かなり薄い
-  a80: [165, 214, 167, 100], // 薄い
-  a100: [67, 160, 71, 175], // 中程度
+  // 若い林分も「林分がある」と分かる濃さは残す（陰影図の灰緑に溶けて候補外に見えないよう、少し黄みの緑。初舞茸は 95 年）
+  lt80: [214, 234, 178, 95], // かなり薄い
+  a80: [170, 210, 110, 150], // 薄い
+  a100: [67, 160, 71, 190], // 中程度
   a120: [20, 90, 30, 235], // 濃い
   a150: [0, 35, 8, 255], // かなり濃い
   none: [158, 158, 158, 120],
@@ -290,16 +291,19 @@ export function oldStands(f: ForestData, ranks: Uint8Array, include: (rank: numb
   return out.sort((a, b) => b.age - a.age || b.ha - a.ha);
 }
 
-// 選んだ林分の輪郭（林分の格子のうち、隣が別の林分の格子）。地図で囲んで見せる
-export const STAND_OUTLINE_COLOR: RGBA = [0, 229, 255, 255];
+// 選んだ林分の輪郭。地図で囲んで見せる。境目の内側と外側の 2 格子（約 40m）で太く描く。
+// 色は赤（水の線＝濃紺・水色、道＝橙・黒と見分ける。候補の赤は林齢で見る間は薄くしている）
+export const STAND_OUTLINE_COLOR: RGBA = [255, 23, 68, 255];
 export function renderStandOutline(f: ForestData, stand: number, out?: Uint8ClampedArray): Uint8ClampedArray {
   const o = out ?? new Uint8ClampedArray(f.width * f.height * 4);
   o.fill(0);
   const at = (x: number, y: number) => (x < 0 || y < 0 || x >= f.width || y >= f.height ? 0 : f.stand[y * f.width + x]);
   for (let y = 0; y < f.height; y++) {
     for (let x = 0; x < f.width; x++) {
-      if (at(x, y) !== stand) continue;
-      if (at(x - 1, y) === stand && at(x + 1, y) === stand && at(x, y - 1) === stand && at(x, y + 1) === stand) continue;
+      const inside = at(x, y) === stand;
+      const n = [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)];
+      // 内側の境目（隣に林分の外がある）か、外側の境目（隣に林分がある）
+      if (inside ? n.every((v) => v === stand) : !n.includes(stand)) continue;
       const j = (y * f.width + x) * 4;
       o[j] = STAND_OUTLINE_COLOR[0]; o[j + 1] = STAND_OUTLINE_COLOR[1]; o[j + 2] = STAND_OUTLINE_COLOR[2]; o[j + 3] = STAND_OUTLINE_COLOR[3];
     }

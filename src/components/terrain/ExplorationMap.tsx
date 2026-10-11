@@ -1887,7 +1887,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                         <span className={styles.num}>{a.stands.toLocaleString()} 林分・{a.ha.toLocaleString()} ha</span>
                       </div>
                     ))}
-                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。林齢で林分を消すことはしていません。この間は候補・探索済みの塗りと植生の斜線を薄くしています</p>
+                    <p className={styles.sub}>林齢は森林計画の林分の値です。木 1 本の樹齢ではありません。薄い色の林分も探索の対象から外れていません（初舞茸の林分は 95 年）。この間は候補・探索済みの塗りと植生の斜線を薄くしています</p>
                     {oldList.length > 0 && (
                       <div aria-label="林齢の古い林分">
                         <h3 className={styles.h}>林齢の古い林分から見る</h3>
@@ -1902,7 +1902,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                               setFocusStand(o.stand);
                               if (manifest) {
                                 const a = gridToLatLng(manifest, o.box.x0, o.box.y0), b = gridToLatLng(manifest, o.box.x1 + 1, o.box.y1 + 1);
-                                mapRef.current?.fitBounds([[a.lat, a.lng], [b.lat, b.lng]], { padding: [40, 40], maxZoom: 16 });
+                                // 周りの道・河川も見えるように余白を広く、寄りすぎない（格子 約 21m が粗く見えない程度）
+                                mapRef.current?.fitBounds([[a.lat, a.lng], [b.lat, b.lng]], { padding: [120, 120], maxZoom: 15 });
                               }
                             }}
                           >
