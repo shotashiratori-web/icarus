@@ -1129,3 +1129,31 @@ label.btn {
   font-size: 11px;
   font-weight: 600;
 }
+
+/* 予測地点の一覧: 1 行目 = 「？」＋名前・説明、2 行目 = ボタン（狭いパネルでも名前を押しつぶさない） */
+.candidateRow {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  column-gap: var(--space-2);
+  row-gap: 4px;
+  align-items: center;
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--color-border);
+}
+.candidateRowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #7b1fa2;
+  color: #fff;
+  font-weight: 700;
+}
+.candidateRowActions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

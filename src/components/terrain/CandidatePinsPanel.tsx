@@ -60,11 +60,14 @@ export default function CandidatePinsPanel({ sets, onChanged, onShow, onNavigate
         </div>
         {/* 地点の一覧（ミズナラの「Spot にする候補」と同じ並び） */}
         {s.pins.map((p, i) => (
-          <div key={i} className={styles.captureRow} aria-label={`予測地点 ${p.name}`}>
-            <span className={styles.captureNoImg} style={{ background: '#7b1fa2', color: '#fff', fontWeight: 700 }}>？</span>
+          <div key={i} className={styles.candidateRow} aria-label={`予測地点 ${p.name}`}>
+            <span className={styles.candidateRowIcon}>？</span>
             <span className={styles.captureText}><b>{p.name}</b><br /><small>予測・未確認{pinSummary(p.desc) ? `・${pinSummary(p.desc)}` : ''}</small></span>
-            <button className={styles.btn} onClick={() => onShow(p)}>地図で見る</button>
-            <button className={styles.btn} onClick={() => onNavigate(p)}>ここへ行く</button>
+            {/* パネルは狭いので、ボタンは名前の下の行に並べる（名前・説明を押しつぶさない） */}
+            <span className={styles.candidateRowActions}>
+              <button className={styles.btn} onClick={() => onShow(p)}>地図で見る</button>
+              <button className={styles.btn} onClick={() => onNavigate(p)}>ここへ行く</button>
+            </span>
           </div>
         ))}
         </div>
