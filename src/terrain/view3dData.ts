@@ -65,3 +65,10 @@ export const ROAD_PAINT_3D: RoadPaint3D[] = (['road', 'narrow', 'forest', 'trail
   const dash = st.dashArray ? st.dashArray.split(' ').map((v) => Number(v) / st.weight) : null;
   return { c, color: st.color, width: st.weight, casingWidth: st.weight + ROAD_CASING.extra, dash, round: st.lineCap === 'round' };
 });
+
+// ---- 古い林分へ飛ぶ（PR3）。林分の格子の範囲（両端を含む）→ 経緯度の範囲。押すたびに key を変える ----
+export interface Focus3D { key: number; south: number; west: number; north: number; east: number }
+export function focusFromBox(toLatLng: (x: number, y: number) => { lat: number; lng: number }, box: { x0: number; y0: number; x1: number; y1: number }, key: number): Focus3D {
+  const nw = toLatLng(box.x0, box.y0), se = toLatLng(box.x1 + 1, box.y1 + 1);
+  return { key, south: se.lat, west: nw.lng, north: nw.lat, east: se.lng };
+}

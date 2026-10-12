@@ -59,3 +59,11 @@ describe('道（PR2）', () => {
     expect(by.road).toMatchObject({ color: '#343a40', casingWidth: 5.2 });
   });
 });
+
+describe('古い林分へ飛ぶ（PR3）', () => {
+  it('林分の格子の範囲（両端を含む）を経緯度の範囲に。北西は左上の格子、南東は右下の格子の外側の角', async () => {
+    const { focusFromBox } = await import('../src/terrain/view3dData');
+    const toLatLng = (x: number, y: number) => ({ lat: 43.2 - y * 0.001, lng: 140.6 + x * 0.001 });
+    expect(focusFromBox(toLatLng, { x0: 10, y0: 20, x1: 12, y1: 25 }, 7)).toEqual({ key: 7, north: 43.2 - 0.02, west: 140.6 + 0.01, south: 43.2 - 0.026, east: 140.6 + 0.013 });
+  });
+});
