@@ -1096,6 +1096,7 @@ label.btn {
 .with3d .panel { z-index: 1600; }
 .with3d .statusChips { z-index: 1601; right: 360px; }
 .with3d .probe { z-index: 1600; }
-.with3d .view3dBar { max-width: calc(100% - 380px); }
+/* 3D の操作バーは、上の行（山域・日没・チップ）の下へ。チップと重なると「2D に戻る」が隠れる */
+.with3d .view3dBar { top: 96px; max-width: calc(100% - 380px); }
 .with3d .view3dLegend { right: 350px; }
 .with3d .view3dMap :global(.maplibregl-ctrl-top-right) { right: 340px; }

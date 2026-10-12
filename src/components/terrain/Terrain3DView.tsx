@@ -7,7 +7,7 @@ import { markReadyOnLoad, whenReady } from '../../terrain/mapReady';
 import type { Inspector } from '../../terrain/forestWater';
 import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RIVER_EDGE_CODES } from '../../terrain/gsiRivers';
 import type { TerrainBounds } from '../../terrain/types';
-import { LAYER_SLOTS, layerImage, pointsGeoJSON, spotsGeoJSON, tracksGeoJSON, type Layers3D, type Point3D } from '../../terrain/view3dData';
+import { LAYER_SLOTS, layerImage, pointsGeoJSON, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type Layers3D, type Point3D } from '../../terrain/view3dData';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -123,6 +123,8 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
   exRef.current = ex;
   const spotsRef = useRef(spots);
   spotsRef.current = spots;
+  // 3D に貼った重ね表示の枠ごとの、今の画像・表示・濃さ（変わった枠だけ差し替える）
+  const appliedRef = useRef<Record<string, AppliedLayer>>({});
 
   useEffect(() => {
     if (!el.current) return;
@@ -159,7 +161,8 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           ...(twiUrl ? [{ id: 'twi', type: 'raster' as const, source: 'twi', paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }] : []),
           ...LAYER_SLOTS.map((k) => {
             const li = layerImage(layers[k]);
-            return { id: `ov_${k}`, type: 'raster' as const, source: `ov_${k}`, layout: { visibility: li.visible ? 'visible' as const : 'none' as const }, paint: { 'raster-opacity': 0.85 * li.opacity, 'raster-fade-duration': 0 } };
+            // 濃さの変化は途中を作らない（地形に貼る画像のキャッシュが、変化の途中の濃さで固まらないように）
+            return { id: `ov_${k}`, type: 'raster' as const, source: `ov_${k}`, layout: { visibility: li.visible ? 'visible' as const : 'none' as const }, paint: { 'raster-opacity': 0.85 * li.opacity, 'raster-opacity-transition': { duration: 0, delay: 0 }, 'raster-fade-duration': 0 } };
           }),
           ...(streamsUrl ? [{ id: 'demStreams', type: 'raster' as const, source: 'demStreams', paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }] : []),
           // 地図の河川（地理院 1/25,000）: 水域・岸は薄い青、中心線は濃紺の実線
@@ -178,6 +181,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
       },
     });
     mapRef.current = map;
+    appliedRef.current = Object.fromEntries(LAYER_SLOTS.map((k) => [k, layerImage(layers[k])]));
     markReadyOnLoad(map);
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl(), 'bottom-left');
@@ -207,7 +211,9 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     // 地図は開いた時に 1 回だけ作る。中身は下の effect で差し替える
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 2D の条件が変わったら、重ね表示の画像・点・線を差し替える（開き直さない）
+  // 2D の条件が変わったら、重ね表示の画像・点・線を差し替える（開き直さない）。
+  // 3D の地形は重ねる画像を地形のタイルごとの絵にして持っておき、画像（ソース）が変わった時・表示する層が変わった時だけ描き直す。
+  // 濃さ（paint）だけを変えても描き直されないので、変わった枠は 濃さ → 表示 → 画像の差し替え の順にして描き直させる。変わらない枠は触らない
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -219,9 +225,11 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
         const li = layerImage(layers[k]);
         const src = map.getSource(`ov_${k}`) as maplibregl.ImageSource | undefined;
         if (!src || !map.getLayer(`ov_${k}`)) continue;
-        src.updateImage({ url: li.url, coordinates: corners });
-        map.setLayoutProperty(`ov_${k}`, 'visibility', li.visible ? 'visible' : 'none');
+        if (!slotChanged(appliedRef.current[k], li)) continue;
         map.setPaintProperty(`ov_${k}`, 'raster-opacity', 0.85 * li.opacity);
+        map.setLayoutProperty(`ov_${k}`, 'visibility', li.visible ? 'visible' : 'none');
+        src.updateImage({ url: li.url, coordinates: corners });
+        appliedRef.current[k] = li;
       }
     });
   }, [layers, bounds]);
