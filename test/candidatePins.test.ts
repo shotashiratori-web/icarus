@@ -1,0 +1,49 @@
+import 'fake-indexeddb/auto';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  CandidateGpxError, closeCandidateStoreForTest, deleteCandidateSet, importCandidateGpx, listCandidateSets, parseCandidateGpx, setCandidateSetVisible,
+} from '../src/exploration/candidatePins';
+
+// 予測地点（検証候補）ピン v1（icarus_field_candidate_pins_v1_design.md）: GPX の目印だけを読み、この端末だけに保存する
+
+const GPX = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Icarus Old-Growth Audit" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>登りやすい予測樹冠（未確認）2026-10-13</name></metadata>
+  <wpt lat="43.150132" lon="140.894545"><name>E01-3003 34m</name><desc>予測・未確認。樹冠高 34m</desc><sym>Flag</sym></wpt>
+  <wpt lat="43.160338" lon="140.893772"><name>E04-3002 28m</name><desc>予測・未確認</desc></wpt>
+  <wpt lat="999" lon="140.9"><name>壊れた座標</name></wpt>
+  <trk><name>歩いた線</name><trkseg><trkpt lat="43.1" lon="140.8"><time>2026-10-10T00:00:00Z</time></trkpt></trkseg></trk>
+</gpx>`;
+
+afterEach(async () => { await closeCandidateStoreForTest(); indexedDB.deleteDatabase('icarus-candidate-pins'); });
+
+describe('予測地点の GPX を読む', () => {
+  it('目印（wpt）だけを読む。歩いた線（trk）・壊れた座標は読まない。名前・説明・題名', () => {
+    const r = parseCandidateGpx(GPX);
+    expect(r.title).toBe('登りやすい予測樹冠（未確認）2026-10-13');
+    expect(r.pins).toEqual([
+      { name: 'E01-3003 34m', desc: '予測・未確認。樹冠高 34m', lat: 43.150132, lng: 140.894545 },
+      { name: 'E04-3002 28m', desc: '予測・未確認', lat: 43.160338, lng: 140.893772 },
+    ]);
+  });
+  it('目印の無い GPX（歩いた記録だけ）・GPX でないものは読み込まない', () => {
+    const trkOnly = '<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg><trkpt lat="43" lon="140"/></trkseg></trk></gpx>';
+    expect(() => parseCandidateGpx(trkOnly)).toThrow(CandidateGpxError);
+    expect(() => parseCandidateGpx(trkOnly)).toThrow('GPX を記録');
+    expect(() => parseCandidateGpx('<html></html>')).toThrow('GPX ではありません');
+  });
+});
+
+describe('端末だけに保存', () => {
+  it('同じファイルは二重に作らない。表示の ON/OFF。消すのは明示した時だけ', async () => {
+    const a = await importCandidateGpx('easy.gpx', GPX);
+    expect(a.existing).toBe(false);
+    expect(a.set).toMatchObject({ fileName: 'easy.gpx', visible: true });
+    expect((await importCandidateGpx('easy-copy.gpx', GPX)).existing).toBe(true);
+    expect(await listCandidateSets()).toHaveLength(1);
+    await setCandidateSetVisible(a.set.id, false);
+    expect((await listCandidateSets())[0].visible).toBe(false);
+    await deleteCandidateSet(a.set.id);
+    expect(await listCandidateSets()).toEqual([]);
+  });
+});
