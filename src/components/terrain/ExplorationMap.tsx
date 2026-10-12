@@ -21,7 +21,7 @@ import {
   type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
-import type { Layers3D } from '../../terrain/view3dData';
+import { roadsGeoJSON, type Layers3D } from '../../terrain/view3dData';
 import {
   anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
@@ -1359,6 +1359,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     match: { url: matchUrl, opacity: 1 },
     outline: { url: outlineUrl, opacity: 1 },
   }), [forestUrl, overlayUrl, ageView, hydro, match3d, hydroUrl, targetUrl, matchUrl, outlineUrl]);
+  // 道（PR2）: 2D の「道路・林道」「登山道・徒歩道」に従う（3D に別の操作を足さない）
+  const roads3d = useMemo(() => (open3dOn ? roadsGeoJSON(roadGroups, { road: show.road, trail: show.trail }) : roadsGeoJSON(null, { road: false, trail: false })), [open3dOn, roadGroups, show.road, show.trail]);
   const tracks3d = useMemo(() => (showHistory ? visibleHistory.flatMap((e) => e.track ?? []) : []), [showHistory, visibleHistory]);
   const spots3d = useMemo(() => (manifest ? visibleSpots.map((m) => ({
     lat: m.lat, lng: m.lng, label: m.remote?.title ?? m.label, color: SPOT_COLORS[kindOf(m)], mizunara: m.treeSpeciesId === 'tree-mizunara',
@@ -1682,6 +1684,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             twiUrl={water3d?.twi ?? null}
             streamsUrl={water3d?.streams ?? null}
             tracks={tracks3d}
+            roads={roads3d}
             spots={spots3d}
             points={points3d}
             initial={view3d}
