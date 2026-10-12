@@ -1723,6 +1723,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             roads={roads3d}
             spots={spots3d}
             points={points3d}
+            candidates={candidatePins}
             initial={view3d}
             focus={focus3d}
             onPick={onPick3d}
