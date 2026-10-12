@@ -366,7 +366,13 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [copied, setCopied] = useState<string | null>(null);
   // 予測地点（検証候補）ピン: この端末だけ。2D の地図に紫の「？」で出す（観測＝環境スポットとは別）
   const [candidateSets, setCandidateSets] = useState<CandidateSet[]>([]);
-  const refreshCandidates = useCallback(async () => { setCandidateSets(await listCandidateSets().catch(() => [])); }, []);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  // 端末の保存庫の読み出しは非同期。画面を閉じた後に返ってきたら何もしない
+  const refreshCandidates = useCallback(async () => {
+    const sets = await listCandidateSets().catch(() => [] as CandidateSet[]);
+    if (mountedRef.current) setCandidateSets(sets);
+  }, []);
   useEffect(() => { void refreshCandidates(); }, [refreshCandidates]);
   const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}` }))), [candidateSets]);
   const [watching, setWatching] = useState(false);
