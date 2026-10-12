@@ -18,6 +18,13 @@ export interface CandidateSet {
 
 export class CandidateGpxError extends Error {}
 
+// 一覧の 2 行目: 説明の 2 文目（例「樹冠高 34m（周り…より +11m）」）。無ければ空
+export function pinSummary(desc: string): string {
+  const parts = desc.split('。').map((t) => t.trim()).filter(Boolean);
+  return (parts[0]?.startsWith('予測・未確認') ? parts[1] : parts[0]) ?? '';
+}
+
+
 // GPX の <wpt>（目印）だけを読む。<trk>・<rte>（歩いた線）は読まない
 export function parseCandidateGpx(text: string): { title: string; pins: CandidatePin[] } {
   const doc = new DOMParser().parseFromString(text, 'application/xml');

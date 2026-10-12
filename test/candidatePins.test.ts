@@ -47,3 +47,12 @@ describe('端末だけに保存', () => {
     expect(await listCandidateSets()).toEqual([]);
   });
 });
+
+describe('一覧の 2 行目', () => {
+  it('「予測・未確認」の次の文（樹冠高など）を出す', async () => {
+    const { pinSummary } = await import('../src/exploration/candidatePins');
+    expect(pinSummary('予測・未確認（登りやすい候補）。樹冠高 34m（周り半径100mの中央値より +11m）。傾斜 9°')).toBe('樹冠高 34m（周り半径100mの中央値より +11m）');
+    expect(pinSummary('林道の入口')).toBe('林道の入口');
+    expect(pinSummary('')).toBe('');
+  });
+});

@@ -2089,7 +2089,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             {tab === 'record' && view3d && <p className={styles.sub}>記録・現在地・案内は 2D の機能です。「2D に戻る」と使えます</p>}
             {tab === 'record' && !view3d && (
               <>
-            <CandidatePinsPanel sets={candidateSets} onChanged={refreshCandidates} />
+            <CandidatePinsPanel
+              sets={candidateSets}
+              onChanged={refreshCandidates}
+              onShow={(p) => mapRef.current?.setView([p.lat, p.lng], Math.max(mapRef.current.getZoom(), 16))}
+              onNavigate={(p) => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}
+            />
             <div className={styles.row}>
               <button className={`${styles.btn} ${styles.primary}`} onClick={toggleGps}>{watching ? '現在地を止める' : '現在地を表示'}</button>
               <label className={styles.check}><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />追従</label>
