@@ -9,6 +9,7 @@ import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RI
 import type { TerrainBounds } from '../../terrain/types';
 import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
 import { ROAD_CLASS_LABEL } from '../../terrain/roads';
+import type { CandidatePin } from '../../exploration/candidatePins';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -17,6 +18,7 @@ import styles from './ExplorationMap.module.css';
 // - 探索履歴 GPX・環境スポット（木など）・Field Log の点。記録・訂正・案内は 2D から
 // - 3D-2 Forest & Water Context: 木を押すと状態・観察・森・地形・水（読み取り専用）。水は 地図の河川／沢の目安（DEM）／湿りやすさ（TWI）を分けて重ねる
 //   設計: icarus_3d2_forest_water_context_audit.md
+// - 予測地点（検証候補）: 2D と同じ紫の「？」＋名前を地形の上に出す。押すと名前・説明・座標のコピー（案内は 2D から）
 // - 3D パネル統合 PR1（icarus_3d_panel_integration_v1_design.md）: 右のパネルは 2D と同じものを残し、3D は開いたまま
 //   2D の条件の変化に追従する（重ね表示は名前つきの枠の画像を差し替え、点・線は GeoJSON を差し替え）
 // このファイルと MapLibre は asset-manifest から外す（iPhone に保存させない。build/assetManifest.ts）
@@ -32,6 +34,7 @@ export interface Terrain3DProps {
   roads: FC; // 道（PR2）。2D と同じデータ・見た目。2D の「道路・林道」「登山道・徒歩道」で絞った後のもの
   spots: Spot3D[];
   points: Point3D[];
+  candidates: CandidatePin[]; // 予測地点（2D の一覧で表示にしている組だけ）
   initial: { lat: number; lng: number; zoom: number };
   // PR3: 「林齢の古い林分から見る」を押した林分へ飛ぶ（key が変わるたびに 1 回）。範囲は経緯度
   focus: { key: number; south: number; west: number; north: number; east: number } | null;
@@ -117,7 +120,30 @@ function inspectorDom(ins: Inspector): { root: HTMLElement; elev: HTMLElement; r
   return { root, elev, river };
 }
 
-export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
+// 予測地点の目印（2D と同じ紫の「？」＋名前）
+function candidateNode(p: CandidatePin): HTMLElement {
+  const node = el('div', styles.candidate3d);
+  const pin = el('span', styles.candidatePin, '？');
+  pin.setAttribute('aria-label', '予測地点（未確認）');
+  node.append(pin, el('span', styles.candidateLabel, p.name));
+  return node;
+}
+
+// 予測地点のポップアップ（テキストだけで組み立てる）
+function candidateDom(p: CandidatePin): HTMLElement {
+  const root = el('div', styles.inspector);
+  root.append(el('strong', styles.inspTitle, `？ ${p.name}`), el('div', styles.inspSub, '予測・未確認（この端末だけ）'));
+  if (p.desc) root.append(el('div', null, p.desc));
+  const t = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+  const copy = el('button', styles.btn, '座標をコピー') as HTMLButtonElement;
+  copy.onclick = () => { navigator.clipboard?.writeText(t).then(() => { copy.textContent = 'コピーしました'; }, () => undefined); };
+  const foot = el('div', styles.inspFoot, 'ここへ行く・記録は 2D から ');
+  foot.append(copy);
+  root.append(foot);
+  return root;
+}
+
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -271,6 +297,19 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     });
   }, [tracks, roads, spots, points]);
 
+  // 予測地点: 2D と同じ見た目の HTML の目印（地形の高さに立つ）。組の表示・読み込み・削除のたびに作り直す
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const markers = candidates.map((p) => {
+      return new maplibregl.Marker({ element: candidateNode(p), anchor: 'center' })
+        .setLngLat([p.lng, p.lat])
+        .setPopup(new maplibregl.Popup({ closeButton: true, maxWidth: '300px', offset: 14 }).setDOMContent(candidateDom(p)))
+        .addTo(map);
+    });
+    return () => { for (const m of markers) m.remove(); };
+  }, [candidates]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -319,6 +358,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
         {streamsUrl && <label><input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} /> <i className={styles.lgStream} /> 沢の目安（DEM の推定。実際の流れとは別）</label>}
         {twiUrl && <label><input type="checkbox" checked={showTwi} onChange={(e) => setShowTwi(e.target.checked)} /> <i className={styles.lgTwi} /> 湿りやすさ TWI（濃い = 山域の上位10%・薄い = 上位33%）</label>}
         <span><i className={styles.lgField} /> 現地で確認した水 = 「地形」の環境スポット</span>
+        {candidates.length > 0 && <span><i className={styles.lgCandidate}>？</i> 予測地点（未確認・{candidates.length} 地点。押すと説明）</span>}
         <strong>道（2D の「道路・林道」「登山道・徒歩道」に従う）</strong>
         {ROAD_PAINT_3D.map((r) => (
           <span key={r.c}><i className={styles.lgRoad} style={{ background: r.dash ? `repeating-linear-gradient(90deg,${r.color} 0 ${r.dash[0] * 3}px,transparent ${r.dash[0] * 3}px ${(r.dash[0] + r.dash[1]) * 3}px)` : r.color, height: Math.max(2, r.width) }} /> {ROAD_CLASS_LABEL[r.c]}</span>

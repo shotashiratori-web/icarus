@@ -1072,6 +1072,9 @@ label.btn {
 .lgTwi { background: rgba(0, 137, 123, 0.5); }
 .lgField { background: #546e7a; border-radius: 50% !important; width: 10px !important; }
 .lgRoad { box-shadow: 0 0 0 1.5px #fff; border-radius: 1px !important; }
+.lgCandidate { background: #7b1fa2; color: #fff; border-radius: 50% !important; width: 12px !important; height: 12px !important; font-size: 9px; font-style: normal; font-weight: 700; line-height: 12px; text-align: center; }
+/* 3D の予測地点（MapLibre の目印。中身は 2D と同じ .candidatePin・.candidateLabel） */
+.candidate3d { position: relative; width: 24px; height: 24px; cursor: pointer; }
 
 .inspector {
   display: flex;
