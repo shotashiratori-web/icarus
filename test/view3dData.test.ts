@@ -27,3 +27,15 @@ describe('点・線の GeoJSON', () => {
     expect(fc.features.map((f) => f.properties)).toEqual([{ label: 'a', color: POINT_COLOR, radius: 5 }, { label: 'b', color: '#e65100', radius: 3.5 }]);
   });
 });
+
+describe('枠の差し替え（3D の地形は画像の差し替えでしか描き直されない）', () => {
+  it('濃さだけが変わっても「変わった」とする。何も変わらなければ触らない', async () => {
+    const { slotChanged } = await import('../src/terrain/view3dData');
+    const a = layerImage({ url: 'blob:c', opacity: 0.3 });
+    expect(slotChanged(a, layerImage({ url: 'blob:c', opacity: 1 }))).toBe(true);
+    expect(slotChanged(a, layerImage({ url: 'blob:d', opacity: 0.3 }))).toBe(true);
+    expect(slotChanged(a, layerImage({ url: null, opacity: 0.3 }))).toBe(true);
+    expect(slotChanged(a, layerImage({ url: 'blob:c', opacity: 0.3 }))).toBe(false);
+    expect(slotChanged(undefined, a)).toBe(true);
+  });
+});

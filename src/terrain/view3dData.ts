@@ -33,3 +33,10 @@ export const POINT_COLOR = '#2b8a3e';
 export function pointsGeoJSON(points: Point3D[]): FC {
   return { type: 'FeatureCollection', features: points.map((p) => ({ type: 'Feature', properties: { label: p.label, color: p.color ?? POINT_COLOR, radius: p.radius ?? 5 }, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } })) };
 }
+
+// 前に貼った枠と比べて、画像・表示・濃さのどれかが変わったか（変わった枠だけ差し替える。
+// 3D の地形は画像の差し替えでしか描き直されないので、濃さだけ変わった時も差し替える）
+export type AppliedLayer = ReturnType<typeof layerImage>;
+export function slotChanged(prev: AppliedLayer | undefined, next: AppliedLayer): boolean {
+  return !prev || prev.url !== next.url || prev.visible !== next.visible || prev.opacity !== next.opacity;
+}
