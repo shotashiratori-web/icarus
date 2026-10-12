@@ -33,6 +33,10 @@ export interface Terrain3DProps {
   spots: Spot3D[];
   points: Point3D[];
   initial: { lat: number; lng: number; zoom: number };
+  // PR3: 「林齢の古い林分から見る」を押した林分へ飛ぶ（key が変わるたびに 1 回）。範囲は経緯度
+  focus: { key: number; south: number; west: number; north: number; east: number } | null;
+  // PR3: 地面を押した所の地点情報を 2D と同じ場所に出す（標高は 3D の地形から。強調を戻した値）
+  onPick: (lat: number, lng: number, elevM: number | null) => void;
   areaName: string;
   onClose: () => void;
 }
@@ -113,7 +117,7 @@ function inspectorDom(ins: Inspector): { root: HTMLElement; elev: HTMLElement; r
   return { root, elev, river };
 }
 
-export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, initial, areaName, onClose }: Terrain3DProps) {
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -125,6 +129,8 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
   exRef.current = ex;
   const spotsRef = useRef(spots);
   spotsRef.current = spots;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
   // 3D に貼った重ね表示の枠ごとの、今の画像・表示・濃さ（変わった枠だけ差し替える）
   const appliedRef = useRef<Record<string, AppliedLayer>>({});
 
@@ -197,6 +203,12 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
       if (!f) return;
       new maplibregl.Popup({ closeButton: false }).setLngLat(e.lngLat).setText(String(f.properties?.label ?? '')).addTo(map);
     });
+    // 地面を押した所の地点情報（木・Field Log の点を押した時は、それぞれの情報を出すので地点情報は出さない）
+    map.on('click', (e) => {
+      if (map.queryRenderedFeatures(e.point, { layers: ['spots', 'points'].filter((id) => map.getLayer(id)) }).length) return;
+      const h = map.queryTerrainElevation(e.lngLat);
+      onPickRef.current(e.lngLat.lat, e.lngLat.lng, h === null || h === undefined ? null : Math.round(h / exRef.current));
+    });
     map.on('click', 'spots', (e) => {
       const f = e.features?.[0];
       const s = f ? spotsRef.current[Number(f.properties?.idx)] : undefined;
@@ -216,6 +228,15 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     return () => { map.remove(); mapRef.current = null; };
     // 地図は開いた時に 1 回だけ作る。中身は下の effect で差し替える
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PR3: 古い林分へ飛ぶ。右のパネルに隠れないよう右を広く空け、斜めから見る
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focus) return;
+    whenReady(map, () => {
+      map.fitBounds([[focus.west, focus.south], [focus.east, focus.north]], { padding: { top: 200, bottom: 80, left: 60, right: 380 }, maxZoom: 15, pitch: 60, bearing: map.getBearing(), duration: 1200 });
+    });
+  }, [focus]);
 
   // 2D の条件が変わったら、重ね表示の画像・点・線を差し替える（開き直さない）。
   // 3D の地形は重ねる画像を地形のタイルごとの絵にして持っておき、画像（ソース）が変わった時・表示する層が変わった時だけ描き直す。

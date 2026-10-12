@@ -21,7 +21,7 @@ import {
   type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
-import { roadsGeoJSON, type Layers3D } from '../../terrain/view3dData';
+import { focusFromBox, roadsGeoJSON, type Focus3D, type Layers3D } from '../../terrain/view3dData';
 import {
   anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
@@ -360,7 +360,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [base, setBase] = useState<Base>(savedView.base ?? VIEW_DEFAULTS.base);
   const [panelOpen, setPanelOpen] = useState(() => !!openGpxDraftId || initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
-  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead } | null>(null);
+  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [watching, setWatching] = useState(false);
   // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
@@ -1316,6 +1316,13 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     setView3d({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
   };
   useEffect(() => setView3d(null), [manifest?.areaId]); // 山域が替わったら 3D を閉じる（前の山域の地図は消えている）
+  // PR3: 3D で古い林分へ飛ぶ（押すたびに key を変える）
+  const [focus3d, setFocus3d] = useState<Focus3D | null>(null);
+  useEffect(() => { if (!view3d) setFocus3d(null); }, [view3d]);
+  // PR3: 3D の地面を押した所の地点情報（2D と同じ内容・同じ場所。標高は 3D の地形から）
+  const onPick3d = useCallback((lat: number, lng: number, elevM: number | null) => {
+    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng), elevM });
+  }, [describePoint, headOf]);
   // 3D だけの水の画像（3D-2）。湿りやすさ・沢の目安は開いた時に 1 回作り、閉じたら捨てる。沢の目安は 3D では別の色・別の層（地図の河川と分ける）。
   // 地形の条件に合う範囲は、3D を開いたまま条件を変えたら作り直す（3D パネル統合 PR1。3D そのものは閉じない）
   const [water3d, setWater3d] = useState<{ twi: string | null; streams: string | null } | null>(null);
@@ -1688,6 +1695,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             spots={spots3d}
             points={points3d}
             initial={view3d}
+            focus={focus3d}
+            onPick={onPick3d}
             onClose={() => setView3d(null)}
           />
         </Suspense>
@@ -1929,6 +1938,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                               setFocusStand(o.stand);
                               if (manifest) {
                                 const a = gridToLatLng(manifest, o.box.x0, o.box.y0), b = gridToLatLng(manifest, o.box.x1 + 1, o.box.y1 + 1);
+                                // 3D を開いている時は 3D もその林分へ飛ぶ（2D も同じ所へ寄せておく。2D に戻った時も同じ林分が見える）
+                                if (view3d) setFocus3d(focusFromBox((x, y) => gridToLatLng(manifest, x, y), o.box, Date.now()));
                                 // 周りの道・河川も見えるように余白を広く、寄りすぎない（格子 約 21m が粗く見えない程度）
                                 mapRef.current?.fitBounds([[a.lat, a.lng], [b.lat, b.lng]], { padding: [120, 120], maxZoom: 15 });
                               }
@@ -2176,10 +2187,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               {probe.head.spots.length > 0 && <div>近くの環境スポット: {probe.head.spots.join('、')}</div>}
             </div>
           )}
+          {view3d && probe.elevM !== undefined && <div>標高 {probe.elevM === null ? '—' : `約${probe.elevM}m（地理院標高・3D の地形から）`}</div>}
           {probe.lines.map((l) => <div key={l}>{l}</div>)}
           <div className={styles.probeActions}>
-            <button className={`${styles.btn} ${styles.primary}`} onClick={() => startNavigate({ kind: 'point', name: '地図の地点', lat: probe.lat, lng: probe.lng })}>ここへ行く</button>
-            <button className={styles.btn} onClick={() => { setRecordLoc({ lat: probe.lat, lng: probe.lng, source: 'map', accuracyM: null }); setProbe(null); }}>ここを記録</button>
+            {/* 案内・記録は 2D の機能（3D の間は出さない） */}
+            {!view3d && <button className={`${styles.btn} ${styles.primary}`} onClick={() => startNavigate({ kind: 'point', name: '地図の地点', lat: probe.lat, lng: probe.lng })}>ここへ行く</button>}
+            {!view3d && <button className={styles.btn} onClick={() => { setRecordLoc({ lat: probe.lat, lng: probe.lng, source: 'map', accuracyM: null }); setProbe(null); }}>ここを記録</button>}
             {/* 主な案内は Icarus の「ここへ行く」。Google マップは林道まで車で行く時などの二次操作 */}
             <a className={`${styles.btn} ${styles.btnSub}`} href={googleMapsDirectionsUrl(probe.lat, probe.lng)} target="_blank" rel="noreferrer">外部地図で開く</a>
             <button
