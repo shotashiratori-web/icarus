@@ -48,6 +48,8 @@ import { PURPOSE_LABEL, RESULT_LABEL, type Purpose } from '../../exploration/typ
 import { useExplorationHistory, type HistoryEntry } from './useExplorationHistory';
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import type { RangePreview } from './ExplorationRangeEditor';
+import CandidatePinsPanel from './CandidatePinsPanel';
+import { listCandidateSets, type CandidateSet } from '../../exploration/candidatePins';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import ContourLayer from './ContourLayer';
 import { APP_BUILD } from '../../appBuild';
@@ -362,6 +364,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // 予測地点（検証候補）ピン: この端末だけ。2D の地図に紫の「？」で出す（観測＝環境スポットとは別）
+  const [candidateSets, setCandidateSets] = useState<CandidateSet[]>([]);
+  const refreshCandidates = useCallback(async () => { setCandidateSets(await listCandidateSets().catch(() => [])); }, []);
+  useEffect(() => { void refreshCandidates(); }, [refreshCandidates]);
+  const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}` }))), [candidateSets]);
   const [watching, setWatching] = useState(false);
   // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
   const [follow, setFollow] = useState(() => !loadCamera(area.areaId, area.bounds));
@@ -1485,6 +1492,22 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             </Fragment>
           );
         })}
+        {/* 予測地点（検証候補）: 紫の「？」。押すと名前・説明・「ここへ行く」（「ここを記録」は出さない） */}
+        {candidatePins.map((p) => (
+          <Marker
+            key={`cand-${p.key}`}
+            position={[p.lat, p.lng]}
+            icon={L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: `<span class="${styles.candidatePin}" aria-label="予測地点（未確認）">？</span><span class="${styles.candidateLabel}">${p.name.replace(/[<>&"]/g, '')}</span>` })}
+          >
+            <Popup>
+              <b>？ {p.name}</b><br />
+              <span className={styles.sub}>予測・未確認（この端末だけ）</span>
+              {p.desc && <><br />{p.desc}</>}<br />
+              <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}>ここへ行く</button>{' '}
+              <button className={styles.btn} onClick={() => { const t = coordText(p.lat, p.lng); navigator.clipboard?.writeText(t).then(() => setCopied(t), () => setCopied(null)); }}>{copied === coordText(p.lat, p.lng) ? 'コピーしました' : '座標をコピー'}</button>
+            </Popup>
+          </Marker>
+        ))}
         {showSpots && !mizunaraSearch && envCaptures.map((e) => (
           <Marker
             key={`env-${e.eventId}`}
@@ -2060,6 +2083,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             {tab === 'record' && view3d && <p className={styles.sub}>記録・現在地・案内は 2D の機能です。「2D に戻る」と使えます</p>}
             {tab === 'record' && !view3d && (
               <>
+            <CandidatePinsPanel sets={candidateSets} onChanged={refreshCandidates} />
             <div className={styles.row}>
               <button className={`${styles.btn} ${styles.primary}`} onClick={toggleGps}>{watching ? '現在地を止める' : '現在地を表示'}</button>
               <label className={styles.check}><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />追従</label>
