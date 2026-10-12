@@ -7,6 +7,7 @@ import { markReadyOnLoad, whenReady } from '../../terrain/mapReady';
 import type { Inspector } from '../../terrain/forestWater';
 import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RIVER_EDGE_CODES } from '../../terrain/gsiRivers';
 import type { TerrainBounds } from '../../terrain/types';
+import { LAYER_SLOTS, layerImage, pointsGeoJSON, spotsGeoJSON, tracksGeoJSON, type Layers3D, type Point3D } from '../../terrain/view3dData';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -15,13 +16,15 @@ import styles from './ExplorationMap.module.css';
 // - 探索履歴 GPX・環境スポット（木など）・Field Log の点。記録・訂正・案内は 2D から
 // - 3D-2 Forest & Water Context: 木を押すと状態・観察・森・地形・水（読み取り専用）。水は 地図の河川／沢の目安（DEM）／湿りやすさ（TWI）を分けて重ねる
 //   設計: icarus_3d2_forest_water_context_audit.md
+// - 3D パネル統合 PR1（icarus_3d_panel_integration_v1_design.md）: 右のパネルは 2D と同じものを残し、3D は開いたまま
+//   2D の条件の変化に追従する（重ね表示は名前つきの枠の画像を差し替え、点・線は GeoJSON を差し替え）
 // このファイルと MapLibre は asset-manifest から外す（iPhone に保存させない。build/assetManifest.ts）
 
 export interface Spot3D { lat: number; lng: number; label: string; color: string; mizunara: boolean; inspector: Inspector }
-export interface Point3D { lat: number; lng: number; label: string }
+export type { Point3D };
 export interface Terrain3DProps {
   bounds: TerrainBounds;
-  overlays: string[]; // 2D の層の画像（object URL）。下から順
+  layers: Layers3D; // 2D の層の画像（object URL）。名前つきの枠、下から LAYER_SLOTS の順
   twiUrl: string | null; // 湿りやすさ（TWI 上位 33%・10%）
   streamsUrl: string | null; // 沢の目安（DEM。3D では水色）
   tracks: [number, number][][]; // [lat, lng]
@@ -108,7 +111,7 @@ function inspectorDom(ins: Inspector): { root: HTMLElement; elev: HTMLElement; r
   return { root, elev, river };
 }
 
-export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tracks, spots, points, initial, areaName, onClose }: Terrain3DProps) {
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, spots, points, initial, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -118,6 +121,8 @@ export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tr
   const [showTwi, setShowTwi] = useState(true);
   const exRef = useRef(1.5);
   exRef.current = ex;
+  const spotsRef = useRef(spots);
+  spotsRef.current = spots;
 
   useEffect(() => {
     if (!el.current) return;
@@ -139,20 +144,23 @@ export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tr
           pale: { type: 'raster', tiles: [GSI('pale', 'png')], tileSize: 256, maxzoom: 18, attribution: '国土地理院' },
           shade: { type: 'raster', tiles: [GSI('hillshademap', 'png')], tileSize: 256, maxzoom: 16 },
           photo: { type: 'raster', tiles: [GSI('seamlessphoto', 'jpg')], tileSize: 256, maxzoom: 18 },
-          ...Object.fromEntries(overlays.map((url, i) => [`ov${i}`, { type: 'image' as const, url, coordinates: corners }])),
+          ...Object.fromEntries(LAYER_SLOTS.map((k) => [`ov_${k}`, { type: 'image' as const, url: layerImage(layers[k]).url, coordinates: corners }])),
           ...(twiUrl ? { twi: { type: 'image' as const, url: twiUrl, coordinates: corners } } : {}),
           ...(streamsUrl ? { demStreams: { type: 'image' as const, url: streamsUrl, coordinates: corners } } : {}),
           gsivec: { type: 'vector', tiles: [GSI_VECTOR_TILES], minzoom: 4, maxzoom: 16, attribution: '国土地理院（ベクトルタイル）' },
-          tracks: { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: tracks.map((t) => t.map(([la, ln]) => [ln, la])) } } },
-          spots: { type: 'geojson', data: { type: 'FeatureCollection', features: spots.map((s, i) => ({ type: 'Feature', properties: { idx: i, label: s.label, color: s.color, mizunara: s.mizunara }, geometry: { type: 'Point', coordinates: [s.lng, s.lat] } })) } },
-          points: { type: 'geojson', data: { type: 'FeatureCollection', features: points.map((p) => ({ type: 'Feature', properties: { label: p.label }, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } })) } },
+          tracks: { type: 'geojson', data: tracksGeoJSON(tracks) as never },
+          spots: { type: 'geojson', data: spotsGeoJSON(spots) as never },
+          points: { type: 'geojson', data: pointsGeoJSON(points) as never },
         },
         layers: [
           { id: 'pale', type: 'raster', source: 'pale' },
           { id: 'shade', type: 'raster', source: 'shade', paint: { 'raster-opacity': 0.55 } },
           { id: 'photo', type: 'raster', source: 'photo', layout: { visibility: 'none' } },
           ...(twiUrl ? [{ id: 'twi', type: 'raster' as const, source: 'twi', paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }] : []),
-          ...overlays.map((_, i) => ({ id: `ov${i}`, type: 'raster' as const, source: `ov${i}`, paint: { 'raster-opacity': 0.85, 'raster-fade-duration': 0 } })),
+          ...LAYER_SLOTS.map((k) => {
+            const li = layerImage(layers[k]);
+            return { id: `ov_${k}`, type: 'raster' as const, source: `ov_${k}`, layout: { visibility: li.visible ? 'visible' as const : 'none' as const }, paint: { 'raster-opacity': 0.85 * li.opacity, 'raster-fade-duration': 0 } };
+          }),
           ...(streamsUrl ? [{ id: 'demStreams', type: 'raster' as const, source: 'demStreams', paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }] : []),
           // 地図の河川（地理院 1/25,000）: 水域・岸は薄い青、中心線は濃紺の実線
           { id: 'river-area', type: 'fill', source: 'gsivec', 'source-layer': 'waterarea', paint: { 'fill-color': '#90caf9', 'fill-opacity': 0.6 } },
@@ -160,7 +168,7 @@ export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tr
           { id: 'river-line', type: 'line', source: 'gsivec', 'source-layer': 'river', filter: ['in', ['get', 'ftCode'], ['literal', RIVER_CENTER_CODES]], paint: { 'line-color': '#0d47a1', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.2, 15, 2.8] } },
           { id: 'tracks-casing', type: 'line', source: 'tracks', paint: { 'line-color': '#fff', 'line-width': 6, 'line-opacity': 0.85 } },
           { id: 'tracks', type: 'line', source: 'tracks', paint: { 'line-color': '#1a73e8', 'line-width': 3.5 } },
-          { id: 'points', type: 'circle', source: 'points', paint: { 'circle-radius': 5, 'circle-color': '#2b8a3e', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } },
+          { id: 'points', type: 'circle', source: 'points', paint: { 'circle-radius': ['get', 'radius'], 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } },
           { id: 'spots', type: 'circle', source: 'spots', paint: {
             'circle-radius': 8, 'circle-color': ['get', 'color'],
             'circle-stroke-color': ['case', ['get', 'mizunara'], '#f9a825', '#ffffff'], 'circle-stroke-width': ['case', ['get', 'mizunara'], 3, 1.5],
@@ -181,7 +189,7 @@ export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tr
     });
     map.on('click', 'spots', (e) => {
       const f = e.features?.[0];
-      const s = f ? spots[Number(f.properties?.idx)] : undefined;
+      const s = f ? spotsRef.current[Number(f.properties?.idx)] : undefined;
       if (!s) return;
       const { root, elev, river } = inspectorDom(s.inspector);
       const h = map.queryTerrainElevation([s.lng, s.lat]);
@@ -196,8 +204,36 @@ export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tr
       map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
     }
     return () => { map.remove(); mapRef.current = null; };
-    // 開いた時の内容で作る（2D に戻って開き直すと最新になる）
+    // 地図は開いた時に 1 回だけ作る。中身は下の effect で差し替える
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 2D の条件が変わったら、重ね表示の画像・点・線を差し替える（開き直さない）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const corners: [[number, number], [number, number], [number, number], [number, number]] = [
+      [bounds.west, bounds.north], [bounds.east, bounds.north], [bounds.east, bounds.south], [bounds.west, bounds.south],
+    ];
+    whenReady(map, () => {
+      for (const k of LAYER_SLOTS) {
+        const li = layerImage(layers[k]);
+        const src = map.getSource(`ov_${k}`) as maplibregl.ImageSource | undefined;
+        if (!src || !map.getLayer(`ov_${k}`)) continue;
+        src.updateImage({ url: li.url, coordinates: corners });
+        map.setLayoutProperty(`ov_${k}`, 'visibility', li.visible ? 'visible' : 'none');
+        map.setPaintProperty(`ov_${k}`, 'raster-opacity', 0.85 * li.opacity);
+      }
+    });
+  }, [layers, bounds]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    whenReady(map, () => {
+      (map.getSource('tracks') as maplibregl.GeoJSONSource | undefined)?.setData(tracksGeoJSON(tracks) as never);
+      (map.getSource('spots') as maplibregl.GeoJSONSource | undefined)?.setData(spotsGeoJSON(spots) as never);
+      (map.getSource('points') as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(points) as never);
+    });
+  }, [tracks, spots, points]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -249,7 +285,7 @@ export default function Terrain3DView({ bounds, overlays, twiUrl, streamsUrl, tr
         <span><i className={styles.lgField} /> 現地で確認した水 = 「地形」の環境スポット</span>
       </div>
       <p className={styles.view3dNote}>
-        右ドラッグ（Ctrl＋ドラッグ）で傾き・回転。木の点を押すと状態・観察・森・地形・水。2D で表示中の層・探索履歴・環境スポット（木など）・Field Log を重ねています。
+        右ドラッグ（Ctrl＋ドラッグ）で傾き・回転。木の点を押すと状態・観察・森・地形・水。右のパネルで条件を変えると、3D の重ね表示もそのまま変わります。
         標高は国土地理院の標高タイル（電波が必要）。記録・訂正・案内は 2D から。
       </p>
       {error && <div className={styles.toast} role="status">{error}</div>}

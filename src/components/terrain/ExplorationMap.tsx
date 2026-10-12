@@ -21,6 +21,7 @@ import {
   type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
+import type { Layers3D } from '../../terrain/view3dData';
 import {
   anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
@@ -1315,32 +1316,58 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     setView3d({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
   };
   useEffect(() => setView3d(null), [manifest?.areaId]); // 山域が替わったら 3D を閉じる（前の山域の地図は消えている）
-  // 3D だけの水の画像（3D-2）。開いた時に作り、閉じたら捨てる。沢の目安は 3D では別の色・別の層（地図の河川と分ける）
-  const [water3d, setWater3d] = useState<{ twi: string | null; streams: string | null; match: string | null } | null>(null);
+  // 3D だけの水の画像（3D-2）。湿りやすさ・沢の目安は開いた時に 1 回作り、閉じたら捨てる。沢の目安は 3D では別の色・別の層（地図の河川と分ける）。
+  // 地形の条件に合う範囲は、3D を開いたまま条件を変えたら作り直す（3D パネル統合 PR1。3D そのものは閉じない）
+  const [water3d, setWater3d] = useState<{ twi: string | null; streams: string | null } | null>(null);
+  const [match3d, setMatch3d] = useState<string | null>(null);
   const open3dOn = view3d !== null;
+  const hydroCanvasUrl = useCallback((draw: (d: Uint8ClampedArray) => boolean | void, made: string[]) => new Promise<string | null>((resolve) => {
+    if (!hydro) return resolve(null);
+    const c = document.createElement('canvas');
+    c.width = hydro.width;
+    c.height = hydro.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) return resolve(null);
+    const img = ctx.createImageData(hydro.width, hydro.height);
+    if (draw(img.data) === false) return resolve(null);
+    ctx.putImageData(img, 0, 0);
+    c.toBlob((b) => { if (!b) return resolve(null); const u = URL.createObjectURL(b); made.push(u); resolve(u); });
+  }), [hydro]);
   useEffect(() => {
     if (!open3dOn || !hydro || !manifest) return;
     let cancelled = false;
     const made: string[] = [];
-    const toUrl = (draw: (d: Uint8ClampedArray) => boolean | void) => new Promise<string | null>((resolve) => {
-      const c = document.createElement('canvas');
-      c.width = hydro.width;
-      c.height = hydro.height;
-      const ctx = c.getContext('2d');
-      if (!ctx) return resolve(null);
-      const img = ctx.createImageData(hydro.width, hydro.height);
-      if (draw(img.data) === false) return resolve(null);
-      ctx.putImageData(img, 0, 0);
-      c.toBlob((b) => { if (!b) return resolve(null); const u = URL.createObjectURL(b); made.push(u); resolve(u); });
-    });
     void Promise.all([
-      toUrl((d) => renderTwi(manifest, hydro, d)),
-      toUrl((d) => renderDemStreams(hydro, d)),
-      anyTerrainCondition(terrainCond) ? toUrl((d) => { renderHydro(manifest, hydro, terrainCond, false, d); }) : Promise.resolve(null),
-    ]).then(([twi, streams, match]) => { if (!cancelled) setWater3d({ twi, streams, match }); });
+      hydroCanvasUrl((d) => renderTwi(manifest, hydro, d), made),
+      hydroCanvasUrl((d) => renderDemStreams(hydro, d), made),
+    ]).then(([twi, streams]) => { if (!cancelled) setWater3d({ twi, streams }); });
     return () => { cancelled = true; made.forEach((u) => URL.revokeObjectURL(u)); setWater3d(null); };
-  }, [open3dOn, hydro, manifest, terrainCond]);
-
+  }, [open3dOn, hydro, manifest, hydroCanvasUrl]);
+  useEffect(() => {
+    if (!open3dOn || !hydro || !manifest || !anyTerrainCondition(terrainCond)) { setMatch3d(null); return; }
+    let cancelled = false;
+    const made: string[] = [];
+    void hydroCanvasUrl((d) => { renderHydro(manifest, hydro, terrainCond, false, d); }, made).then((u) => { if (!cancelled) setMatch3d(u); });
+    return () => { cancelled = true; made.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [open3dOn, hydro, manifest, terrainCond, hydroCanvasUrl]);
+  // 3D に渡す中身（2D の状態から作る。変わった時だけ作り直し、3D は開いたまま差し替える）
+  const layers3d = useMemo<Layers3D>(() => ({
+    forest: { url: forestUrl, opacity: 1 },
+    candidates: { url: overlayUrl, opacity: ageView ? 0.3 : 1 },
+    hydro: { url: hydro ? match3d : hydroUrl, opacity: 1 },
+    target: { url: targetUrl, opacity: 1 },
+    match: { url: matchUrl, opacity: 1 },
+    outline: { url: outlineUrl, opacity: 1 },
+  }), [forestUrl, overlayUrl, ageView, hydro, match3d, hydroUrl, targetUrl, matchUrl, outlineUrl]);
+  const tracks3d = useMemo(() => (showHistory ? visibleHistory.flatMap((e) => e.track ?? []) : []), [showHistory, visibleHistory]);
+  const spots3d = useMemo(() => (manifest ? visibleSpots.map((m) => ({
+    lat: m.lat, lng: m.lng, label: m.remote?.title ?? m.label, color: SPOT_COLORS[kindOf(m)], mizunara: m.treeSpeciesId === 'tree-mizunara',
+    inspector: inspectSpot({ label: m.remote?.title ?? m.label, envType: m.envType, lifeState: m.lifeState, remote: m.remote, manifest, areaName: (id) => areaList.find((a) => a.areaId === id)?.name ?? id }),
+  })) : []), [visibleSpots, manifest, areaList]); // eslint-disable-line react-hooks/exhaustive-deps
+  const points3d = useMemo(() => [
+    ...logPoints.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName || '無題'}（${e.date}）` })),
+    ...mizunaraLogs.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName}（${e.date}・Field Log）`, color: MIZUNARA_LOG_COLOR, radius: 3.5 })),
+  ], [logPoints, mizunaraLogs]);
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
 
@@ -1352,7 +1379,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }
 
   return (
-    <div className={styles.root} ref={rootRef} onClick={onRootClick}>
+    <div className={`${styles.root} ${view3d ? styles.with3d : ''}`} ref={rootRef} onClick={onRootClick}>
       <div
         ref={rotorRef}
         className={`${styles.rotor} ${headingMode && rotor > 0 ? styles.rotating : ''}`}
@@ -1651,15 +1678,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           <Terrain3DView
             bounds={manifest.bounds}
             areaName={manifest.name}
-            overlays={[forestUrl, overlayUrl, hydro ? water3d?.match : hydroUrl, targetUrl, matchUrl].filter((u): u is string => !!u)}
+            layers={layers3d}
             twiUrl={water3d?.twi ?? null}
             streamsUrl={water3d?.streams ?? null}
-            tracks={showHistory ? visibleHistory.flatMap((e) => e.track ?? []) : []}
-            spots={visibleSpots.map((m) => ({
-              lat: m.lat, lng: m.lng, label: m.remote?.title ?? m.label, color: SPOT_COLORS[kindOf(m)], mizunara: m.treeSpeciesId === 'tree-mizunara',
-              inspector: inspectSpot({ label: m.remote?.title ?? m.label, envType: m.envType, lifeState: m.lifeState, remote: m.remote, manifest, areaName: (id) => areaList.find((a) => a.areaId === id)?.name ?? id }),
-            }))}
-            points={logPoints.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName || '無題'}（${e.date}）` }))}
+            tracks={tracks3d}
+            spots={spots3d}
+            points={points3d}
             initial={view3d}
             onClose={() => setView3d(null)}
           />
@@ -2019,7 +2043,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             </label>
               </>
             )}
-            {tab === 'record' && (
+            {tab === 'record' && view3d && <p className={styles.sub}>記録・現在地・案内は 2D の機能です。「2D に戻る」と使えます</p>}
+            {tab === 'record' && !view3d && (
               <>
             <div className={styles.row}>
               <button className={`${styles.btn} ${styles.primary}`} onClick={toggleGps}>{watching ? '現在地を止める' : '現在地を表示'}</button>
