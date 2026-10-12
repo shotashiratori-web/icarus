@@ -1071,6 +1071,7 @@ label.btn {
 .lgStream { background: linear-gradient(transparent 4px, #4fc3f7 4px, #4fc3f7 6px, transparent 6px); }
 .lgTwi { background: rgba(0, 137, 123, 0.5); }
 .lgField { background: #546e7a; border-radius: 50% !important; width: 10px !important; }
+.lgRoad { box-shadow: 0 0 0 1.5px #fff; border-radius: 1px !important; }
 
 .inspector {
   display: flex;

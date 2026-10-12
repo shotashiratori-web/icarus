@@ -7,7 +7,8 @@ import { markReadyOnLoad, whenReady } from '../../terrain/mapReady';
 import type { Inspector } from '../../terrain/forestWater';
 import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RIVER_EDGE_CODES } from '../../terrain/gsiRivers';
 import type { TerrainBounds } from '../../terrain/types';
-import { LAYER_SLOTS, layerImage, pointsGeoJSON, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type Layers3D, type Point3D } from '../../terrain/view3dData';
+import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
+import { ROAD_CLASS_LABEL } from '../../terrain/roads';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -28,6 +29,7 @@ export interface Terrain3DProps {
   twiUrl: string | null; // 湿りやすさ（TWI 上位 33%・10%）
   streamsUrl: string | null; // 沢の目安（DEM。3D では水色）
   tracks: [number, number][][]; // [lat, lng]
+  roads: FC; // 道（PR2）。2D と同じデータ・見た目。2D の「道路・林道」「登山道・徒歩道」で絞った後のもの
   spots: Spot3D[];
   points: Point3D[];
   initial: { lat: number; lng: number; zoom: number };
@@ -111,7 +113,7 @@ function inspectorDom(ins: Inspector): { root: HTMLElement; elev: HTMLElement; r
   return { root, elev, river };
 }
 
-export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, spots, points, initial, areaName, onClose }: Terrain3DProps) {
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, initial, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -151,6 +153,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           ...(streamsUrl ? { demStreams: { type: 'image' as const, url: streamsUrl, coordinates: corners } } : {}),
           gsivec: { type: 'vector', tiles: [GSI_VECTOR_TILES], minzoom: 4, maxzoom: 16, attribution: '国土地理院（ベクトルタイル）' },
           tracks: { type: 'geojson', data: tracksGeoJSON(tracks) as never },
+          roads: { type: 'geojson', data: roads as never },
           spots: { type: 'geojson', data: spotsGeoJSON(spots) as never },
           points: { type: 'geojson', data: pointsGeoJSON(points) as never },
         },
@@ -169,6 +172,9 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           { id: 'river-area', type: 'fill', source: 'gsivec', 'source-layer': 'waterarea', paint: { 'fill-color': '#90caf9', 'fill-opacity': 0.6 } },
           { id: 'river-edge', type: 'line', source: 'gsivec', 'source-layer': 'river', filter: ['in', ['get', 'ftCode'], ['literal', RIVER_EDGE_CODES]], paint: { 'line-color': '#64b5f6', 'line-width': 1.2 } },
           { id: 'river-line', type: 'line', source: 'gsivec', 'source-layer': 'river', filter: ['in', ['get', 'ftCode'], ['literal', RIVER_CENTER_CODES]], paint: { 'line-color': '#0d47a1', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.2, 15, 2.8] } },
+          // 道（2D と同じ: 白い縁取り＋一般道 濃灰／林道・作業道 オレンジ実線／幅 3m 未満 オレンジ破線／登山道 黒点線）
+          ...ROAD_PAINT_3D.map((r) => ({ id: `road-casing-${r.c}`, type: 'line' as const, source: 'roads', filter: ['==', ['get', 'c'], r.c] as never, layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const }, paint: { 'line-color': '#ffffff', 'line-width': r.casingWidth, 'line-opacity': 0.9 } })),
+          ...ROAD_PAINT_3D.map((r) => ({ id: `road-${r.c}`, type: 'line' as const, source: 'roads', filter: ['==', ['get', 'c'], r.c] as never, layout: { 'line-cap': r.round ? 'round' as const : 'butt' as const, 'line-join': 'round' as const }, paint: { 'line-color': r.color, 'line-width': r.width, ...(r.dash ? { 'line-dasharray': r.dash } : {}) } })),
           { id: 'tracks-casing', type: 'line', source: 'tracks', paint: { 'line-color': '#fff', 'line-width': 6, 'line-opacity': 0.85 } },
           { id: 'tracks', type: 'line', source: 'tracks', paint: { 'line-color': '#1a73e8', 'line-width': 3.5 } },
           { id: 'points', type: 'circle', source: 'points', paint: { 'circle-radius': ['get', 'radius'], 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } },
@@ -238,10 +244,11 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     if (!map) return;
     whenReady(map, () => {
       (map.getSource('tracks') as maplibregl.GeoJSONSource | undefined)?.setData(tracksGeoJSON(tracks) as never);
+      (map.getSource('roads') as maplibregl.GeoJSONSource | undefined)?.setData(roads as never);
       (map.getSource('spots') as maplibregl.GeoJSONSource | undefined)?.setData(spotsGeoJSON(spots) as never);
       (map.getSource('points') as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(points) as never);
     });
-  }, [tracks, spots, points]);
+  }, [tracks, roads, spots, points]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -285,12 +292,16 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
         <label>高さの強調 <input type="range" min={1} max={3} step={0.1} value={ex} onChange={(e) => setEx(Number(e.target.value))} /> {ex.toFixed(1)}×</label>
         <button className={`${styles.btn} ${styles.primary}`} onClick={onClose}>2D に戻る</button>
       </div>
-      <div className={styles.view3dLegend} aria-label="水の凡例">
+      <div className={styles.view3dLegend} aria-label="水と道の凡例">
         <strong>水（別々の情報）</strong>
         <span><i className={styles.lgRiver} /> 地図の河川（地理院 1/25,000・常に表示）</span>
         {streamsUrl && <label><input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} /> <i className={styles.lgStream} /> 沢の目安（DEM の推定。実際の流れとは別）</label>}
         {twiUrl && <label><input type="checkbox" checked={showTwi} onChange={(e) => setShowTwi(e.target.checked)} /> <i className={styles.lgTwi} /> 湿りやすさ TWI（濃い = 山域の上位10%・薄い = 上位33%）</label>}
         <span><i className={styles.lgField} /> 現地で確認した水 = 「地形」の環境スポット</span>
+        <strong>道（2D の「道路・林道」「登山道・徒歩道」に従う）</strong>
+        {ROAD_PAINT_3D.map((r) => (
+          <span key={r.c}><i className={styles.lgRoad} style={{ background: r.dash ? `repeating-linear-gradient(90deg,${r.color} 0 ${r.dash[0] * 3}px,transparent ${r.dash[0] * 3}px ${(r.dash[0] + r.dash[1]) * 3}px)` : r.color, height: Math.max(2, r.width) }} /> {ROAD_CLASS_LABEL[r.c]}</span>
+        ))}
       </div>
       <p className={styles.view3dNote}>
         右ドラッグ（Ctrl＋ドラッグ）で傾き・回転。木の点を押すと状態・観察・森・地形・水。右のパネルで条件を変えると、3D の重ね表示もそのまま変わります。

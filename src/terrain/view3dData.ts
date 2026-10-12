@@ -1,3 +1,6 @@
+import type { RoadClass } from './types';
+import { ROAD_CASING, ROAD_STYLE, TRAIL_CLASSES, VEHICLE_CLASSES } from './roads';
+
 // 3D に渡すデータの形（icarus_3d_panel_integration_v1_design.md PR1）。3D を開いたまま 2D の条件の変化に追従するため、
 // 重ね表示は名前つきの枠（無い時は透明の画像）、点・線は GeoJSON にして差し替える。MapLibre を知らない純粋な関数だけ
 
@@ -40,3 +43,25 @@ export type AppliedLayer = ReturnType<typeof layerImage>;
 export function slotChanged(prev: AppliedLayer | undefined, next: AppliedLayer): boolean {
   return !prev || prev.url !== next.url || prev.visible !== next.visible || prev.opacity !== next.opacity;
 }
+
+// ---- 道（3D パネル統合 PR2）。2D と同じ道のデータ・同じ見た目（roads.ts の ROAD_STYLE）。2D の「道路・林道」「登山道・徒歩道」に従う ----
+
+// 種類ごとの線（[lat, lng]）→ GeoJSON（properties.c = 種類）。表示しない種類は入れない
+export function roadsGeoJSON(groups: Record<RoadClass, [number, number][][]> | null, show: { road: boolean; trail: boolean }): FC {
+  if (!groups) return { type: 'FeatureCollection', features: [] };
+  const classes = [...(show.road ? VEHICLE_CLASSES : []), ...(show.trail ? TRAIL_CLASSES : [])];
+  return {
+    type: 'FeatureCollection',
+    features: classes.filter((c) => groups[c]?.length).map((c) => ({
+      type: 'Feature', properties: { c }, geometry: { type: 'MultiLineString', coordinates: groups[c].map((l) => l.map(([la, ln]) => [ln, la])) },
+    })),
+  };
+}
+
+// MapLibre の線の見た目（破線は線の太さを単位にする。Leaflet の dashArray は px）
+export interface RoadPaint3D { c: RoadClass; color: string; width: number; casingWidth: number; dash: number[] | null; round: boolean }
+export const ROAD_PAINT_3D: RoadPaint3D[] = (['road', 'narrow', 'forest', 'trail'] as RoadClass[]).map((c) => {
+  const st = ROAD_STYLE[c];
+  const dash = st.dashArray ? st.dashArray.split(' ').map((v) => Number(v) / st.weight) : null;
+  return { c, color: st.color, width: st.weight, casingWidth: st.weight + ROAD_CASING.extra, dash, round: st.lineCap === 'round' };
+});
