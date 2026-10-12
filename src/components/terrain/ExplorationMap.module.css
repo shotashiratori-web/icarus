@@ -1091,3 +1091,11 @@ label.btn {
 .inspFound { color: #2e7d32; font-weight: 700; }
 .inspNotFound { color: #b71c1c; font-weight: 700; }
 .inspFoot { margin-top: 6px; color: #888; font-size: 11px; }
+
+/* 3D パネル統合 PR1: 3D を開いても右のパネル・上のチップ・地点情報は 3D の上に出す（同じ操作で 3D の重ね表示が変わる） */
+.with3d .panel { z-index: 1600; }
+.with3d .statusChips { z-index: 1601; right: 360px; }
+.with3d .probe { z-index: 1600; }
+.with3d .view3dBar { max-width: calc(100% - 380px); }
+.with3d .view3dLegend { right: 350px; }
+.with3d .view3dMap :global(.maplibregl-ctrl-top-right) { right: 340px; }
