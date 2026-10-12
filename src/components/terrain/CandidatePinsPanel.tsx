@@ -21,12 +21,17 @@ export default function CandidatePinsPanel({ sets, onChanged, onShow, onNavigate
   const onFile = async (f: File | undefined) => {
     if (!f) return;
     setMsg(null);
+    let text = '';
     try {
-      const { set, existing } = await importCandidateGpx(f.name, await f.text());
+      text = await f.text();
+      const { set, existing } = await importCandidateGpx(f.name, text);
       setMsg({ ok: true, text: existing ? `「${set.title}」はもう読み込んであります（${set.pins.length} 地点）` : `「${set.title}」の ${set.pins.length} 地点を読み込みました（地図に紫の「？」で出ます）` });
       await onChanged();
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof CandidateGpxError ? e.message : 'GPX を読み込めませんでした' });
+      // 何を受け取ったかを添える（iPhone で AirDrop・iCloud のファイルが空・別の形式になっている時に原因が分かるように）
+      const head = text.slice(0, 40).replace(/\s+/g, ' ').trim();
+      const detail = `（選んだファイル: ${f.name}・${f.size.toLocaleString()} バイト${head ? `・先頭「${head}」` : '・中身が空'}）`;
+      setMsg({ ok: false, text: `${e instanceof CandidateGpxError ? e.message : 'GPX を読み込めませんでした'}${detail}` });
     } finally {
       if (fileRef.current) fileRef.current.value = '';
     }
