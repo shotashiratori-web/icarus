@@ -1170,4 +1170,6 @@ label.btn {
 .candHiddenGroup { padding-left: 8px; opacity: 0.85; }
 .candLine { display: flex; align-items: center; gap: 6px; padding: 2px 0 2px 22px; min-width: 0; }
 .candName { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: none; color: #4a148c; font: inherit; font-size: 13px; text-align: left; cursor: pointer; padding: 4px 0; }
+.candSearch { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 6px; font: inherit; font-size: 13px; }
+.candHitSet { display: block; font-size: 10px; opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

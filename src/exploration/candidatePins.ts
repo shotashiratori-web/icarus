@@ -42,6 +42,25 @@ export function shortPinLabel(name: string): string {
   return t[0].length > 14 ? `${t[0].slice(0, 13)}…` : t[0];
 }
 
+// 予測地点を探す: 名前（例「Q05」）・説明（例 林班「3284」）に含まれる地点を、全部の組から（表示していない組も）。
+// 大文字・小文字と全角・半角は区別しない。空白で区切ると全部を含むものだけ。多すぎる時は先頭の limit 件
+export function searchPins(sets: CandidateSet[], query: string, limit = 50): { set: CandidateSet; pin: CandidatePin }[] {
+  const norm = (t: string) => t.normalize('NFKC').toLowerCase();
+  const words = norm(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const out: { set: CandidateSet; pin: CandidatePin }[] = [];
+  for (const set of sets) {
+    for (const pin of set.pins) {
+      const hay = norm(`${pin.name} ${pin.desc}`);
+      if (words.every((w) => hay.includes(w))) {
+        out.push({ set, pin });
+        if (out.length >= limit) return out;
+      }
+    }
+  }
+  return out;
+}
+
 // 一覧の並べ方: 読み込んだ順（GPX の順）／樹冠高の高い順（推定の樹冠高で、木の大きさそのものではない。探索の優先順位とも別。同じ高さ・高さ不明は GPX の順のまま、不明は最後）
 export type PinOrder = 'file' | 'height';
 export function sortPins(pins: CandidatePin[], order: PinOrder): CandidatePin[] {
