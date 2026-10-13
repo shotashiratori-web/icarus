@@ -104,3 +104,20 @@ describe('地図のラベル用の短い名前', () => {
     expect(shortPinLabel('とても長い名前の目印のテスト用')).toBe('とても長い名前の目印のテス…');
   });
 });
+
+describe('予測地点を探す', () => {
+  it('名前・説明から、全部の組（表示していない組も）で探す。全角・大小は区別しない。空白は AND', async () => {
+    const { searchPins } = await import('../src/exploration/candidatePins');
+    const pin = (name: string, desc = '') => ({ name, desc, lat: 43, lng: 140 });
+    const sets = [
+      { id: 'a', fileName: 'a', title: 'A', importedAt: '', visible: true, pins: [pin('Q05 24m +11 道42m 20°', '林分 石狩署 3047_林班_い'), pin('Q01 22m')] },
+      { id: 'b', fileName: 'b', title: 'B', importedAt: '', visible: false, pins: [pin('L04 36m', '林分 石狩署 3284_林班_い_2')] },
+    ];
+    expect(searchPins(sets, 'q05').map((h) => h.pin.name)).toEqual(['Q05 24m +11 道42m 20°']);
+    expect(searchPins(sets, 'Ｌ０４').map((h) => h.set.id)).toEqual(['b']);
+    expect(searchPins(sets, '3284').length).toBe(1);
+    expect(searchPins(sets, 'q 24m').map((h) => h.pin.name)).toEqual(['Q05 24m +11 道42m 20°']);
+    expect(searchPins(sets, '  ')).toEqual([]);
+    expect(searchPins(sets, 'zzz')).toEqual([]);
+  });
+});

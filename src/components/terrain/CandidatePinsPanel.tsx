@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, setCandidateSetVisible, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
+import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, searchPins, setCandidateSetVisible, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
 import { archiveSharedCandidateSet, shareCandidateSet } from '../../api/candidateSetsApi';
 import { TokenExpiredError } from '../../api/icarusApi';
 import styles from './ExplorationMap.module.css';
@@ -37,6 +37,8 @@ export default function CandidatePinsPanel({ sets, idToken, onChanged, onShow, o
   const [busy, setBusy] = useState<string | null>(null);
   const [order, setOrder] = useState<PinOrder>(loadOrder);
   const [openIds, setOpenIds] = useState<string[]>(loadOpen);
+  const [query, setQuery] = useState('');
+  const hits = searchPins(sets, query);
   const isOpen = (id: string) => openIds.includes(id);
   const toggleOpen = (id: string) => {
     const next = isOpen(id) ? openIds.filter((x) => x !== id) : [...openIds, id];
@@ -155,6 +157,32 @@ export default function CandidatePinsPanel({ sets, idToken, onChanged, onShow, o
         <input ref={fileRef} type="file" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
       </label>
       {msg && <p className={msg.ok ? styles.sub : styles.warn}>{msg.text}</p>}
+      {sets.length > 0 && (
+        <div>
+          <input
+            type="search"
+            className={styles.candSearch}
+            placeholder="地点を探す（例 Q05・L04・3284）"
+            aria-label="予測地点を探す"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query.trim() && (
+            <div aria-label="予測地点の検索結果">
+              <p className={styles.sub}>{hits.length ? `${hits.length}${hits.length >= 50 ? ' 件以上（先頭の 50 件）' : ' 件'}` : '見つかりません'}</p>
+              {hits.map(({ set, pin }) => (
+                <div key={`${set.id}:${pin.lat},${pin.lng},${pin.name}`} className={styles.candLine} aria-label={`予測地点 ${pin.name}`}>
+                  <span className={styles.candidateRowIcon}>？</span>
+                  <button className={styles.candName} onClick={() => onShow(pin)} title="地図で見る">
+                    {pin.name}<small className={styles.candHitSet}>{set.title}{set.visible ? '' : '（表示していない組）'}</small>
+                  </button>
+                  <button className={styles.btn} onClick={() => onNavigate(pin)}>行く</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {sets.length > 0 && (
         <label className={styles.check}>
           並べ替え
