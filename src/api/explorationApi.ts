@@ -31,7 +31,7 @@ export class ExplorationApiError extends Error {
   }
 }
 
-async function request(url: string, init: RequestInit, idToken: string): Promise<Response> {
+export async function request(url: string, init: RequestInit, idToken: string): Promise<Response> {
   let res: Response;
   try {
     res = await fetch(url, { ...init, cache: 'no-store', headers: { ...(init.headers ?? {}), Authorization: `Bearer ${idToken}` } });
