@@ -1160,3 +1160,14 @@ label.btn {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+
+/* 予測地点の一覧（組ごとにたたむ・1 地点 1 行） */
+.candSet { border-top: 1px solid rgba(0, 0, 0, 0.08); padding: 4px 0; }
+.candSetHead { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.candToggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 4px 2px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.candSetTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.candSetMeta { flex: none; font-size: 11px; opacity: 0.75; white-space: nowrap; }
+.candHiddenGroup { padding-left: 8px; opacity: 0.85; }
+.candLine { display: flex; align-items: center; gap: 6px; padding: 2px 0 2px 22px; min-width: 0; }
+.candName { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: none; color: #4a148c; font: inherit; font-size: 13px; text-align: left; cursor: pointer; padding: 4px 0; }
+

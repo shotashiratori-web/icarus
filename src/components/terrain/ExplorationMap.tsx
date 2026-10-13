@@ -49,7 +49,7 @@ import { useExplorationHistory, type HistoryEntry } from './useExplorationHistor
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import type { RangePreview } from './ExplorationRangeEditor';
 import CandidatePinsPanel from './CandidatePinsPanel';
-import { listCandidateSets, mergeSharedCandidateSets, type CandidateSet } from '../../exploration/candidatePins';
+import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, shortPinLabel, type CandidateSet } from '../../exploration/candidatePins';
 import { listSharedCandidateSets } from '../../api/candidateSetsApi';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import ContourLayer from './ContourLayer';
@@ -213,6 +213,14 @@ const TAB_KEY = 'icarus:exploration-panel-tab';
 const FOREST_ATTRIBUTION = '国土数値情報（国有林野）・北海道 森林計画・環境省 現存植生図2024 を加工';
 const FOREST_ATTRIBUTION_DOYURIN = '国土数値情報（国有林野）・北海道 森林計画・北海道 道有林森林資源情報・環境省 現存植生図2024 を加工';
 
+
+// 地図の拡大率を知らせる（予測地点の名前を、十分拡大した時だけ出すため）
+function ZoomWatch({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMap();
+  useEffect(() => { onZoom(map.getZoom()); }, [map, onZoom]);
+  useMapEvents({ zoomend: () => onZoom(map.getZoom()) });
+  return null;
+}
 
 function ClickProbe({ onClick, disabled }: { onClick: (lat: number, lng: number) => void; disabled?: boolean }) {
   // 「向いている方向を上に」（地図の回転）では Leaflet のタップ位置が回転でずれるので使わない（画面側で回転を戻して計算する）
@@ -379,6 +387,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     if (mountedRef.current) setCandidateSets(sets);
   }, [idToken]);
   useEffect(() => { void refreshCandidates(true); }, [refreshCandidates]);
+  const [mapZoom, setMapZoom] = useState(13);
   const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}` }))), [candidateSets]);
   const [watching, setWatching] = useState(false);
   // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
@@ -1414,6 +1423,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       >
       <MapContainer key={manifest.areaId} className={styles.map} bounds={bounds} maxBounds={maxBounds ?? undefined} maxBoundsViscosity={0.8} minZoom={10} preferCanvas zoomControl attributionControl>
         <FitOnce bounds={bounds} camera={camera} onMoved={onMoved} />
+        <ZoomWatch onZoom={setMapZoom} />
         {onlineBase && (
           <TileLayer
             key={base}
@@ -1508,7 +1518,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           <Marker
             key={`cand-${p.key}`}
             position={[p.lat, p.lng]}
-            icon={L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: `<span class="${styles.candidatePin}" aria-label="予測地点（未確認）">？</span><span class="${styles.candidateLabel}">${p.name.replace(/[<>&"]/g, '')}</span>` })}
+            icon={L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: `<span class="${styles.candidatePin}" aria-label="予測地点（未確認）">？</span>${mapZoom >= CANDIDATE_LABEL_MIN_ZOOM ? `<span class="${styles.candidateLabel}">${shortPinLabel(p.name).replace(/[<>&"]/g, '')}</span>` : ''}` })}
           >
             <Popup>
               <b>？ {p.name}</b><br />

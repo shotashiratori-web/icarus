@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, pinSummary, setCandidateSetVisible, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
+import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, setCandidateSetVisible, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
 import { archiveSharedCandidateSet, shareCandidateSet } from '../../api/candidateSetsApi';
 import { TokenExpiredError } from '../../api/icarusApi';
 import styles from './ExplorationMap.module.css';
@@ -23,12 +23,26 @@ function loadOrder(): PinOrder {
   try { return localStorage.getItem(ORDER_KEY) === 'height' ? 'height' : 'file'; } catch { return 'file'; }
 }
 
+// 開いている組（端末に保存。初めは全部閉じる）
+const OPEN_KEY = 'icarus.candidatePins.open';
+const HIDDEN_GROUP = '__hidden__';
+function loadOpen(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; }
+}
+
 export default function CandidatePinsPanel({ sets, idToken, onChanged, onShow, onNavigate }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirm, setConfirm] = useState<{ id: string; kind: 'share' | 'delete' | 'archive' } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [order, setOrder] = useState<PinOrder>(loadOrder);
+  const [openIds, setOpenIds] = useState<string[]>(loadOpen);
+  const isOpen = (id: string) => openIds.includes(id);
+  const toggleOpen = (id: string) => {
+    const next = isOpen(id) ? openIds.filter((x) => x !== id) : [...openIds, id];
+    setOpenIds(next);
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* 覚えられなくても開閉はできる */ }
+  };
   const changeOrder = (o: PinOrder) => {
     setOrder(o);
     try { localStorage.setItem(ORDER_KEY, o); } catch { /* 覚えられなくても並べ替えはできる */ }
@@ -79,6 +93,58 @@ export default function CandidatePinsPanel({ sets, idToken, onChanged, onShow, o
     }
   };
 
+  const renderSet = (s: CandidateSet) => {
+    const open = isOpen(s.id);
+    return (
+      <div key={s.id} className={styles.candSet}>
+        <div className={styles.candSetHead}>
+          <input type="checkbox" aria-label={`${s.title} を地図に出す`} checked={s.visible} onChange={async (e) => { await setCandidateSetVisible(s.id, e.target.checked); await onChanged(); }} />
+          <button className={styles.candToggle} aria-expanded={open} onClick={() => toggleOpen(s.id)}>
+            {open ? '▼' : '▶'} <span className={styles.candSetTitle}>{s.title}</span>
+          </button>
+          <span className={styles.candSetMeta}>{s.pins.length} 地点・{s.shared ? `共有・${s.shared.createdByName || '不明'}` : 'この端末だけ'}</span>
+        </div>
+        {open && (
+          <>
+            <div className={styles.row}>
+              {confirm?.id === s.id ? (
+                <>
+                  <span className={styles.sub}>
+                    {confirm.kind === 'share' ? `${s.pins.length} 地点をスタッフと共有します` : confirm.kind === 'archive' ? 'スタッフ全員の地図から消えます（記録は残ります）' : 'この端末から消します'}
+                  </span>
+                  <button className={styles.btn} onClick={async () => {
+                    if (confirm.kind === 'delete') { await deleteCandidateSet(s.id); setConfirm(null); await onChanged(); } else void run(s, confirm.kind);
+                  }}>{confirm.kind === 'share' ? '共有する' : '本当に消す'}</button>
+                  <button className={styles.btn} onClick={() => setConfirm(null)}>やめる</button>
+                </>
+              ) : busy === s.id ? (
+                <span className={styles.sub}>送信中…</span>
+              ) : s.shared ? (
+                <>
+                  <span className={styles.sub}>登録: {s.shared.createdByName || '不明'}・{s.shared.createdAt.slice(0, 10)}</span>
+                  {s.shared.canArchive && <button className={styles.btn} onClick={() => setConfirm({ id: s.id, kind: 'archive' })}>この組を消す</button>}
+                </>
+              ) : (
+                <>
+                  <button className={`${styles.btn} ${styles.primary}`} onClick={() => setConfirm({ id: s.id, kind: 'share' })}>スタッフと共有</button>
+                  <button className={styles.btn} onClick={() => setConfirm({ id: s.id, kind: 'delete' })}>この組を消す</button>
+                </>
+              )}
+            </div>
+            {/* 地点は名前だけ 1 行（押すと地図で見る）。詳しい根拠は地図の紫の「？」のポップアップ */}
+            {sortPins(s.pins, order).map((p) => (
+              <div key={`${p.lat},${p.lng},${p.name}`} className={styles.candLine} aria-label={`予測地点 ${p.name}`}>
+                <span className={styles.candidateRowIcon}>？</span>
+                <button className={styles.candName} onClick={() => onShow(p)} title="地図で見る">{p.name}</button>
+                <button className={styles.btn} onClick={() => onNavigate(p)}>行く</button>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={styles.form} aria-label="予測地点（検証候補）">
       <h3 className={styles.h}>予測地点（検証候補）</h3>
@@ -98,51 +164,17 @@ export default function CandidatePinsPanel({ sets, idToken, onChanged, onShow, o
           </select>
         </label>
       )}
-      {sets.map((s) => (
-        <div key={s.id}>
-        <div className={styles.row}>
-          <label className={styles.check}>
-            <input type="checkbox" checked={s.visible} onChange={async (e) => { await setCandidateSetVisible(s.id, e.target.checked); await onChanged(); }} />
-            {s.title}（{s.pins.length} 地点）
-          </label>
-          {confirm?.id === s.id ? (
-            <>
-              <span className={styles.sub}>
-                {confirm.kind === 'share' ? `${s.pins.length} 地点をスタッフと共有します` : confirm.kind === 'archive' ? 'スタッフ全員の地図から消えます（記録は残ります）' : 'この端末から消します'}
-              </span>
-              <button className={styles.btn} onClick={async () => {
-                if (confirm.kind === 'delete') { await deleteCandidateSet(s.id); setConfirm(null); await onChanged(); } else void run(s, confirm.kind);
-              }}>{confirm.kind === 'share' ? '共有する' : '本当に消す'}</button>
-              <button className={styles.btn} onClick={() => setConfirm(null)}>やめる</button>
-            </>
-          ) : busy === s.id ? (
-            <span className={styles.sub}>送信中…</span>
-          ) : s.shared ? (
-            s.shared.canArchive && <button className={styles.btn} onClick={() => setConfirm({ id: s.id, kind: 'archive' })}>この組を消す</button>
-          ) : (
-            <>
-              <button className={`${styles.btn} ${styles.primary}`} onClick={() => setConfirm({ id: s.id, kind: 'share' })}>スタッフと共有</button>
-              <button className={styles.btn} onClick={() => setConfirm({ id: s.id, kind: 'delete' })}>この組を消す</button>
-            </>
-          )}
+      {/* 地図に出している組。初めは閉じて「名前・地点数・共有状態」の 1 行だけ */}
+      {sets.filter((s) => s.visible).map(renderSet)}
+      {/* 地図に出していない組は 1 つにまとめて閉じる */}
+      {sets.some((s) => !s.visible) && (
+        <div>
+          <button className={styles.candToggle} aria-expanded={isOpen(HIDDEN_GROUP)} onClick={() => toggleOpen(HIDDEN_GROUP)}>
+            {isOpen(HIDDEN_GROUP) ? '▼' : '▶'} 表示していない組（{sets.filter((s) => !s.visible).length}）
+          </button>
+          {isOpen(HIDDEN_GROUP) && <div className={styles.candHiddenGroup}>{sets.filter((s) => !s.visible).map(renderSet)}</div>}
         </div>
-        <p className={styles.sub}>
-          {s.shared ? `スタッフと共有・登録: ${s.shared.createdByName || '不明'}・${s.shared.createdAt.slice(0, 10)}` : 'この端末だけ'}
-        </p>
-        {/* 地点の一覧（ミズナラの「Spot にする候補」と同じ並び） */}
-        {sortPins(s.pins, order).map((p) => (
-          <div key={`${p.lat},${p.lng},${p.name}`} className={styles.candidateRow} aria-label={`予測地点 ${p.name}`}>
-            <span className={styles.candidateRowIcon}>？</span>
-            <span className={styles.captureText}><b>{p.name}</b><br /><small>予測・未確認{pinSummary(p.desc) ? `・${pinSummary(p.desc)}` : ''}</small></span>
-            {/* パネルは狭いので、ボタンは名前の下の行に並べる（名前・説明を押しつぶさない） */}
-            <span className={styles.candidateRowActions}>
-              <button className={styles.btn} onClick={() => onShow(p)}>地図で見る</button>
-              <button className={styles.btn} onClick={() => onNavigate(p)}>ここへ行く</button>
-            </span>
-          </div>
-        ))}
-        </div>
-      ))}
+      )}
     </div>
   );
 }
