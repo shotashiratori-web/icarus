@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, pinSummary, setCandidateSetVisible, type CandidatePin, type CandidateSet } from '../../exploration/candidatePins';
+import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, pinSummary, setCandidateSetVisible, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
 import styles from './ExplorationMap.module.css';
 
 // 予測地点（検証候補）の GPX を読み込む（icarus_field_candidate_pins_v1_design.md）。この端末だけに保存し、D1 には送らない。
@@ -12,11 +12,21 @@ interface Props {
   onNavigate: (p: CandidatePin) => void; // 「ここへ行く」
 }
 
+// 並べ方はこの端末に覚えておく（読めない・書けない時は読み込んだ順）
+const ORDER_KEY = 'icarus.candidatePins.order';
+function loadOrder(): PinOrder {
+  try { return localStorage.getItem(ORDER_KEY) === 'height' ? 'height' : 'file'; } catch { return 'file'; }
+}
 
 export default function CandidatePinsPanel({ sets, onChanged, onShow, onNavigate }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [order, setOrder] = useState<PinOrder>(loadOrder);
+  const changeOrder = (o: PinOrder) => {
+    setOrder(o);
+    try { localStorage.setItem(ORDER_KEY, o); } catch { /* 覚えられなくても並べ替えはできる */ }
+  };
 
   const onFile = async (f: File | undefined) => {
     if (!f) return;
@@ -47,6 +57,15 @@ export default function CandidatePinsPanel({ sets, onChanged, onShow, onNavigate
         <input ref={fileRef} type="file" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
       </label>
       {msg && <p className={msg.ok ? styles.sub : styles.warn}>{msg.text}</p>}
+      {sets.length > 0 && (
+        <label className={styles.check}>
+          並べ替え
+          <select value={order} onChange={(e) => changeOrder(e.target.value as PinOrder)}>
+            <option value="file">読み込んだ順</option>
+            <option value="height">樹冠高の高い順</option>
+          </select>
+        </label>
+      )}
       {sets.map((s) => (
         <div key={s.id}>
         <div className={styles.row}>
@@ -64,8 +83,8 @@ export default function CandidatePinsPanel({ sets, onChanged, onShow, onNavigate
           )}
         </div>
         {/* 地点の一覧（ミズナラの「Spot にする候補」と同じ並び） */}
-        {s.pins.map((p, i) => (
-          <div key={i} className={styles.candidateRow} aria-label={`予測地点 ${p.name}`}>
+        {sortPins(s.pins, order).map((p) => (
+          <div key={`${p.lat},${p.lng},${p.name}`} className={styles.candidateRow} aria-label={`予測地点 ${p.name}`}>
             <span className={styles.candidateRowIcon}>？</span>
             <span className={styles.captureText}><b>{p.name}</b><br /><small>予測・未確認{pinSummary(p.desc) ? `・${pinSummary(p.desc)}` : ''}</small></span>
             {/* パネルは狭いので、ボタンは名前の下の行に並べる（名前・説明を押しつぶさない） */}

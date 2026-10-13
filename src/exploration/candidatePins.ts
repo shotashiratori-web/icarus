@@ -24,6 +24,21 @@ export function pinSummary(desc: string): string {
   return (parts[0]?.startsWith('予測・未確認') ? parts[1] : parts[0]) ?? '';
 }
 
+// 推定の樹冠高（m）。説明の「樹冠高 34m」→ 無ければ名前の「34m」（例「Q01 22m +11 道0m 14°」の最初の ○m）。無ければ null
+export function pinHeightM(p: CandidatePin): number | null {
+  const m = p.desc.match(/樹冠高\s*(\d+(?:\.\d+)?)\s*m/) ?? p.name.match(/(?:^|[\s-])(\d+(?:\.\d+)?)m(?=\s|$)/);
+  return m ? Number(m[1]) : null;
+}
+
+// 一覧の並べ方: 読み込んだ順（GPX の順）／樹冠高の高い順（推定の樹冠高で、木の大きさそのものではない。探索の優先順位とも別。同じ高さ・高さ不明は GPX の順のまま、不明は最後）
+export type PinOrder = 'file' | 'height';
+export function sortPins(pins: CandidatePin[], order: PinOrder): CandidatePin[] {
+  if (order === 'file') return pins;
+  return pins
+    .map((p, i) => ({ p, i, h: pinHeightM(p) }))
+    .sort((a, b) => (a.h === null ? 1 : 0) - (b.h === null ? 1 : 0) || (b.h ?? 0) - (a.h ?? 0) || a.i - b.i)
+    .map((x) => x.p);
+}
 
 // GPX の <wpt>（目印）だけを読む。<trk>・<rte>（歩いた線）は読まない
 export function parseCandidateGpx(text: string): { title: string; pins: CandidatePin[] } {

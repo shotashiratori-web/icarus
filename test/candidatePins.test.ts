@@ -56,3 +56,17 @@ describe('一覧の 2 行目', () => {
     expect(pinSummary('')).toBe('');
   });
 });
+
+describe('樹冠高の高い順に並べる', () => {
+  it('説明の「樹冠高 ○m」→ 無ければ名前の「○m」。高い順、同じ高さは GPX の順、高さ不明は最後', async () => {
+    const { pinHeightM, sortPins } = await import('../src/exploration/candidatePins');
+    const pin = (name: string, desc = '') => ({ name, desc, lat: 43, lng: 140 });
+    expect(pinHeightM(pin('E01-3003 34m', '予測・未確認。樹冠高 34m（周り…より +11m）'))).toBe(34);
+    expect(pinHeightM(pin('Q01 22m +11 道0m 14°'))).toBe(22);
+    expect(pinHeightM(pin('P01-3018 28m'))).toBe(28);
+    expect(pinHeightM(pin('林道の入口', '道から 50m'))).toBeNull();
+    const pins = [pin('A 22m'), pin('入口'), pin('B 30m'), pin('C 22m'), pin('D', '樹冠高 26m')];
+    expect(sortPins(pins, 'height').map((p) => p.name)).toEqual(['B 30m', 'D', 'A 22m', 'C 22m', '入口']);
+    expect(sortPins(pins, 'file')).toBe(pins);
+  });
+});
