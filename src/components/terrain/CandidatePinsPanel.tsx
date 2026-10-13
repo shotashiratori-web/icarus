@@ -62,7 +62,7 @@ export default function CandidatePinsPanel({ sets, onChanged, onShow, onNavigate
           並べ替え
           <select value={order} onChange={(e) => changeOrder(e.target.value as PinOrder)}>
             <option value="file">読み込んだ順</option>
-            <option value="height">大きい木の順（樹冠高）</option>
+            <option value="height">樹冠高の高い順</option>
           </select>
         </label>
       )}

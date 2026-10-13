@@ -57,7 +57,7 @@ describe('一覧の 2 行目', () => {
   });
 });
 
-describe('大きい木の順に並べる', () => {
+describe('樹冠高の高い順に並べる', () => {
   it('説明の「樹冠高 ○m」→ 無ければ名前の「○m」。高い順、同じ高さは GPX の順、高さ不明は最後', async () => {
     const { pinHeightM, sortPins } = await import('../src/exploration/candidatePins');
     const pin = (name: string, desc = '') => ({ name, desc, lat: 43, lng: 140 });
