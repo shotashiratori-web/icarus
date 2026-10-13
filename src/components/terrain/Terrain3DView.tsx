@@ -9,7 +9,7 @@ import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RI
 import type { TerrainBounds } from '../../terrain/types';
 import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
 import { ROAD_CLASS_LABEL } from '../../terrain/roads';
-import type { CandidatePin } from '../../exploration/candidatePins';
+import { CANDIDATE_LABEL_MIN_ZOOM, shortPinLabel, type CandidatePin } from '../../exploration/candidatePins';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -125,7 +125,7 @@ function candidateNode(p: CandidatePin): HTMLElement {
   const node = el('div', styles.candidate3d);
   const pin = el('span', styles.candidatePin, '？');
   pin.setAttribute('aria-label', '予測地点（未確認）');
-  node.append(pin, el('span', styles.candidateLabel, p.name));
+  node.append(pin, el('span', `${styles.candidateLabel} cand3dLabel`, shortPinLabel(p.name)));
   return node;
 }
 
@@ -307,7 +307,14 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
         .setPopup(new maplibregl.Popup({ closeButton: true, maxWidth: '300px', offset: 14 }).setDOMContent(candidateDom(p)))
         .addTo(map);
     });
-    return () => { for (const m of markers) m.remove(); };
+    // 引いて広く見ている時は紫の「？」だけ（2D と同じ）
+    const syncLabels = () => {
+      const show = map.getZoom() >= CANDIDATE_LABEL_MIN_ZOOM;
+      for (const m of markers) { const l = m.getElement().querySelector<HTMLElement>('.cand3dLabel'); if (l) l.style.display = show ? '' : 'none'; }
+    };
+    syncLabels();
+    map.on('zoomend', syncLabels);
+    return () => { map.off('zoomend', syncLabels); for (const m of markers) m.remove(); };
   }, [candidates]);
 
   useEffect(() => {

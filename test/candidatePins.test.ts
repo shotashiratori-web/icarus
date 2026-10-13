@@ -93,3 +93,14 @@ describe('スタッフ共有（v2）: 共有版を端末に保存し直す', () 
     expect(sets.map((s) => s.id).sort()).toEqual([local.id, mine.id].sort());
   });
 });
+
+describe('地図のラベル用の短い名前', () => {
+  it('候補 ID ＋樹冠高まで。道からの距離・傾斜は出さない。高さが無い名前は ID だけ（長ければ省略）', async () => {
+    const { shortPinLabel } = await import('../src/exploration/candidatePins');
+    expect(shortPinLabel('V02 37m 道125m 24°')).toBe('V02 37m');
+    expect(shortPinLabel('Q05 24m +11 道42m 20°')).toBe('Q05 24m');
+    expect(shortPinLabel('P01-3018 28m')).toBe('P01-3018 28m');
+    expect(shortPinLabel('林道の入口')).toBe('林道の入口');
+    expect(shortPinLabel('とても長い名前の目印のテスト用')).toBe('とても長い名前の目印のテス…');
+  });
+});

@@ -33,6 +33,15 @@ export function pinHeightM(p: CandidatePin): number | null {
   return m ? Number(m[1]) : null;
 }
 
+// 地図のラベル用の短い名前: 候補 ID ＋樹冠高まで（例「V02 37m 道125m 24°」→「V02 37m」）。
+// 道からの距離・傾斜は行き先を比べる時の情報なので、地図には出さない（押せばポップアップで全文）
+export const CANDIDATE_LABEL_MIN_ZOOM = 15; // これより引いて見ている時は紫の「？」だけ
+export function shortPinLabel(name: string): string {
+  const t = name.trim().split(/\s+/);
+  if (t.length >= 2 && /^\d+(\.\d+)?m$/.test(t[1])) return `${t[0]} ${t[1]}`;
+  return t[0].length > 14 ? `${t[0].slice(0, 13)}…` : t[0];
+}
+
 // 一覧の並べ方: 読み込んだ順（GPX の順）／樹冠高の高い順（推定の樹冠高で、木の大きさそのものではない。探索の優先順位とも別。同じ高さ・高さ不明は GPX の順のまま、不明は最後）
 export type PinOrder = 'file' | 'height';
 export function sortPins(pins: CandidatePin[], order: PinOrder): CandidatePin[] {
