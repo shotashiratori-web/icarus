@@ -1,6 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
-// 予測地点（検証候補）ピン v1（icarus/docs/architecture/icarus_field_candidate_pins_v1_design.md）。
+// 予測地点（検証候補）ピン v1（icarus/docs/architecture/icarus_field_candidate_pins_v1_design.md）・
+// v2 スタッフ共有（icarus_field_candidate_pins_v2_shared_design.md）: 共有版も端末に保存し直して圏外で出す。id（GPX の SHA-256）が同じなら 1 組
 // - 予測と観測を混ぜない: Environment Spot・Field Log・探索履歴（GPX の記録）のどれにも入れない
 // - 端末だけに保存（D1・API へ送らない）。圏外でも地図に出し「ここへ行く」で案内できる
 // - 現地で確かめた後も自動では消さない・Spot に変えない（予測と観測を別々に残し、後で当たり外れを確かめる）。消すのは利用者が明示した時だけ
@@ -12,8 +13,10 @@ export interface CandidateSet {
   fileName: string;
   title: string; // GPX の metadata/name（無ければファイル名）
   importedAt: string;
-  visible: boolean;
+  visible: boolean; // 表示する／しないは端末ごと（共有しない）
   pins: CandidatePin[];
+  // 共有版（無ければこの端末だけ）。登録者・日時・この人が消せるか
+  shared?: { createdByName: string; createdAt: string; canArchive: boolean } | null;
 }
 
 export class CandidateGpxError extends Error {}
@@ -105,4 +108,21 @@ export async function setCandidateSetVisible(id: string, visible: boolean): Prom
 // 利用者が明示した時だけ消す
 export async function deleteCandidateSet(id: string): Promise<void> {
   await (await db()).delete(STORE, id);
+}
+
+// 共有の一覧を端末に保存し直す（圏外でも出すため）。表示する／しないは端末の値を残す。
+// 端末にある共有版のうち、一覧に無くなったもの（誰かがアーカイブした）は端末からも外す。この端末だけの組は触らない
+export async function mergeSharedCandidateSets(items: { id: string; title: string; fileName: string; pins: CandidatePin[]; createdByName: string; createdAt: string; canArchive: boolean }[]): Promise<void> {
+  const d = await db();
+  const all = (await d.getAll(STORE)) as CandidateSet[];
+  const byId = new Map(all.map((s) => [s.id, s]));
+  const ids = new Set(items.map((i) => i.id));
+  for (const s of all) if (s.shared && !ids.has(s.id)) await d.delete(STORE, s.id);
+  for (const i of items) {
+    const prev = byId.get(i.id);
+    await d.put(STORE, {
+      id: i.id, fileName: i.fileName, title: i.title, importedAt: prev?.importedAt ?? i.createdAt, visible: prev?.visible ?? true, pins: i.pins,
+      shared: { createdByName: i.createdByName, createdAt: i.createdAt, canArchive: i.canArchive },
+    } satisfies CandidateSet);
+  }
 }

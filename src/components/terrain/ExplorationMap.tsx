@@ -49,7 +49,8 @@ import { useExplorationHistory, type HistoryEntry } from './useExplorationHistor
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import type { RangePreview } from './ExplorationRangeEditor';
 import CandidatePinsPanel from './CandidatePinsPanel';
-import { listCandidateSets, type CandidateSet } from '../../exploration/candidatePins';
+import { listCandidateSets, mergeSharedCandidateSets, type CandidateSet } from '../../exploration/candidatePins';
+import { listSharedCandidateSets } from '../../api/candidateSetsApi';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import ContourLayer from './ContourLayer';
 import { APP_BUILD } from '../../appBuild';
@@ -364,16 +365,20 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
 
   const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  // 予測地点（検証候補）ピン: この端末だけ。2D の地図に紫の「？」で出す（観測＝環境スポットとは別）
+  // 予測地点（検証候補）ピン: 端末の組＋スタッフで共有した組（v2）。紫の「？」で出す（観測＝環境スポットとは別）
   const [candidateSets, setCandidateSets] = useState<CandidateSet[]>([]);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   // 端末の保存庫の読み出しは非同期。画面を閉じた後に返ってきたら何もしない
-  const refreshCandidates = useCallback(async () => {
+  // sync = 共有の一覧も読み直す（開いた時・共有/アーカイブの後）。圏外・失敗の時は端末に保存した分だけで出す
+  const refreshCandidates = useCallback(async (sync = false) => {
+    if (sync && idToken && navigator.onLine) {
+      try { await mergeSharedCandidateSets(await listSharedCandidateSets(idToken)); } catch { /* 端末の分で続ける */ }
+    }
     const sets = await listCandidateSets().catch(() => [] as CandidateSet[]);
     if (mountedRef.current) setCandidateSets(sets);
-  }, []);
-  useEffect(() => { void refreshCandidates(); }, [refreshCandidates]);
+  }, [idToken]);
+  useEffect(() => { void refreshCandidates(true); }, [refreshCandidates]);
   const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}` }))), [candidateSets]);
   const [watching, setWatching] = useState(false);
   // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
@@ -1507,7 +1512,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           >
             <Popup>
               <b>？ {p.name}</b><br />
-              <span className={styles.sub}>予測・未確認（この端末だけ）</span>
+              <span className={styles.sub}>予測・未確認</span>
               {p.desc && <><br />{p.desc}</>}<br />
               <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}>ここへ行く</button>{' '}
               <button className={styles.btn} onClick={() => { const t = coordText(p.lat, p.lng); navigator.clipboard?.writeText(t).then(() => setCopied(t), () => setCopied(null)); }}>{copied === coordText(p.lat, p.lng) ? 'コピーしました' : '座標をコピー'}</button>
@@ -2092,6 +2097,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               <>
             <CandidatePinsPanel
               sets={candidateSets}
+              idToken={idToken}
               onChanged={refreshCandidates}
               onShow={(p) => mapRef.current?.setView([p.lat, p.lng], Math.max(mapRef.current.getZoom(), 16))}
               onNavigate={(p) => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}

@@ -70,3 +70,26 @@ describe('樹冠高の高い順に並べる', () => {
     expect(sortPins(pins, 'file')).toBe(pins);
   });
 });
+
+describe('スタッフ共有（v2）: 共有版を端末に保存し直す', () => {
+  it('表示する／しないは端末の値を残す・同じ id は 1 組・アーカイブされた共有版は外す・この端末だけの組は触らない', async () => {
+    const { mergeSharedCandidateSets } = await import('../src/exploration/candidatePins');
+    const local = (await importCandidateGpx('local.gpx', GPX)).set; // この端末だけ
+    const other = GPX.replace('登りやすい予測樹冠', '別の組');
+    const mine = (await importCandidateGpx('mine.gpx', other)).set;
+    await setCandidateSetVisible(mine.id, false);
+    const item = (id: string, title: string) => ({ id, title, fileName: 'x.gpx', pins: mine.pins, createdByName: '翔大', createdAt: '2026-10-13T00:00:00Z', canArchive: true });
+    // mine を共有した後の一覧（同じ id）＋ 他の人の組
+    await mergeSharedCandidateSets([item(mine.id, '別の組'), item('f'.repeat(64), '他の人の組')]);
+    let sets = await listCandidateSets();
+    expect(sets).toHaveLength(3);
+    const m = sets.find((s) => s.id === mine.id)!;
+    expect(m.visible).toBe(false);
+    expect(m.shared).toMatchObject({ createdByName: '翔大', canArchive: true });
+    expect(sets.find((s) => s.id === local.id)!.shared ?? null).toBeNull();
+    // 他の人の組がアーカイブされた → 端末からも外れる。この端末だけの組は残る
+    await mergeSharedCandidateSets([item(mine.id, '別の組')]);
+    sets = await listCandidateSets();
+    expect(sets.map((s) => s.id).sort()).toEqual([local.id, mine.id].sort());
+  });
+});

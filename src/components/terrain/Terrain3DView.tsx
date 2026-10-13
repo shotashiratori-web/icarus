@@ -132,7 +132,7 @@ function candidateNode(p: CandidatePin): HTMLElement {
 // 予測地点のポップアップ（テキストだけで組み立てる）
 function candidateDom(p: CandidatePin): HTMLElement {
   const root = el('div', styles.inspector);
-  root.append(el('strong', styles.inspTitle, `？ ${p.name}`), el('div', styles.inspSub, '予測・未確認（この端末だけ）'));
+  root.append(el('strong', styles.inspTitle, `？ ${p.name}`), el('div', styles.inspSub, '予測・未確認'));
   if (p.desc) root.append(el('div', null, p.desc));
   const t = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
   const copy = el('button', styles.btn, '座標をコピー') as HTMLButtonElement;
