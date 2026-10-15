@@ -1056,12 +1056,35 @@ label.btn {
   color: #222;
 }
 
-.view3dNote {
+/* 左下の縦の枠: 凡例（たためる・上へ開く）と説明文。縮尺（MapLibre の左下）の上 */
+.view3dBottomLeft {
   position: absolute;
   left: 10px;
   bottom: 28px;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   max-width: 520px;
+  max-height: calc(100% - 140px); /* 上の操作バーに届かない */
+}
+
+.view3dLegendToggle {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #222;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.view3dNote {
+  flex: none;
   margin: 0;
   padding: 6px 10px;
   border-radius: 8px;
@@ -1072,10 +1095,8 @@ label.btn {
 
 /* 3D-2 Forest & Water Context: 水の凡例と木のポップアップ */
 .view3dLegend {
-  position: absolute;
-  right: 10px;
-  bottom: 28px;
-  z-index: 2;
+  min-height: 0;
+  overflow-y: auto; /* 画面が低い時は凡例の中でスクロール */
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1137,7 +1158,8 @@ label.btn {
 .with3d .probe { z-index: 1600; }
 /* 3D の操作バーは、上の行（山域・日没・チップ）の下へ。チップと重なると「2D に戻る」が隠れる */
 .with3d .view3dBar { top: 96px; max-width: calc(100% - 380px); }
-.with3d .view3dLegend { right: 350px; }
+/* 操作バーが下がる分、左下の枠（凡例）の高さも抑える */
+.with3d .view3dBottomLeft { max-height: calc(100% - 210px); }
 .with3d .view3dMap :global(.maplibregl-ctrl-top-right) { right: 340px; }
 
 /* 予測地点（検証候補）ピン v1: 紫の「？」＝予測・未確認（確認済みの木＝緑の丸とは別） */
