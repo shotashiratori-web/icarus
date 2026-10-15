@@ -143,6 +143,12 @@ function candidateDom(p: CandidatePin): HTMLElement {
   return root;
 }
 
+// 凡例の開閉はこの端末に覚えておく（初めは閉じる。読めない・書けない時は閉じる）
+const LEGEND_KEY = 'icarus.3d.legendOpen';
+function loadLegendOpen(): boolean {
+  try { return localStorage.getItem(LEGEND_KEY) === '1'; } catch { return false; }
+}
+
 export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -151,6 +157,12 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
   const [error, setError] = useState<string | null>(null);
   const [showStreams, setShowStreams] = useState(true);
   const [showTwi, setShowTwi] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(loadLegendOpen);
+  const toggleLegend = () => {
+    const next = !legendOpen;
+    setLegendOpen(next);
+    try { localStorage.setItem(LEGEND_KEY, next ? '1' : '0'); } catch { /* 覚えられなくても開閉はできる */ }
+  };
   const exRef = useRef(1.5);
   exRef.current = ex;
   const spotsRef = useRef(spots);
@@ -359,22 +371,28 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
         <label>高さの強調 <input type="range" min={1} max={3} step={0.1} value={ex} onChange={(e) => setEx(Number(e.target.value))} /> {ex.toFixed(1)}×</label>
         <button className={`${styles.btn} ${styles.primary}`} onClick={onClose}>2D に戻る</button>
       </div>
-      <div className={styles.view3dLegend} aria-label="水と道の凡例">
-        <strong>水（別々の情報）</strong>
-        <span><i className={styles.lgRiver} /> 地図の河川（地理院 1/25,000・常に表示）</span>
-        {streamsUrl && <label><input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} /> <i className={styles.lgStream} /> 沢の目安（DEM の推定。実際の流れとは別）</label>}
-        {twiUrl && <label><input type="checkbox" checked={showTwi} onChange={(e) => setShowTwi(e.target.checked)} /> <i className={styles.lgTwi} /> 湿りやすさ TWI（濃い = 山域の上位10%・薄い = 上位33%）</label>}
-        <span><i className={styles.lgField} /> 現地で確認した水 = 「地形」の環境スポット</span>
-        {candidates.length > 0 && <span><i className={styles.lgCandidate}>？</i> 予測地点（未確認・{candidates.length} 地点。押すと説明）</span>}
-        <strong>道（2D の「道路・林道」「登山道・徒歩道」に従う）</strong>
-        {ROAD_PAINT_3D.map((r) => (
-          <span key={r.c}><i className={styles.lgRoad} style={{ background: r.dash ? `repeating-linear-gradient(90deg,${r.color} 0 ${r.dash[0] * 3}px,transparent ${r.dash[0] * 3}px ${(r.dash[0] + r.dash[1]) * 3}px)` : r.color, height: Math.max(2, r.width) }} /> {ROAD_CLASS_LABEL[r.c]}</span>
-        ))}
+      {/* 左下: 凡例（初めは閉じる・押すと上へ開く）と説明文を縦に並べる（重ならない） */}
+      <div className={styles.view3dBottomLeft}>
+        <button className={styles.view3dLegendToggle} aria-expanded={legendOpen} onClick={toggleLegend}>凡例 {legendOpen ? '▾' : '▸'}</button>
+        {legendOpen && (
+          <div className={styles.view3dLegend} aria-label="水と道の凡例">
+            <strong>水（別々の情報）</strong>
+            <span><i className={styles.lgRiver} /> 地図の河川（地理院 1/25,000・常に表示）</span>
+            {streamsUrl && <label><input type="checkbox" checked={showStreams} onChange={(e) => setShowStreams(e.target.checked)} /> <i className={styles.lgStream} /> 沢の目安（DEM の推定。実際の流れとは別）</label>}
+            {twiUrl && <label><input type="checkbox" checked={showTwi} onChange={(e) => setShowTwi(e.target.checked)} /> <i className={styles.lgTwi} /> 湿りやすさ TWI（濃い = 山域の上位10%・薄い = 上位33%）</label>}
+            <span><i className={styles.lgField} /> 現地で確認した水 = 「地形」の環境スポット</span>
+            {candidates.length > 0 && <span><i className={styles.lgCandidate}>？</i> 予測地点（未確認・{candidates.length} 地点。押すと説明）</span>}
+            <strong>道（2D の「道路・林道」「登山道・徒歩道」に従う）</strong>
+            {ROAD_PAINT_3D.map((r) => (
+              <span key={r.c}><i className={styles.lgRoad} style={{ background: r.dash ? `repeating-linear-gradient(90deg,${r.color} 0 ${r.dash[0] * 3}px,transparent ${r.dash[0] * 3}px ${(r.dash[0] + r.dash[1]) * 3}px)` : r.color, height: Math.max(2, r.width) }} /> {ROAD_CLASS_LABEL[r.c]}</span>
+            ))}
+          </div>
+        )}
+        <p className={styles.view3dNote}>
+          右ドラッグ（Ctrl＋ドラッグ）で傾き・回転。木の点を押すと状態・観察・森・地形・水。右のパネルで条件を変えると、3D の重ね表示もそのまま変わります。
+          標高は国土地理院の標高タイル（電波が必要）。記録・訂正・案内は 2D から。
+        </p>
       </div>
-      <p className={styles.view3dNote}>
-        右ドラッグ（Ctrl＋ドラッグ）で傾き・回転。木の点を押すと状態・観察・森・地形・水。右のパネルで条件を変えると、3D の重ね表示もそのまま変わります。
-        標高は国土地理院の標高タイル（電波が必要）。記録・訂正・案内は 2D から。
-      </p>
       {error && <div className={styles.toast} role="status">{error}</div>}
     </div>
   );
