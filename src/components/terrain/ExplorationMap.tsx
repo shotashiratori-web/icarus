@@ -1415,7 +1415,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }
 
   return (
-    <div className={`${styles.root} ${view3d ? styles.with3d : ''}`} ref={rootRef} onClick={onRootClick}>
+    <div className={`${styles.root} ${view3d ? styles.with3d : ''} ${navTarget ? styles.navigating : ''}`} ref={rootRef} onClick={onRootClick}>
       <div
         ref={rotorRef}
         className={`${styles.rotor} ${headingMode && rotor > 0 ? styles.rotating : ''}`}

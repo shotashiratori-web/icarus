@@ -987,6 +987,41 @@ label.btn {
   gap: 8px;
 }
 
+/* iPhone 幅: 案内の帯は画面の下（閉じた「条件・操作」バーのすぐ上）へ。上だと右上のボタン・ズーム・山域が帯の下に隠れて押せなかった（2026-10-15 現場）。
+   --nav-bottom = パネルの下の余白 8px + 閉じたパネルの高さ 58px + すき間 8px。--nav-reserve = 帯の下端 74px + 帯の高さ（到着表示ありで 約 141px → 150px）+ すき間 8px */
+@media (max-width: 600px) {
+  .root {
+    --nav-bottom: 74px;
+    --nav-reserve: 232px;
+  }
+  .navBanner {
+    top: auto;
+    bottom: calc(var(--nav-bottom) + env(safe-area-inset-bottom, 0px));
+    z-index: 1000; /* パネル（同じ 1000・後に描く）を開いたら、パネルが帯より手前 */
+  }
+  /* 「案内を終了」は 1 行（狭い幅で 2 行に折れると帯が高くなる） */
+  .navFoot .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  /* 注意書きは 2 行まで（帯の高さを決まった大きさに収める） */
+  .navFoot .sub {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* 案内中の地点情報（上側）は帯の上で止め、長い時は中でスクロール */
+  .navigating .probe {
+    max-height: calc(100% - var(--space-3) - var(--nav-reserve) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
+  /* 送信結果のお知らせは帯の上へ */
+  .navigating .notice {
+    bottom: calc(var(--nav-reserve) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* 3D（PC だけ・見るだけ）。2D の上に全面で重ねる */
 .view3d {
   position: absolute;
