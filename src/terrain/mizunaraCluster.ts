@@ -158,8 +158,9 @@ export function mizunaraClusters(f: ForestData, pxM: number): MizunaraClusters {
   return out;
 }
 
-// 輪郭: 塊の内側の縁（8 近傍に塊の外がある）を黄、そのすぐ外の 1 格子を白。中は塗らない（順位の塗りを残す）
-export const CLUSTER_EDGE_COLOR = [255, 214, 0, 255] as const;
+// 輪郭: 塊の内側の縁（8 近傍に塊の外がある）をマゼンタ、そのすぐ外の 1 格子を白。中は塗らない（順位の塗りを残す）。
+// 黄＋白縁は林道（オレンジ＋白縁）と紛らわしかった（2026-10-16 PC Gate）→ 道・水・GPX・林分の輪郭（赤）と重ならないマゼンタ
+export const CLUSTER_EDGE_COLOR = [213, 0, 249, 255] as const;
 export const CLUSTER_HALO_COLOR = [255, 255, 255, 255] as const;
 export function drawClusterOutline(c: MizunaraClusters, out: Uint8ClampedArray): void {
   const { width: w, height: h, label } = c;
