@@ -1190,6 +1190,20 @@ label.btn {
   font-weight: 600;
 }
 
+/* ミズナラの群生の面積ラベル（2D・ズーム 13 以上・5ha 以上）。押せない（地図の操作を邪魔しない） */
+.clusterLabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffd600;
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 /* 予測地点の一覧: 1 行目 = 「？」＋名前・説明、2 行目 = ボタン（狭いパネルでも名前を押しつぶさない） */
 .candidateRow {
   display: grid;
