@@ -85,7 +85,8 @@ describe('塊の整え方', () => {
 });
 
 describe('輪郭', () => {
-  it('塊の縁は黄、すぐ外は白、中と遠い外は描かない', () => {
+  it('塊の縁はマゼンタ（林道のオレンジと分ける）、すぐ外は白、中と遠い外は描かない', () => {
+    expect([...CLUSTER_EDGE_COLOR]).toEqual([213, 0, 249, 255]);
     const f = make(12, 12, (x, y) => (inBox(x, y, 3, 3, 8, 8) ? [2, 1] : [4, 2]));
     const c = mizunaraClusters(f, 100);
     const o = new Uint8ClampedArray(12 * 12 * 4);
