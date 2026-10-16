@@ -21,6 +21,7 @@ import {
   type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
+import { CLUSTER_EDGE_COLOR, CLUSTER_LABEL_MIN_HA, clusterAt, clusterText, drawClusterOutline, mizunaraClusters } from '../../terrain/mizunaraCluster';
 import { focusFromBox, roadsGeoJSON, type Focus3D, type Layers3D } from '../../terrain/view3dData';
 import {
   anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
@@ -199,7 +200,7 @@ const SPOT_TARGET_STYLE: Record<SpotTargetStatus, { color: string; dash?: string
   notFound: { color: '#c62828', dash: '5 4', mark: '×', label: '見つからず' },
 };
 
-interface ProbeHead { species: string | null; note: string | null; vegetation: string | null; spots: string[] }
+interface ProbeHead { species: string | null; note: string | null; vegetation: string | null; cluster: string | null; spots: string[] }
 
 type PanelTab = 'search' | 'view' | 'record' | 'settings';
 const PANEL_TABS: { id: PanelTab; label: string }[] = [
@@ -337,6 +338,7 @@ const VIEW_DEFAULTS = {
   forestLayers: NO_FOREST_LAYERS as ForestLayers,
   forestView: 'rank' as 'rank' | 'age', // 森林計画の塗り: 順位 or 林齢（林分）
   mizunaraSearch: false, // 「ミズナラを探す」
+  mzCluster: true, // 「ミズナラを探す」の間の 群生の輪郭（icarus_mizunara_cluster_outline_v1_design.md）
   terrainCond: NO_TERRAIN_CONDITIONS as TerrainConditions,
   showStreams: false,
   showContours: true,
@@ -439,6 +441,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [spotSpecies, setSpotSpecies] = useState<string>(savedView.spotSpecies ?? VIEW_DEFAULTS.spotSpecies);
   // 「ミズナラを探す」の間: 現地確認したミズナラは必ず出し、🌲（Spot にする候補）は隠す（同じ地点を二重に強調しない）。解除で元に戻る
   const [mizunaraSearch, setMizunaraSearch] = useState(savedView.mizunaraSearch ?? VIEW_DEFAULTS.mizunaraSearch);
+  const [mzCluster, setMzCluster] = useState(savedView.mzCluster ?? VIEW_DEFAULTS.mzCluster);
   const [recordLoc, setRecordLoc] = useState<RecordLocation | null>(null);
   // 撮った写真から記録（山から戻ってから）: 写真の撮影時の GPS と日時を使う
   const [recordInit, setRecordInit] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
@@ -732,10 +735,13 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }, [forest, focusStand]);
   const forestSpeciesOpts = useMemo(() => (forest ? forestSpeciesOptions(forest) : []), [forest]);
   const speciesNotice = useMemo(() => (forest ? genusOnlyNotice(forest, forestLayers.species) : null), [forest, forestLayers.species]);
+  // ミズナラの群生（森林計画 1〜3 位 × 植生図の群落）。「ミズナラを探す」の間だけ。森林データごとに 1 回だけ計算（mizunaraCluster.ts）
+  const clusters = useMemo(() => (forest && manifest && mizunaraSearch && mzCluster ? mizunaraClusters(forest, manifest.grid.pxM) : null), [forest, manifest, mizunaraSearch, mzCluster]);
+  const clusterLabels = useMemo(() => (clusters && manifest ? clusters.blocks.filter((b) => b.ha >= CLUSTER_LABEL_MIN_HA).map((b) => ({ id: b.id, ha: b.ha, ...gridToLatLng(manifest, b.labelX + 0.5, b.labelY + 0.5) })) : []), [clusters, manifest]);
   const [forestUrl, setForestUrl] = useState<string | null>(null);
   const forestCanvas = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
-    if (!forest || !anyForestLayer(forestDraw)) {
+    if (!forest || (!anyForestLayer(forestDraw) && !clusters)) {
       setForestUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       return;
     }
@@ -746,6 +752,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     if (!ctx) return;
     const img = ctx.createImageData(forest.width, forest.height);
     renderForest(forest, forestDraw, img.data);
+    // 群生の輪郭は森林の画像に描き込む（2D と 3D で同じものが出る）
+    if (clusters) drawClusterOutline(clusters, img.data);
     ctx.putImageData(img, 0, 0);
     let revoked = false;
     canvas.toBlob((blob) => {
@@ -754,7 +762,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       setForestUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
     });
     return () => { revoked = true; };
-  }, [forest, forestDraw]);
+  }, [forest, forestDraw, clusters]);
   // ---- DEM 由来の地形（S2）: 条件どうしは AND、1 つの条件の中は OR。既定は条件なし ----
   const [terrainCond, setTerrainCond] = useState<TerrainConditions>(savedView.terrainCond ?? VIEW_DEFAULTS.terrainCond);
   const [showStreams, setShowStreams] = useState(savedView.showStreams ?? VIEW_DEFAULTS.showStreams);
@@ -840,9 +848,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   };
 
   const toggleForest = (k: Exclude<keyof ForestLayers, 'vegMizunara'>) => (e: React.ChangeEvent<HTMLInputElement>) => setForestLayers((l) => ({ ...l, [k]: e.target.checked }));
-  // 「ミズナラを探す」: 根拠を種類ごとにまとめて出す（1〜3 位すべて・順位で見る・群落すべて・確認スポット・Field Log の点。樹種不明は OFF）
+  // 「ミズナラを探す」: 根拠を種類ごとにまとめて出す（1〜3 位すべて・順位で見る・群生の輪郭・確認スポット・Field Log の点。植生図の斜線と樹種不明は OFF）
   const startMizunaraSearch = () => {
-    setForestLayers((l) => mizunaraSearchLayers(l, communities));
+    setForestLayers((l) => mizunaraSearchLayers(l));
     setForestView('rank');
     setMizunaraSearch(true);
   };
@@ -857,11 +865,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   useEffect(() => {
     const t = window.setTimeout(() => saveView({
       presetId, conditions, show, fieldLogFilter, base, showSpots, spotKinds, spotSpecies, showHistory, coverageWidth, purposeFilter, period,
-      targetId, showTargetLayer, showMatch, forestLayers, forestView, mizunaraSearch, terrainCond, showStreams, showContours,
+      targetId, showTargetLayer, showMatch, forestLayers, forestView, mizunaraSearch, mzCluster, terrainCond, showStreams, showContours,
     }), 500);
     return () => window.clearTimeout(t);
   }, [presetId, conditions, show, fieldLogFilter, base, showSpots, spotKinds, spotSpecies, showHistory, coverageWidth, purposeFilter, period,
-    targetId, showTargetLayer, showMatch, forestLayers, forestView, mizunaraSearch, terrainCond, showStreams, showContours]);
+    targetId, showTargetLayer, showMatch, forestLayers, forestView, mizunaraSearch, mzCluster, terrainCond, showStreams, showContours]);
   const [contourError, setContourError] = useState<string | null>(null);
   const contourBlob = loaded?.pkg.files['contours.json'] ?? null;
   const contourVersion = manifest?.version ?? null;
@@ -971,9 +979,10 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       .sort((a, b) => a.d - b.d)
       .slice(0, 3)
       .map(({ m, d }) => `${m.label}${m.envType === 'tree' ? `（${({ alive: '生木', snag: '立枯れ', fallen: '倒木', na: '' } as const)[m.lifeState]}）` : ''} 約${Math.max(1, Math.round(d))}m`);
-    if (!fh?.species && !fh?.vegetation && near.length === 0) return undefined;
-    return { species: fh?.species ?? null, note: fh?.note ?? null, vegetation: fh?.vegetation ?? null, spots: near };
-  }, [loaded, manifest, envSpots.markers, forestView, forestLayers.species]);
+    const cb = clusters && i !== null ? clusterAt(clusters, i) : null;
+    if (!fh?.species && !fh?.vegetation && !cb && near.length === 0) return undefined;
+    return { species: fh?.species ?? null, note: fh?.note ?? null, vegetation: fh?.vegetation ?? null, cluster: cb ? clusterText(cb) : null, spots: near };
+  }, [loaded, manifest, envSpots.markers, forestView, forestLayers.species, clusters]);
   const onMapClick = useCallback((lat: number, lng: number) => {
     if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
     setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) });
@@ -1538,6 +1547,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<br />「記録」タブの「Spot にする候補」から整理できます<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '名前なし', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </Marker>
         ))}
+        {/* ミズナラの群生の面積（5ha 以上・ズーム 13 以上。2D だけ） */}
+        {clusters && mapZoom >= 13 && clusterLabels.map((b) => (
+          <Marker key={`mzc-${b.id}`} position={[b.lat, b.lng]} interactive={false} keyboard={false}
+            icon={L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="${styles.clusterLabel}">${b.ha} ha</span>` })} />
+        ))}
         {/* ミズナラを探す: Field Log のミズナラは小さな点（現地確認の環境スポットより控えめ） */}
         {mizunaraLogs.map((e) => (
           <CircleMarker key={`mz-${e.id}`} center={[e.lat, e.lng]} radius={3.5} pathOptions={{ color: '#fff', weight: 1, fillColor: MIZUNARA_LOG_COLOR, fillOpacity: 1 }}>
@@ -1901,10 +1915,14 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                     <h3 className={styles.h}>ミズナラを探す</h3>
                     <p className={styles.sub}>
                       <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.mz2.slice(0, 3).join(',')})` }} />森林計画（林分）：下の「表示方法」で 順位／林齢（林分） を切り替え<br />
-                      <span className={styles.swatch} style={{ background: 'repeating-linear-gradient(45deg,#7b1fa2 0 2px,transparent 2px 5px)' }} />ミズナラ系植生群落 {forestLayers.vegMizunara.length} 種類<br />
+                      <span className={styles.swatch} style={{ background: 'repeating-linear-gradient(45deg,#7b1fa2 0 2px,transparent 2px 5px)' }} />ミズナラ系植生群落（斜線）：{forestLayers.vegMizunara.length ? `${forestLayers.vegMizunara.length} 種類を表示中` : '下の「森林」の群落から表示できます'}<br />
                       <span className={styles.swatch} style={{ background: SPOT_COLORS.alive, borderRadius: '50%', boxShadow: '0 0 0 2px #f9a825' }} />現地確認したミズナラ（環境スポット） {envSpots.markers.filter((m) => m.treeSpeciesId === 'tree-mizunara').length} 本<br />
                       <span className={styles.swatch} style={{ background: MIZUNARA_LOG_COLOR, borderRadius: '50%', transform: 'scale(0.6)' }} />Field Log ミズナラ {mizunaraLogs.length} 件
                     </p>
+                    <label className={styles.check}>
+                      <input type="checkbox" checked={mzCluster} onChange={(e) => setMzCluster(e.target.checked)} />
+                      <span className={styles.swatch} style={{ background: 'transparent', boxShadow: `inset 0 0 0 3px rgb(${CLUSTER_EDGE_COLOR.slice(0, 3).join(',')}), 0 0 0 1px #fff` }} />ミズナラの群生の輪郭（森林計画 1〜3 位 × 植生図の群落が重なる所）{clusters ? ` ${clusters.blocks.length} か所` : ''}
+                    </label>
                     <label className={styles.check}>
                       <input type="checkbox" checked={forestLayers.broadleafUnknown} onChange={toggleForest('broadleafUnknown')} />
                       <span className={styles.swatch} style={{ background: `rgb(${FOREST_COLORS.broadleafUnknown.slice(0, 3).join(',')})` }} />樹種不明の天然林も見る（天然林広葉樹・判別できない）
@@ -2236,6 +2254,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               {probe.head.species && <div className={styles.probeSpecies}>樹種 {probe.head.species}</div>}
               {probe.head.note && <div className={styles.probeNote}>{probe.head.note}</div>}
               {probe.head.vegetation && <div>植生 {probe.head.vegetation}</div>}
+              {probe.head.cluster && <div>{probe.head.cluster}</div>}
               {probe.head.spots.length > 0 && <div>近くの環境スポット: {probe.head.spots.join('、')}</div>}
             </div>
           )}

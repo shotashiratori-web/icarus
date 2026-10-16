@@ -69,8 +69,9 @@ describe('森林計画の塗り', () => {
 
 describe('ミズナラを探す', () => {
   it('押した直後: 1〜3 位すべて・群落すべて・樹種不明は OFF。他の森林の設定は残す', () => {
-    const l = mizunaraSearchLayers({ ...NO_FOREST_LAYERS, species: 'カンバ', mz1: true, broadleafUnknown: true, larch: true }, ['A群落', 'B群落']);
-    expect(l).toMatchObject({ species: 'ミズナラ', mz1: true, mz2: true, mz3: true, vegMizunara: ['A群落', 'B群落'], broadleafUnknown: false, larch: true });
+    const l = mizunaraSearchLayers({ ...NO_FOREST_LAYERS, species: 'カンバ', mz1: true, broadleafUnknown: true, larch: true, vegMizunara: ['A群落'] });
+    // 植生図の斜線は押した直後は出さない（群生の輪郭に置き換え。群落の一覧からは出せる）
+    expect(l).toMatchObject({ species: 'ミズナラ', mz1: true, mz2: true, mz3: true, vegMizunara: [], broadleafUnknown: false, larch: true });
   });
 
   it('Field Log のミズナラ: 食材名に「ミズナラ」を含み、位置がある記録', () => {
