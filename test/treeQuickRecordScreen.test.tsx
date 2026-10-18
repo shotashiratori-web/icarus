@@ -44,7 +44,7 @@ describe('木を撮ってすぐ記録', () => {
       food: 'ミズナラ', memo: '太さ80cm・株立ち・林縁・位置±8m', subjectType: '環境', largeCategory: '植物',
       latitude: 43.1, longitude: 140.8, date: '2026-10-19', takenAt: '2026-10-19T01:02:03.000Z', hasPhoto: true, photoBase64: 'QUJD', useR2Asset: false,
     });
-    expect(await screen.findByRole('status')).toHaveTextContent('木 1 本（送信 1）');
+    expect(await screen.findByRole('status')).toHaveTextContent('送信済み 1本');
   });
 
   it('現在地を追っていれば、その位置を待たずに使う。次の木は前の樹種から', async () => {
@@ -68,9 +68,23 @@ describe('木を撮ってすぐ記録', () => {
     await waitFor(() => expect(submitWithFallback).toHaveBeenCalledTimes(1));
     expect(submitWithFallback.mock.calls[0][0].payload).toMatchObject({ memo: '位置なし', latitude: undefined });
     const st = await screen.findByRole('status');
-    await waitFor(() => expect(st).toHaveTextContent('保留 1'));
+    await waitFor(() => expect(st).toHaveTextContent('保留 1本｜電波が戻れば送ります'));
     expect(st).toHaveTextContent('位置が取れなかった木があります');
   });
+
+  it('送っている間は 送信中…、届いたら 送信済み、数秒で消える', async () => {
+    let done: (v: unknown) => void = () => {};
+    submitWithFallback.mockImplementation(() => new Promise((r) => { done = r; }));
+    render(<TreeQuickRecord idToken="t" livePos={{ lat: 43.2, lng: 140.7, accuracy: 3 }} onTokenExpired={() => {}} buttonClassName="b" />);
+    shoot();
+    fireEvent.click(screen.getByRole('button', { name: '保存して閉じる' }));
+    expect(screen.getByRole('status')).toHaveTextContent('送信中… 1本');
+    await waitFor(() => expect(submitWithFallback).toHaveBeenCalledTimes(1));
+    done({ ok: true });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('送信済み 1本'));
+    expect(screen.getByRole('status')).not.toHaveTextContent('送信中');
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull(), { timeout: 6000 });
+  }, 10000);
 
   it('やめると送らない', async () => {
     render(<TreeQuickRecord idToken="t" livePos={null} onTokenExpired={() => {}} buttonClassName="b" />);
