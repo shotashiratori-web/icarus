@@ -50,7 +50,7 @@ import { useExplorationHistory, type HistoryEntry } from './useExplorationHistor
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import type { RangePreview } from './ExplorationRangeEditor';
 import CandidatePinsPanel from './CandidatePinsPanel';
-import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, shortPinLabel, type CandidateSet } from '../../exploration/candidatePins';
+import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, pinRadiusM, shortPinLabel, type CandidateSet } from '../../exploration/candidatePins';
 import { listSharedCandidateSets } from '../../api/candidateSetsApi';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import ContourLayer from './ContourLayer';
@@ -1521,6 +1521,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               />
             </Fragment>
           );
+        })}
+        {/* 調査区の円: 説明に「半径40m」などがある予測地点だけ。紫の点線（中は薄く）。押せない（中の木や地図を押せるように） */}
+        {candidatePins.map((p) => {
+          const r = pinRadiusM(p);
+          return r ? <Circle key={`cand-r-${p.key}`} center={[p.lat, p.lng]} radius={r} interactive={false} pathOptions={{ color: '#7b1fa2', weight: 3, dashArray: '8 6', fillColor: '#7b1fa2', fillOpacity: 0.08 }} /> : null;
         })}
         {/* 予測地点（検証候補）: 紫の「？」。押すと名前・説明・「ここへ行く」（「ここを記録」は出さない） */}
         {candidatePins.map((p) => (

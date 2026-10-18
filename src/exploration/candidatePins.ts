@@ -33,6 +33,15 @@ export function pinHeightM(p: CandidatePin): number | null {
   return m ? Number(m[1]) : null;
 }
 
+// 調査区の半径（m）: 説明に「半径40m」のように書かれた地点は、地図にその円を描く（現地で数える範囲を見せる）。
+// 5〜300m だけ（それ以外は書き間違いとして描かない）。無ければ null
+export function pinRadiusM(p: Pick<CandidatePin, 'desc'>): number | null {
+  const m = p.desc.match(/半径\s*(\d+(?:\.\d+)?)\s*m/);
+  if (!m) return null;
+  const r = Number(m[1]);
+  return r >= 5 && r <= 300 ? r : null;
+}
+
 // 地図のラベル用の短い名前: 候補 ID ＋樹冠高まで（例「V02 37m 道125m 24°」→「V02 37m」）。
 // 道からの距離・傾斜は行き先を比べる時の情報なので、地図には出さない（押せばポップアップで全文）
 export const CANDIDATE_LABEL_MIN_ZOOM = 15; // これより引いて見ている時は紫の「？」だけ

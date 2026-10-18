@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  pinRadiusM,
   CandidateGpxError, closeCandidateStoreForTest, deleteCandidateSet, importCandidateGpx, listCandidateSets, parseCandidateGpx, setCandidateSetVisible,
 } from '../src/exploration/candidatePins';
 
@@ -119,5 +120,16 @@ describe('予測地点を探す', () => {
     expect(searchPins(sets, 'q 24m').map((h) => h.pin.name)).toEqual(['Q05 24m +11 道42m 20°']);
     expect(searchPins(sets, '  ')).toEqual([]);
     expect(searchPins(sets, 'zzz')).toEqual([]);
+  });
+});
+
+describe('調査区の円（説明の「半径○m」）', () => {
+  it('説明に半径があれば円の半径（m）。無い・範囲外は null', () => {
+    expect(pinRadiusM({ desc: '調査: 中心から半径40m（0.5ha）・45分' })).toBe(40);
+    expect(pinRadiusM({ desc: '半径 25 m' })).toBe(25);
+    expect(pinRadiusM({ desc: 'A1 の調査区の端（中心から北へ40m）' })).toBeNull();
+    expect(pinRadiusM({ desc: '' })).toBeNull();
+    expect(pinRadiusM({ desc: '半径2m' })).toBeNull();
+    expect(pinRadiusM({ desc: '半径5000m' })).toBeNull();
   });
 });
