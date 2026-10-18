@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   extractExifDate, fetchGps, getImageDimensions, isHeicFile, readFileAsBase64, resizeToJpeg, sha256Hex,
 } from '../../api/icarusApi';
@@ -26,6 +26,8 @@ type Prepared = {
   asset?: { originalBase64: string; fileHash: string; mimeType: string; sizeBytes: number; width?: number; height?: number };
 };
 type Gps = { lat: number; lng: number; accuracy: number } | null;
+const SENT_SHOW_MS = 4000;
+const QUEUED_SHOW_MS = 8000;
 
 type Props = {
   idToken: string | null;
@@ -45,7 +47,15 @@ export default function TreeQuickRecord({ idToken, livePos, onTokenExpired, butt
   const [dbh, setDbh] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [count, setCount] = useState({ sent: 0, queued: 0, failed: 0 });
+  // 送信の状態の表示（2026-10-18 Gate: 「送信 1」が送信中とも読め、送っている間は何も出ていなかった）。
+  // 送信中…は送り終わるまで、送信済み・保留は数秒で消える（数は今回の記録の合計）
+  const [count, setCount] = useState({ sending: 0, sent: 0, queued: 0, failed: 0 });
+  const [flash, setFlash] = useState<'sent' | 'queued' | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), flash === 'sent' ? SENT_SHOW_MS : QUEUED_SHOW_MS);
+    return () => window.clearTimeout(t);
+  }, [flash, count.sent, count.queued]);
   const [msg, setMsg] = useState<string | null>(null);
   const useR2Asset = PHOTO_ASSET_R2_ENABLED;
 
@@ -84,9 +94,10 @@ export default function TreeQuickRecord({ idToken, livePos, onTokenExpired, butt
 
   // 裏で保存（送信 or 保留）。画面は待たない
   const save = (snapshot: { species: string; dbh: string; tags: string[]; note: string }, prepP: Promise<Prepared | null>, gpsP: Promise<Gps>) => {
+    setCount((c) => ({ ...c, sending: c.sending + 1 }));
     void (async () => {
       const [p, g] = await Promise.all([prepP, gpsP]);
-      if (!p) { setCount((c) => ({ ...c, failed: c.failed + 1 })); setMsg('写真を読めませんでした。もう一度撮ってください'); return; }
+      if (!p) { setCount((c) => ({ ...c, sending: c.sending - 1, failed: c.failed + 1 })); setMsg('写真を読めませんでした。もう一度撮ってください'); return; }
       const ids = emptyPhotoEntry();
       const memo = buildTreeMemo({ dbhCm: parseDbhInput(snapshot.dbh), tags: snapshot.tags, note: snapshot.note, accuracyM: g ? g.accuracy : null });
       const payload: FieldLogD1SubmissionPayload = {
@@ -102,7 +113,8 @@ export default function TreeQuickRecord({ idToken, livePos, onTokenExpired, butt
         photoThumbnail: `data:image/jpeg;base64,${p.base64}`, displayDate: p.date, idToken,
       });
       if (outcome.ok) {
-        setCount((c) => ({ ...c, sent: c.sent + 1 }));
+        setCount((c) => ({ ...c, sending: c.sending - 1, sent: c.sent + 1 }));
+        setFlash('sent');
         if (g) {
           const recordedAt = new Date().toISOString();
           useZukanFieldStore.getState().addEntry({
@@ -112,7 +124,8 @@ export default function TreeQuickRecord({ idToken, livePos, onTokenExpired, butt
           });
         }
       } else {
-        setCount((c) => ({ ...c, queued: c.queued + 1 }));
+        setCount((c) => ({ ...c, sending: c.sending - 1, queued: c.queued + 1 }));
+        setFlash('queued');
         if (outcome.item.lastError?.code === 'AUTH_EXPIRED') onTokenExpired();
       }
       if (!g) setMsg('位置が取れなかった木があります（位置なしで保存。記録の一覧から 📍 で直せます）');
@@ -130,16 +143,17 @@ export default function TreeQuickRecord({ idToken, livePos, onTokenExpired, butt
   };
   const cancel = () => { prep.current = null; gps.current = null; setOpen(false); };
   const toggle = (t: string) => setTags((v) => (v.includes(t) ? v.filter((x) => x !== t) : [...v, t]));
-  const total = count.sent + count.queued;
   const choices = speciesChoices(loadLastTreeSpecies());
 
   return (
     <>
       <button className={buttonClassName} onClick={openCamera}>🌳 木を記録</button>
       <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onFile(e.target.files?.[0])} />
-      {(total > 0 || msg) && !open && (
-        <div className={styles.status} role="status" onClick={() => setMsg(null)}>
-          {total > 0 && <>木 {total} 本（送信 {count.sent}{count.queued ? `・保留 ${count.queued}` : ''}）</>}
+      {(count.sending > 0 || flash || msg) && !open && (
+        <div className={styles.status} role="status" onClick={() => { setMsg(null); setFlash(null); }}>
+          {count.sending > 0 && <div>送信中… {count.sending}本</div>}
+          {flash === 'sent' && count.sending === 0 && <div>送信済み {count.sent}本</div>}
+          {flash === 'queued' && <div>保留 {count.queued}本｜電波が戻れば送ります</div>}
           {msg && <div className={styles.warn}>{msg}</div>}
         </div>
       )}
