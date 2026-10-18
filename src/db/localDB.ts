@@ -3,9 +3,11 @@ import type { WineNote } from '../types/wine';
 import type { PhotoEntry, CommonFields, SubmitMode } from '../types/foodLog';
 
 const DB_NAME = 'icarus';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE = 'notes';
 const DRAFT_STORE = 'food_log_draft';
+// 下書きの写真の重いデータ（縮小 JPEG・元の写真）。写真ごとに 1 回だけ書く（2026-10-18: 入力のたびに 10 枚分を書き直して固まっていた）
+const DRAFT_PHOTO_STORE = 'food_log_draft_photos';
 export const QUEUE_STORE = 'submission_queue';
 // PC一括写真送信のバッチ永続化。送信開始前にqueued状態で全件保存し、タブを閉じても再開できるようにする
 export const PHOTO_BATCH_STORE = 'photo_batch_items';
@@ -67,6 +69,9 @@ export async function getDB() {
           }
           if (!db.objectStoreNames.contains(DRAFT_STORE)) {
             db.createObjectStore(DRAFT_STORE, { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains(DRAFT_PHOTO_STORE)) {
+            db.createObjectStore(DRAFT_PHOTO_STORE, { keyPath: 'localId' });
           }
           if (!db.objectStoreNames.contains(QUEUE_STORE)) {
             const store = db.createObjectStore(QUEUE_STORE, { keyPath: 'id' });
@@ -158,19 +163,59 @@ export async function deleteNote(id: string): Promise<void> {
   await db.delete(STORE, id);
 }
 
+// 下書き = 軽い入力内容（食材名・メモ・日付など）＋写真ごとの重いデータ（別の store）。
+// 入力のたびに書くのは軽い方だけ。重い方は、まだ書いていない写真の分だけ書き、外した写真の分は消す
+type DraftPhotoHeavy = { localId: string; base64: string; assetOriginalBase64?: string };
+const HEAVY_KEYS = ['base64', 'assetOriginalBase64'] as const;
+let _storedPhotoIds: Set<string> | null = null; // この画面で書いた（読んだ）写真。端末の store と同じ中身
+
+async function storedPhotoIds(db: IDBPDatabase): Promise<Set<string>> {
+  if (!_storedPhotoIds) _storedPhotoIds = new Set((await db.getAllKeys(DRAFT_PHOTO_STORE)).map(String));
+  return _storedPhotoIds;
+}
+
 export async function saveFoodLogDraft(draft: Omit<FoodLogDraft, 'id' | 'savedAt'>): Promise<void> {
   const db = await getDB();
-  await db.put(DRAFT_STORE, { ...draft, id: 'current', savedAt: new Date().toISOString() });
+  const stored = await storedPhotoIds(db);
+  const ids = new Set(draft.photos.map((p) => p.localId));
+  for (const p of draft.photos) {
+    if (stored.has(p.localId)) continue;
+    await db.put(DRAFT_PHOTO_STORE, { localId: p.localId, base64: p.base64, assetOriginalBase64: p.assetOriginalBase64 } satisfies DraftPhotoHeavy);
+    stored.add(p.localId);
+  }
+  for (const id of [...stored]) {
+    if (ids.has(id)) continue;
+    await db.delete(DRAFT_PHOTO_STORE, id);
+    stored.delete(id);
+  }
+  const photos = draft.photos.map((p) => {
+    const light = { ...p };
+    for (const k of HEAVY_KEYS) delete light[k];
+    return { ...light, base64: '' };
+  });
+  await db.put(DRAFT_STORE, { ...draft, photos, id: 'current', savedAt: new Date().toISOString() });
 }
 
 export async function loadFoodLogDraft(): Promise<FoodLogDraft | undefined> {
   const db = await getDB();
-  return db.get(DRAFT_STORE, 'current');
+  const draft: FoodLogDraft | undefined = await db.get(DRAFT_STORE, 'current');
+  if (!draft) return draft;
+  const stored = await storedPhotoIds(db);
+  const photos = await Promise.all(draft.photos.map(async (p) => {
+    if (p.base64) return p; // 前の版の下書き（写真のデータが中に入っている）はそのまま
+    const heavy: DraftPhotoHeavy | undefined = await db.get(DRAFT_PHOTO_STORE, p.localId);
+    if (!heavy) return p;
+    stored.add(p.localId);
+    return { ...p, base64: heavy.base64, ...(heavy.assetOriginalBase64 ? { assetOriginalBase64: heavy.assetOriginalBase64 } : {}) };
+  }));
+  return { ...draft, photos };
 }
 
 export async function clearFoodLogDraft(): Promise<void> {
   const db = await getDB();
   await db.delete(DRAFT_STORE, 'current');
+  await db.clear(DRAFT_PHOTO_STORE);
+  _storedPhotoIds = new Set();
 }
 
 export function workLogDraftKey(requestId: string): string {
