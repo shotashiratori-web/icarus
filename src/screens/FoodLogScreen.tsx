@@ -38,6 +38,7 @@ import { fetchFieldEditOptions } from '../api/fieldEntryEditApi';
 import styles from './FoodLogScreen.module.css';
 
 const SUB_OPTIONS_KEY = 'icarus:field-sub-category-options';
+const DRAFT_SAVE_DELAY_MS = 600; // 下書きを書くまでの待ち（打ち終わってから 1 回）
 
 // 樹種の候補（環境スポットの樹種マスタを端末に読み込めない時の予備）
 const DEFAULT_TREE_NAMES = ['ミズナラ', 'ブナ', 'イタヤカエデ', 'シナノキ', 'ハリギリ', 'ハルニレ', 'カツラ', 'トドマツ', 'カラマツ', 'シラカンバ'];
@@ -140,13 +141,29 @@ export default function FoodLogScreen({ go, editItemId, subjectType: startAs }: 
     }
   }, []);
 
+  // 入力のたびには書かない: 最後の変更から DRAFT_SAVE_DELAY_MS 待って 1 回だけ（2026-10-18: 10 枚で文字を打つと固まった）。
+  // 画面を離れる・アプリを閉じる時は待たずに書く
+  const pendingDraft = useRef<(() => void) | null>(null);
   useEffect(() => {
     // 保留一覧からの編集中は、通常の下書き（単一スロット）を上書きしない
     if (editItemId) return;
-    if (phase !== 'sending' && phase !== 'complete') {
-      void saveDraft(photos, common, submitMode, currentIdx);
-    }
+    if (phase === 'sending' || phase === 'complete') { pendingDraft.current = null; return; }
+    const write = () => { pendingDraft.current = null; void saveDraft(photos, common, submitMode, currentIdx); };
+    pendingDraft.current = write;
+    const timer = window.setTimeout(write, DRAFT_SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [photos, common, submitMode, currentIdx, phase, saveDraft, editItemId]);
+  useEffect(() => {
+    const flush = () => { if (document.visibilityState === 'hidden') pendingDraft.current?.(); };
+    const onHide = () => pendingDraft.current?.();
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', onHide);
+      pendingDraft.current?.(); // 画面を離れる時も最後の入力を残す
+    };
+  }, []);
 
   // ── 初回サインイン時に一度だけ：食材候補の取得 + 下書き復元 ──────
   // 保留一覧からの編集(editItemId)のときは、下書きではなくqueueの内容を復元するので対象外
