@@ -21,6 +21,8 @@ import {
   type AgeClass, type ForestData, type ForestLayers, type ForestStand,
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
+import TreeQuickRecord from './TreeQuickRecord';
+import { isFieldLogD1Enabled } from '../../config';
 import { CLUSTER_EDGE_COLOR, CLUSTER_LABEL_MIN_HA, clusterAt, clusterText, drawClusterOutline, mizunaraClusters } from '../../terrain/mizunaraCluster';
 import { focusFromBox, roadsGeoJSON, type Focus3D, type Layers3D } from '../../terrain/view3dData';
 import {
@@ -355,7 +357,7 @@ const VIEW_ALLOWED = {
 };
 
 function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, online, saving: savingAny, areaError, onShowOverview, onSaveArea, onDeleteArea, onOpenArea, onPos }: AreaMapProps) {
-  const { idToken, staffMe } = useAuth();
+  const { idToken, staffMe, userEmail, handleTokenExpired } = useAuth();
 
   const [status, setStatus] = useState<string>('地形データを読み込み中…');
   const [error, setError] = useState<string | null>(null);
@@ -1714,6 +1716,10 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         )}
         {pos && !headingMode && !recordLoc && (
           <button className={styles.tool} onClick={() => setRecordLoc({ lat: pos.lat, lng: pos.lng, source: 'gps', accuracyM: pos.accuracy })}>＋記録</button>
+        )}
+        {/* 木を撮ってすぐ記録（icarus_tree_quick_record_v1_design.md）。Field Log（D1）を使える人だけ */}
+        {!headingMode && isFieldLogD1Enabled(userEmail) && (
+          <TreeQuickRecord idToken={idToken} livePos={watching ? pos : null} onTokenExpired={handleTokenExpired} buttonClassName={styles.tool} />
         )}
       </div>
       )}
