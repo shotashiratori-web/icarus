@@ -22,6 +22,7 @@ import {
 } from '../../terrain/forest';
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
 import TreeQuickRecord from './TreeQuickRecord';
+import { PhotoZoom, PopupPhoto } from './PopupPhoto';
 import { isFieldLogD1Enabled } from '../../config';
 import { CLUSTER_EDGE_COLOR, CLUSTER_LABEL_MIN_HA, clusterAt, clusterText, drawClusterOutline, mizunaraClusters } from '../../terrain/mizunaraCluster';
 import { focusFromBox, roadsGeoJSON, type Focus3D, type Layers3D } from '../../terrain/view3dData';
@@ -444,6 +445,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   // 「ミズナラを探す」の間: 現地確認したミズナラは必ず出し、🌲（Spot にする候補）は隠す（同じ地点を二重に強調しない）。解除で元に戻る
   const [mizunaraSearch, setMizunaraSearch] = useState(savedView.mizunaraSearch ?? VIEW_DEFAULTS.mizunaraSearch);
   const [mzCluster, setMzCluster] = useState(savedView.mzCluster ?? VIEW_DEFAULTS.mzCluster);
+  const [zoomPhoto, setZoomPhoto] = useState<string | null>(null); // 地図の小窓の写真を大きく
   const [recordLoc, setRecordLoc] = useState<RecordLocation | null>(null);
   // 撮った写真から記録（山から戻ってから）: 写真の撮影時の GPS と日時を使う
   const [recordInit, setRecordInit] = useState<{ photos: PendingPhoto[]; observedAt: string | null } | null>(null);
@@ -1551,7 +1553,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             position={[e.lat, e.lng]}
             icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<span class="${styles.envCapture}" aria-label="環境の記録（未整理）">🌲</span>` })}
           >
-            <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<br />「記録」タブの「Spot にする候補」から整理できます<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '名前なし', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
+            <Popup><b>🌲 {e.foodName || '名前なし'}</b><br />{e.date}・Field Log（環境・まだ Spot にしていない）<PopupPhoto entry={e} onZoom={setZoomPhoto} />「記録」タブの「Spot にする候補」から整理できます<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '名前なし', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </Marker>
         ))}
         {/* ミズナラの群生の面積（5ha 以上・ズーム 13 以上。2D だけ） */}
@@ -1562,12 +1564,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         {/* ミズナラを探す: Field Log のミズナラは小さな点（現地確認の環境スポットより控えめ） */}
         {mizunaraLogs.map((e) => (
           <CircleMarker key={`mz-${e.id}`} center={[e.lat, e.lng]} radius={3.5} pathOptions={{ color: '#fff', weight: 1, fillColor: MIZUNARA_LOG_COLOR, fillOpacity: 1 }}>
-            <Popup><b>{e.foodName}</b><br />{e.date}・Field Log（ミズナラの記録）<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || 'ミズナラ', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
+            <Popup><b>{e.foodName}</b><br />{e.date}・Field Log（ミズナラの記録）<PopupPhoto entry={e} onZoom={setZoomPhoto} /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || 'ミズナラ', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </CircleMarker>
         ))}
         {logPoints.map((e) => (
           <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
-            <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}{e.subCategory && e.subCategory !== '不明' ? `・${e.largeCategory}/${e.subCategory}` : ''}<br /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '無題', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
+            <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}{e.subCategory && e.subCategory !== '不明' ? `・${e.largeCategory}/${e.subCategory}` : ''}<PopupPhoto entry={e} onZoom={setZoomPhoto} /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '無題', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </CircleMarker>
         ))}
         {probe && <CircleMarker center={[probe.lat, probe.lng]} radius={5} pathOptions={{ color: '#8d5524', weight: 2, fill: false }} />}
@@ -2257,6 +2259,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         )}
       </section>
 
+      {zoomPhoto && <PhotoZoom url={zoomPhoto} onClose={() => setZoomPhoto(null)} />}
       {probe && (
         <div className={styles.probe} role="status">
           <button className={styles.probeClose} onClick={() => setProbe(null)} aria-label="閉じる">×</button>
