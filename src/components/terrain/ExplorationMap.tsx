@@ -197,9 +197,10 @@ const fmtDate = (iso: string) => {
 const MIZUNARA_LOG_COLOR = '#e65100'; // ミズナラを探す の Field Log の点
 const SPOT_COLORS: Record<SpotKindChoice, string> = { alive: '#2e7d32', snag: '#a1887f', fallen: '#5d4037', terrain: '#546e7a', other: '#9e9e9e' };
 
-// 対象の観察があるスポットの輪と印（色だけに頼らない: 見つかった=緑の実線＋✓、見つからず=赤の破線＋×）
+// 対象の観察があるスポットの輪と印（色だけに頼らない: 見つかった=緑の実線＋✓、未確定=琥珀色の点線＋？、見つからず=赤の破線＋×）
 const SPOT_TARGET_STYLE: Record<SpotTargetStatus, { color: string; dash?: string; mark: string; label: string }> = {
   found: { color: '#1b5e20', mark: '✓', label: '見つかった' },
+  uncertain: { color: '#ff8f00', dash: '2 4', mark: '？', label: '未確定' },
   notFound: { color: '#c62828', dash: '5 4', mark: '×', label: '見つからず' },
 };
 
@@ -828,6 +829,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       evidence: {
         period, purposeFilter, tracks: te.counts.tracks, foundTracks: te.counts.foundTracks, notFoundTracks: te.counts.notFoundTracks,
         foundPoints: te.counts.foundPoints, notFoundPoints: te.counts.notFoundPoints, latestExploredOn: te.counts.latest,
+        uncertainPoints: te.counts.uncertainPoints, uncertainTracks: te.counts.uncertainTracks,
         confirmedTrees: hypEffective.confirmedTrees ? treeCounts[hypEffective.confirmedTrees.treeSpeciesId] ?? 0 : 0,
       },
       coverageWidthM: coverageWidth, pointRadiusM: DEFAULT_POINT_RADIUS_M,
@@ -1568,7 +1570,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           </CircleMarker>
         ))}
         {logPoints.map((e) => (
-          <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: speciesKey(e.foodName).uncertain ? 0.4 : 0.9 }}>
+          // 「？」付き（未確定）は琥珀色・点線の縁（確定の緑と色・形で分ける。探す対象の「未確定」と同じ色）
+          <CircleMarker key={e.id} center={[e.lat, e.lng]} radius={6} pathOptions={speciesKey(e.foodName).uncertain ? { color: '#5d4037', weight: 2, dashArray: '2 3', fillColor: '#ffa000', fillOpacity: 0.9 } : { color: '#fff', weight: 1.5, fillColor: '#2b8a3e', fillOpacity: 0.9 }}>
             <Popup><b>{e.foodName || '無題'}</b><br />{e.date}{e.place ? `・${e.place}` : ''}{e.subCategory && e.subCategory !== '不明' ? `・${e.largeCategory}/${e.subCategory}` : ''}<PopupPhoto entry={e} onZoom={setZoomPhoto} /><button className={styles.btn} onClick={() => startNavigate({ kind: 'fieldlog', name: e.foodName || '無題', lat: e.lat, lng: e.lng })}>ここへ行く</button></Popup>
           </CircleMarker>
         ))}
