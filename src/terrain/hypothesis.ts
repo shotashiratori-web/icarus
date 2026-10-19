@@ -258,6 +258,8 @@ export interface HypothesisSnapshot {
       notFoundTracks: number;
       foundPoints: number;
       notFoundPoints: number;
+      uncertainPoints?: number; // 未確定（「？」付き）。2026-10-20 より前の仮説には無い
+      uncertainTracks?: number;
       latestExploredOn: string | null;
       confirmedTrees: number;
     };

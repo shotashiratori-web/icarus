@@ -43,7 +43,7 @@ type Props = {
 };
 
 const km2 = (v: number) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)} km²`;
-const STATES_ORDER: ExplorationState[] = ['unexplored', 'walked', 'notFound', 'foundTrack', 'foundPoint'];
+const STATES_ORDER: ExplorationState[] = ['unexplored', 'walked', 'notFound', 'foundTrack', 'uncertain', 'foundPoint'];
 
 export default function HypothesisPanel(p: Props) {
   const [name, setName] = useState('');
@@ -89,9 +89,9 @@ export default function HypothesisPanel(p: Props) {
           </label>
           {p.showTargetLayer && (
             <div className={styles.legend}>
-              {(target ? (['foundPoint', 'notFound', 'foundTrack', 'walked'] as const) : (['walked'] as const)).map((s) => (
+              {(target ? (['foundPoint', 'uncertain', 'notFound', 'foundTrack', 'walked'] as const) : (['walked'] as const)).map((s) => (
                 <span key={s} className={styles.legendItem}>
-                  <span className={styles.swatch} style={{ background: `rgba(${STATE_COLORS[s].slice(0, 3).join(',')},0.8)` }} />
+                  <span className={styles.swatch} style={{ background: s === 'uncertain' ? `repeating-linear-gradient(45deg,rgb(${STATE_COLORS[s].slice(0, 3).join(',')}) 0 3px,transparent 3px 6px)` : `rgba(${STATE_COLORS[s].slice(0, 3).join(',')},0.8)` }} />
                   {stateLabel(s)} {km2(p.stateAreas![s])}
                 </span>
               ))}
