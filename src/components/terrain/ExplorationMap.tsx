@@ -28,7 +28,7 @@ import { DEFAULT_STAY_MIN, isStop, listRoutes, type RoutePlan, type RoutePoint }
 import { syncRoutes } from '../../exploration/routeSync';
 import { isFieldLogD1Enabled } from '../../config';
 import { CLUSTER_EDGE_COLOR, CLUSTER_LABEL_MIN_HA, clusterAt, clusterText, drawClusterOutline, mizunaraClusters } from '../../terrain/mizunaraCluster';
-import { focusFromBox, roadsGeoJSON, type Focus3D, type Layers3D } from '../../terrain/view3dData';
+import { focusFromBox, roadsGeoJSON, routeLines3D, routeMarks3D, type Focus3D, type Layers3D } from '../../terrain/view3dData';
 import {
   anyTerrainCondition, describeHydro, STREAM_NOTE, DIRECTION_LABEL, summarizeTerrain, DIRECTIONS, hydroFromPixels, LANDFORMS, NO_TERRAIN_CONDITIONS, renderHydro, STREAM_COLOR, TERRAIN_MATCH_COLOR, WETNESS_LABEL,
   type Direction, type HydroGrid, type TerrainConditions, type Wetness,
@@ -1438,6 +1438,10 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     ...logPoints.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName || '無題'}（${e.date}）` })),
     ...mizunaraLogs.map((e) => ({ lat: e.lat, lng: e.lng, label: `${e.foodName}（${e.date}・Field Log）`, color: MIZUNARA_LOG_COLOR, radius: 3.5 })),
   ], [logPoints, mizunaraLogs]);
+  // 探索計画（3D は下見用）: 2D で表示にしている計画。作っている計画の元は 2D と同じく出さない
+  const shownRoutes3d = useMemo(() => routes.filter((r) => r.visible && r.id !== editor?.base?.id), [routes, editor?.base?.id]);
+  const routeLines3d = useMemo(() => routeLines3D(shownRoutes3d), [shownRoutes3d]);
+  const routeMarks3d = useMemo(() => routeMarks3D(shownRoutes3d), [shownRoutes3d]);
   const onlineBase = base !== 'offline';
   const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">国土地理院</a> | © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>';
 
@@ -1834,6 +1838,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             spots={spots3d}
             points={points3d}
             candidates={candidatePins}
+            routeLines={routeLines3d}
+            routeMarks={routeMarks3d}
             initial={view3d}
             focus={focus3d}
             onPick={onPick3d}

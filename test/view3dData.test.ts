@@ -67,3 +67,33 @@ describe('古い林分へ飛ぶ（PR3）', () => {
     expect(focusFromBox(toLatLng, { x0: 10, y0: 20, x1: 12, y1: 25 }, 7)).toEqual({ key: 7, north: 43.2 - 0.02, west: 140.6 + 0.01, south: 43.2 - 0.026, east: 140.6 + 0.013 });
   });
 });
+
+describe('探索計画（3D は下見用）', () => {
+  const route = {
+    name: '10/27 探索',
+    points: [
+      { lat: 43.1, lng: 140.8 },
+      { lat: 43.11, lng: 140.81, kind: 'via' as const },
+      { lat: 43.12, lng: 140.82, kind: 'stop' as const, name: '尾根に上がる', stayMin: 0 },
+      { lat: 43.13, lng: 140.83, kind: 'candidate' as const, name: '霜M1', memo: '林縁', stayMin: 20, setTitle: 'シモフリ' },
+      { lat: 43.14, lng: 140.84, kind: 'via' as const },
+    ],
+  };
+  it('線は全部の点を通る（経由点も）。点が 1 つの計画は線にしない', async () => {
+    const { routeLines3D } = await import('../src/terrain/view3dData');
+    expect(routeLines3D([route, { name: 'x', points: [{ lat: 1, lng: 2 }] }])).toEqual([route.points.map((p) => [p.lat, p.lng])]);
+  });
+  it('目印は S・G・立ち寄り地点・既存候補だけ。経由点は出さない', async () => {
+    const { routeMarks3D } = await import('../src/terrain/view3dData');
+    const m = routeMarks3D([route]);
+    expect(m.map((x) => [x.label, x.role])).toEqual([['S', 'start'], ['尾根に上がる', 'stop'], ['霜M1', 'candidate'], ['G', 'goal']]);
+    expect(m[1]).toMatchObject({ stayMin: 0, plan: '10/27 探索' });
+    expect(m[2]).toMatchObject({ memo: '林縁', stayMin: 20, setTitle: 'シモフリ' });
+    expect(m[0].stayMin).toBeUndefined();
+  });
+  it('始点が立ち寄り地点なら「S 名前」', async () => {
+    const { routeMarks3D } = await import('../src/terrain/view3dData');
+    const m = routeMarks3D([{ name: 'a', points: [{ lat: 1, lng: 2, kind: 'stop', name: '駐車地' }, { lat: 1.1, lng: 2 }] }]);
+    expect(m.map((x) => x.label)).toEqual(['S 駐車地', 'G']);
+  });
+});
