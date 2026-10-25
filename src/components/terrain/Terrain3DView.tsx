@@ -7,9 +7,10 @@ import { markReadyOnLoad, whenReady } from '../../terrain/mapReady';
 import type { Inspector } from '../../terrain/forestWater';
 import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RIVER_EDGE_CODES } from '../../terrain/gsiRivers';
 import type { TerrainBounds } from '../../terrain/types';
-import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
+import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type RouteMark3D, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
 import { ROAD_CLASS_LABEL } from '../../terrain/roads';
 import { CANDIDATE_LABEL_MIN_ZOOM, shortPinLabel, type CandidatePin } from '../../exploration/candidatePins';
+import { ROUTE_COLOR } from './RoutePlanPanel';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -35,6 +36,8 @@ export interface Terrain3DProps {
   spots: Spot3D[];
   points: Point3D[];
   candidates: CandidatePin[]; // 予測地点（2D の一覧で表示にしている組だけ）
+  routeLines: [number, number][][]; // 探索計画の線（2D で表示にしている計画だけ。[lat, lng]）
+  routeMarks: RouteMark3D[]; // 探索計画の S・G・立ち寄り地点・既存候補（経由点は出さない）
   initial: { lat: number; lng: number; zoom: number };
   // PR3: 「林齢の古い林分から見る」を押した林分へ飛ぶ（key が変わるたびに 1 回）。範囲は経緯度
   focus: { key: number; south: number; west: number; north: number; east: number } | null;
@@ -143,13 +146,35 @@ function candidateDom(p: CandidatePin): HTMLElement {
   return root;
 }
 
+// 探索計画の目印（2D と同じ黄緑の丸・始点は白。S/G は丸の中に字）＋名前
+function routeMarkNode(m: RouteMark3D): HTMLElement {
+  const node = el('div', styles.route3d);
+  const dot = el('span', styles.route3dDot, m.role === 'start' ? 'S' : m.role === 'goal' ? 'G' : '');
+  dot.style.background = m.role === 'start' ? '#fff' : ROUTE_COLOR;
+  const name = m.label.replace(/^[SG] ?/, '');
+  node.append(dot);
+  if (name) node.append(el('span', styles.route3dLabel, name));
+  return node;
+}
+
+function routeMarkDom(m: RouteMark3D): HTMLElement {
+  const root = el('div', styles.inspector);
+  root.append(el('strong', styles.inspTitle, m.plan), el('div', styles.inspSub, m.label));
+  if (m.role === 'stop' || m.role === 'candidate') {
+    if (m.memo) root.append(el('div', null, m.memo));
+    root.append(el('div', null, `滞在 ${m.stayMin ?? 0}分${m.setTitle ? `・${m.setTitle}` : ''}`));
+  }
+  root.append(el('div', styles.inspFoot, '作る・直す・ここへ行くは 2D から'));
+  return root;
+}
+
 // 凡例の開閉はこの端末に覚えておく（初めは閉じる。読めない・書けない時は閉じる）
 const LEGEND_KEY = 'icarus.3d.legendOpen';
 function loadLegendOpen(): boolean {
   try { return localStorage.getItem(LEGEND_KEY) === '1'; } catch { return false; }
 }
 
-export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, routeLines, routeMarks, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -200,6 +225,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           roads: { type: 'geojson', data: roads as never },
           spots: { type: 'geojson', data: spotsGeoJSON(spots) as never },
           points: { type: 'geojson', data: pointsGeoJSON(points) as never },
+          routes: { type: 'geojson', data: tracksGeoJSON(routeLines) as never },
         },
         layers: [
           { id: 'pale', type: 'raster', source: 'pale' },
@@ -221,6 +247,9 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           ...ROAD_PAINT_3D.map((r) => ({ id: `road-${r.c}`, type: 'line' as const, source: 'roads', filter: ['==', ['get', 'c'], r.c] as never, layout: { 'line-cap': r.round ? 'round' as const : 'butt' as const, 'line-join': 'round' as const }, paint: { 'line-color': r.color, 'line-width': r.width, ...(r.dash ? { 'line-dasharray': r.dash } : {}) } })),
           { id: 'tracks-casing', type: 'line', source: 'tracks', paint: { 'line-color': '#fff', 'line-width': 6, 'line-opacity': 0.85 } },
           { id: 'tracks', type: 'line', source: 'tracks', paint: { 'line-color': '#1a73e8', 'line-width': 3.5 } },
+          // 探索計画: 2D と同じ黄緑の点線＋白縁（予定は点線・歩いた跡は青の実線）
+          { id: 'routes-casing', type: 'line', source: 'routes', layout: { 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 8, 'line-opacity': 0.9 } },
+          { id: 'routes', type: 'line', source: 'routes', layout: { 'line-join': 'round' }, paint: { 'line-color': ROUTE_COLOR, 'line-width': 4, 'line-dasharray': [2.5, 1.75] } },
           { id: 'points', type: 'circle', source: 'points', paint: { 'circle-radius': ['get', 'radius'], 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } },
           { id: 'spots', type: 'circle', source: 'spots', paint: {
             'circle-radius': 8, 'circle-color': ['get', 'color'],
@@ -306,8 +335,20 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
       (map.getSource('roads') as maplibregl.GeoJSONSource | undefined)?.setData(roads as never);
       (map.getSource('spots') as maplibregl.GeoJSONSource | undefined)?.setData(spotsGeoJSON(spots) as never);
       (map.getSource('points') as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(points) as never);
+      (map.getSource('routes') as maplibregl.GeoJSONSource | undefined)?.setData(tracksGeoJSON(routeLines) as never);
     });
-  }, [tracks, roads, spots, points]);
+  }, [tracks, roads, spots, points, routeLines]);
+
+  // 探索計画の目印（S・G・立ち寄り地点・既存候補）: 名前つきの HTML の目印。押すとメモ・滞在。作る・直す・「ここへ行く」は 2D だけ
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const markers = routeMarks.map((m) => new maplibregl.Marker({ element: routeMarkNode(m), anchor: 'center' })
+      .setLngLat([m.lng, m.lat])
+      .setPopup(new maplibregl.Popup({ closeButton: true, maxWidth: '300px', offset: 12 }).setDOMContent(routeMarkDom(m)))
+      .addTo(map));
+    return () => { for (const m of markers) m.remove(); };
+  }, [routeMarks]);
 
   // 予測地点: 2D と同じ見た目の HTML の目印（地形の高さに立つ）。組の表示・読み込み・削除のたびに作り直す
   useEffect(() => {

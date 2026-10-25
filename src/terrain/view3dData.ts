@@ -37,6 +37,25 @@ export function pointsGeoJSON(points: Point3D[]): FC {
   return { type: 'FeatureCollection', features: points.map((p) => ({ type: 'Feature', properties: { label: p.label, color: p.color ?? POINT_COLOR, radius: p.radius ?? 5 }, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } })) };
 }
 
+// 探索計画（icarus_route_plan_v2_design.md・3D は下見用）: 線は tracksGeoJSON と同じ形。
+// 目印は S・G・立ち寄り地点・既存候補だけ（経由点は線が見えれば足りるので出さない）
+export interface RouteMark3D { lat: number; lng: number; plan: string; label: string; role: 'start' | 'goal' | 'stop' | 'candidate'; memo?: string; stayMin?: number; setTitle?: string }
+type RoutePointLike = { lat: number; lng: number; kind?: 'via' | 'stop' | 'candidate'; name?: string; memo?: string; stayMin?: number; setTitle?: string };
+export function routeLines3D(routes: { points: RoutePointLike[] }[]): [number, number][][] {
+  return routes.filter((r) => r.points.length >= 2).map((r) => r.points.map((p) => [p.lat, p.lng] as [number, number]));
+}
+export function routeMarks3D(routes: { name: string; points: RoutePointLike[] }[]): RouteMark3D[] {
+  return routes.flatMap((r) => r.points.flatMap((p, i): RouteMark3D[] => {
+    const kind = p.kind ?? 'via';
+    const start = i === 0, goal = i === r.points.length - 1 && i > 0;
+    if (kind === 'via' && !start && !goal) return [];
+    const end = start ? 'S' : goal ? 'G' : '';
+    const label = [end, kind !== 'via' ? p.name || '地点' : ''].filter(Boolean).join(' ');
+    const role = kind !== 'via' ? kind : start ? 'start' : 'goal';
+    return [{ lat: p.lat, lng: p.lng, plan: r.name, label, role, ...(kind !== 'via' ? { memo: p.memo || undefined, stayMin: Math.max(0, p.stayMin ?? 0), setTitle: p.setTitle || undefined } : {}) }];
+  }));
+}
+
 // 前に貼った枠と比べて、画像・表示・濃さのどれかが変わったか（変わった枠だけ差し替える。
 // 3D の地形は画像の差し替えでしか描き直されないので、濃さだけ変わった時も差し替える）
 export type AppliedLayer = ReturnType<typeof layerImage>;

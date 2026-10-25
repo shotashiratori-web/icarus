@@ -1190,6 +1190,35 @@ label.btn {
   font-weight: 600;
 }
 
+/* 3D の探索計画の目印（S・G・立ち寄り地点・既存候補。経由点は出さない） */
+.route3d { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+.route3dDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #33691e;
+  border-radius: 50%;
+  color: #33691e;
+  font-weight: 700;
+  font-size: 11px;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.route3dLabel {
+  position: absolute;
+  left: 24px;
+  top: 1px;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #33691e;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* ミズナラの群生の面積ラベル（2D・ズーム 13 以上・5ha 以上）。押せない（地図の操作を邪魔しない） */
 .clusterLabel {
   position: absolute;
