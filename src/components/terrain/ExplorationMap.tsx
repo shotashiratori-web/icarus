@@ -23,8 +23,9 @@ import {
 import { isMizunaraLog, MIZUNARA, mizunaraSearchLayers } from '../../terrain/mizunaraSearch';
 import TreeQuickRecord from './TreeQuickRecord';
 import { PhotoZoom, PopupPhoto } from './PopupPhoto';
-import RoutePlanPanel, { ROUTE_COLOR, RouteDrawBar } from './RoutePlanPanel';
-import { listRoutes, type LatLng, type RoutePlan } from '../../exploration/routePlan';
+import RoutePlanPanel, { ROUTE_COLOR, RouteEditor } from './RoutePlanPanel';
+import { DEFAULT_STAY_MIN, isStop, listRoutes, type RoutePlan, type RoutePoint } from '../../exploration/routePlan';
+import { syncRoutes } from '../../exploration/routeSync';
 import { isFieldLogD1Enabled } from '../../config';
 import { CLUSTER_EDGE_COLOR, CLUSTER_LABEL_MIN_HA, clusterAt, clusterText, drawClusterOutline, mizunaraClusters } from '../../terrain/mizunaraCluster';
 import { focusFromBox, roadsGeoJSON, type Focus3D, type Layers3D } from '../../terrain/view3dData';
@@ -385,9 +386,19 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [candidateSets, setCandidateSets] = useState<CandidateSet[]>([]);
   // ルート予定（icarus_route_plan_v1_design.md）: 保存したルートと、今引いている線（null = 引いていない）
   const [routes, setRoutes] = useState<RoutePlan[]>([]);
-  const [drawing, setDrawing] = useState<LatLng[] | null>(null);
-  const refreshRoutes = useCallback(async () => { try { setRoutes(await listRoutes()); } catch { /* 端末に保存できない時は一覧なし */ } }, []);
-  useEffect(() => { void refreshRoutes(); }, [refreshRoutes]);
+  // 探索計画を作る・直す間（null = していない）。点・直す元・選んだ点
+  const [editor, setEditor] = useState<{ points: RoutePoint[]; base: RoutePlan | null; sel: number | null } | null>(null);
+  const setEditorPoints = (points: RoutePoint[]) => setEditor((e) => (e ? { ...e, points } : e));
+  // 開くたびに: 送る途中の計画を送り、サーバーの一覧を端末に保存し直す（iPhone は開けば届いている。圏外でも端末の分が出る）
+  const refreshRoutes = useCallback(async (sync = false) => {
+    if (sync) { try { await syncRoutes(idToken); } catch { /* 端末の分で続ける */ } }
+    try { setRoutes(await listRoutes()); } catch { /* 端末に保存できない時は一覧なし */ }
+  }, [idToken]);
+  useEffect(() => { void refreshRoutes(true); }, [refreshRoutes]);
+  useEffect(() => {
+    const on = () => void refreshRoutes(true);
+    window.addEventListener('online', on); return () => window.removeEventListener('online', on);
+  }, [refreshRoutes]);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   // 端末の保存庫の読み出しは非同期。画面を閉じた後に返ってきたら何もしない
@@ -401,7 +412,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }, [idToken]);
   useEffect(() => { void refreshCandidates(true); }, [refreshCandidates]);
   const [mapZoom, setMapZoom] = useState(13);
-  const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}` }))), [candidateSets]);
+  const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}`, setTitle: s.title }))), [candidateSets]);
   const [watching, setWatching] = useState(false);
   // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
   const [follow, setFollow] = useState(() => !loadCamera(area.areaId, area.bounds));
@@ -998,9 +1009,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }, [loaded, manifest, envSpots.markers, forestView, forestLayers.species, clusters]);
   const onMapClick = useCallback((lat: number, lng: number) => {
     if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
-    if (drawing) { setDrawing((d) => (d ? [...d, { lat, lng }] : d)); return; } // ルートを引いている間は点を足す
+    if (editor) { setEditor((e) => (e ? { ...e, points: [...e.points, { lat, lng, kind: 'via' }], sel: null } : e)); return; } // 計画を作っている間は経由点を足す
     setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) });
-  }, [describePoint, headOf, placeWait, drawing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [describePoint, headOf, placeWait, editor]); // eslint-disable-line react-hooks/exhaustive-deps
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
   useEffect(() => {
     setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng), head: headOf(p.lat, p.lng) } : p));
@@ -1541,23 +1552,50 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           const r = pinRadiusM(p);
           return r ? <Circle key={`cand-r-${p.key}`} center={[p.lat, p.lng]} radius={r} interactive={false} pathOptions={{ color: '#7b1fa2', weight: 3, dashArray: '8 6', fillColor: '#7b1fa2', fillOpacity: 0.08 }} /> : null;
         })}
-        {/* ルート予定: 黄緑の点線＋白縁。点を押すと「ここへ行く」（2D だけ） */}
-        {[...routes.filter((r) => r.visible).map((r) => ({ key: r.id, name: r.name, pts: r.points })), ...(drawing ? [{ key: 'drawing', name: '引いている線', pts: drawing }] : [])].map((r) => (
-          <Fragment key={`route-${r.key}`}>
-            <Polyline positions={r.pts.map((p) => [p.lat, p.lng] as [number, number])} interactive={false} pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }} />
-            <Polyline positions={r.pts.map((p) => [p.lat, p.lng] as [number, number])} interactive={false} pathOptions={{ color: ROUTE_COLOR, weight: 4, dashArray: '10 7' }} />
-            {r.pts.map((p, i) => (
-              <CircleMarker key={i} center={[p.lat, p.lng]} radius={i === 0 || i === r.pts.length - 1 ? 7 : 4} pathOptions={{ color: '#33691e', weight: 2, fillColor: i === 0 ? '#ffffff' : ROUTE_COLOR, fillOpacity: 1 }}>
-                {!drawing && (
-                  <Popup>
-                    <b>{r.name}</b>（{i === 0 ? '始点' : i === r.pts.length - 1 ? '終点' : `点 ${i + 1}`}）<br />
-                    <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: `${r.name} 点${i + 1}`, lat: p.lat, lng: p.lng })}>ここへ行く</button>
-                  </Popup>
-                )}
-              </CircleMarker>
-            ))}
+        {/* 探索計画: 黄緑の点線＋白縁。立ち寄り地点は大きめの点と名前、経由点は小さな点。押すと「ここへ行く」（2D だけ） */}
+        {routes.filter((r) => r.visible && r.id !== editor?.base?.id).map((r) => (
+          <Fragment key={`route-${r.id}`}>
+            <Polyline positions={r.points.map((p) => [p.lat, p.lng] as [number, number])} interactive={false} pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }} />
+            <Polyline positions={r.points.map((p) => [p.lat, p.lng] as [number, number])} interactive={false} pathOptions={{ color: ROUTE_COLOR, weight: 4, dashArray: '10 7' }} />
+            {r.points.map((p, i) => {
+              const end = i === 0 || i === r.points.length - 1, stop = isStop(p);
+              if (!end && !stop && editor) return null;
+              const label = i === 0 ? 'S' : i === r.points.length - 1 ? 'G' : '';
+              const title = [label, stop ? p.name : ''].filter(Boolean).join(' ');
+              return (
+                <CircleMarker key={i} center={[p.lat, p.lng]} radius={end || stop ? 7 : 3} pathOptions={{ color: '#33691e', weight: 2, fillColor: i === 0 ? '#ffffff' : ROUTE_COLOR, fillOpacity: 1 }}>
+                  {!editor && (
+                    <Popup>
+                      <b>{r.name}</b>（{title || `経由点 ${i + 1}`}）<br />
+                      {stop && <>{p.memo && <>{p.memo}<br /></>}滞在 {p.stayMin ?? 0}分{p.setTitle ? `・${p.setTitle}` : ''}<br /></>}
+                      <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: `${r.name} ${title || `点${i + 1}`}`, lat: p.lat, lng: p.lng })}>ここへ行く</button>
+                    </Popup>
+                  )}
+                </CircleMarker>
+              );
+            })}
           </Fragment>
         ))}
+        {/* 作っている計画: 点はドラッグで位置を直せる。押すと帯の一覧でその点を選ぶ */}
+        {editor && (
+          <Fragment key="route-editing">
+            <Polyline positions={editor.points.map((p) => [p.lat, p.lng] as [number, number])} interactive={false} pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }} />
+            <Polyline positions={editor.points.map((p) => [p.lat, p.lng] as [number, number])} interactive={false} pathOptions={{ color: ROUTE_COLOR, weight: 4, dashArray: '10 7' }} />
+            {editor.points.map((p, i) => {
+              const stop = isStop(p), end = i === 0 || i === editor.points.length - 1, size = stop || end ? 16 : 11, on = editor.sel === i;
+              const label = [i === 0 ? 'S' : i === editor.points.length - 1 ? 'G' : '', stop ? p.name ?? '' : ''].filter(Boolean).join(' ').replace(/[<>&"]/g, '');
+              return (
+                <Marker key={`e-${i}-${p.lat}-${p.lng}`} position={[p.lat, p.lng]} draggable
+                  icon={L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2], html: `<span class="${styles.routeDot}" style="width:${size}px;height:${size}px;${i === 0 ? 'background:#fff;' : ''}${on ? 'box-shadow:0 0 0 3px #ff6f00;' : ''}"></span>${label ? `<span class="${styles.routeStopLabel}">${label}</span>` : ''}` })}
+                  eventHandlers={{
+                    click: (e) => { L.DomEvent.stopPropagation(e); setEditor((x) => (x ? { ...x, sel: i } : x)); },
+                    dragend: (e) => { const ll = (e.target as L.Marker).getLatLng(); setEditor((x) => (x ? { ...x, points: x.points.map((q, k) => (k === i ? { ...q, lat: ll.lat, lng: ll.lng } : q)) } : x)); },
+                  }}
+                />
+              );
+            })}
+          </Fragment>
+        )}
         {/* 予測地点（検証候補）: 紫の「？」。押すと名前・説明・「ここへ行く」（「ここを記録」は出さない） */}
         {candidatePins.map((p) => (
           <Marker
@@ -1569,7 +1607,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               <b>？ {p.name}</b><br />
               <span className={styles.sub}>予測・未確認</span>
               {p.desc && <><br />{p.desc}</>}<br />
-              <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}>ここへ行く</button>{' '}
+              {editor ? (
+                <button className={`${styles.btn} ${styles.primary}`} onClick={() => { setEditor((x) => (x ? { ...x, points: [...x.points, { lat: p.lat, lng: p.lng, kind: 'candidate', name: shortPinLabel(p.name), setTitle: p.setTitle, stayMin: DEFAULT_STAY_MIN }], sel: x.points.length } : x)); mapRef.current?.closePopup(); }}>計画に入れる</button>
+              ) : <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}>ここへ行く</button>}{' '}
               <button className={styles.btn} onClick={() => { const t = coordText(p.lat, p.lng); navigator.clipboard?.writeText(t).then(() => setCopied(t), () => setCopied(null)); }}>{copied === coordText(p.lat, p.lng) ? 'コピーしました' : '座標をコピー'}</button>
             </Popup>
           </Marker>
@@ -2166,9 +2206,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               <>
             <RoutePlanPanel
               routes={routes}
-              drawing={drawing}
-              onStartDraw={() => { setDrawing([]); setProbe(null); if (window.innerWidth < 700) setPanelOpen(false); }} // 狭い画面はパネルを閉じて地図を広く
-              onChanged={refreshRoutes}
+              editing={!!editor}
+              idToken={idToken}
+              onStartDraw={() => { setEditor({ points: [], base: null, sel: null }); setProbe(null); if (window.innerWidth < 700) setPanelOpen(false); }} // 狭い画面はパネルを閉じて地図を広く
+              onEdit={(r) => { setEditor({ points: r.points.map((p) => ({ ...p })), base: r, sel: null }); setProbe(null); if (window.innerWidth < 700) setPanelOpen(false); }}
+              onChanged={() => refreshRoutes()}
               onShow={(r) => { if (r.points.length) mapRef.current?.fitBounds(L.latLngBounds(r.points.map((p) => [p.lat, p.lng] as [number, number])), { padding: [40, 40] }); }}
             />
             <CandidatePinsPanel
@@ -2295,8 +2337,10 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       </section>
 
       {zoomPhoto && <PhotoZoom url={zoomPhoto} onClose={() => setZoomPhoto(null)} />}
-      {drawing && (
-        <RouteDrawBar points={drawing} onUndo={() => setDrawing((d) => (d ? d.slice(0, -1) : d))} onCancel={() => setDrawing(null)} onSaved={() => { setDrawing(null); void refreshRoutes(); }} />
+      {editor && (
+        <RouteEditor key={editor.base?.id ?? 'new'} points={editor.points} base={editor.base} sel={editor.sel} idToken={idToken}
+          onPoints={setEditorPoints} onSelect={(i) => setEditor((x) => (x ? { ...x, sel: i } : x))}
+          onCancel={() => setEditor(null)} onSaved={() => { setEditor(null); void refreshRoutes(); }} />
       )}
       {probe && (
         <div className={styles.probe} role="status">
