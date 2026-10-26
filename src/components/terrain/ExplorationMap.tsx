@@ -41,7 +41,7 @@ import { forestSpeciesOptions, genusOnlyNotice, standRanks } from '../../terrain
 import { CUSTOM_PRESET_ID, SPECIES_PRESETS, matchPreset, presetById } from '../../terrain/presets';
 import { renderOverlay, CANDIDATE_COLORS } from '../../terrain/render';
 import { TRACK_CASING, TRACK_EXCLUDED, TRACK_LINE, TRACK_UNSENT_DASH } from '../../terrain/trackStyle';
-import { describeRoad, groupByClass, indexRoads, nearestRoad, ROAD_ORANGE, ROAD_STYLE, roadCasing, roadLine, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
+import { describeRoad, groupByClass, indexRoads, nearestRoad, ROAD_ORANGE, roadAtTap, tapToleranceM, ROAD_STYLE, roadCasing, roadLine, TRAIL_CLASSES, VEHICLE_CLASSES, type IndexedRoads } from '../../terrain/roads';
 import type { RoadLine, TerrainAreaSummary, TerrainGrid } from '../../terrain/types';
 import { isEnvironmentEntry, type FieldLogEntry } from '../../types/zukan';
 import { addEnvironmentSpotPhotos, editErrorMessage } from '../../api/environmentSpotsApi';
@@ -380,7 +380,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [base, setBase] = useState<Base>(savedView.base ?? VIEW_DEFAULTS.base);
   const [panelOpen, setPanelOpen] = useState(() => !!openGpxDraftId || initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
-  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null } | null>(null);
+  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null; road?: string | null } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // 予測地点（検証候補）ピン: 端末の組＋スタッフで共有した組（v2）。紫の「？」で出す（観測＝環境スポットとは別）
   const [candidateSets, setCandidateSets] = useState<CandidateSet[]>([]);
@@ -1010,8 +1010,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const onMapClick = useCallback((lat: number, lng: number) => {
     if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
     if (editor) { setEditor((e) => (e ? { ...e, points: [...e.points, { lat, lng, kind: 'via' }], sel: null } : e)); return; } // 計画を作っている間は経由点を足す
-    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng) });
-  }, [describePoint, headOf, placeWait, editor]); // eslint-disable-line react-hooks/exhaustive-deps
+    // 道の上（指 1 本分以内）を押したら、その道の名前（無ければ種類）を一番上に出す。表示している種類の道だけ
+    const roadClasses = [...(show.road ? VEHICLE_CLASSES : []), ...(show.trail ? TRAIL_CLASSES : [])];
+    const road = loaded ? roadAtTap(loaded.roadIndex, lat, lng, roadClasses, tapToleranceM(lat, mapZoom)) : null;
+    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng), road });
+  }, [describePoint, headOf, placeWait, editor, loaded, show.road, show.trail, mapZoom]); // eslint-disable-line react-hooks/exhaustive-deps
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
   useEffect(() => {
     setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng), head: headOf(p.lat, p.lng) } : p));
@@ -2351,6 +2354,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
       {probe && (
         <div className={styles.probe} role="status">
           <button className={styles.probeClose} onClick={() => setProbe(null)} aria-label="閉じる">×</button>
+          {probe.road && <div className={styles.probeSpecies}>{probe.road}</div>}
           {probe.head && (
             <div className={styles.probeHead}>
               {probe.head.species && <div className={styles.probeSpecies}>樹種 {probe.head.species}</div>}
