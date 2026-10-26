@@ -56,7 +56,7 @@ import { useExplorationHistory, type HistoryEntry } from './useExplorationHistor
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import type { RangePreview } from './ExplorationRangeEditor';
 import CandidatePinsPanel from './CandidatePinsPanel';
-import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, pinRadiusM, shortPinLabel, type CandidateSet } from '../../exploration/candidatePins';
+import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, pinRadiusM, shortPinLabel, type CandidatePin, type CandidateSet } from '../../exploration/candidatePins';
 import { listSharedCandidateSets } from '../../api/candidateSetsApi';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import ContourLayer from './ContourLayer';
@@ -389,6 +389,12 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   // 探索計画を作る・直す間（null = していない）。点・直す元・選んだ点
   const [editor, setEditor] = useState<{ points: RoutePoint[]; base: RoutePlan | null; sel: number | null } | null>(null);
   const setEditorPoints = (points: RoutePoint[]) => setEditor((e) => (e ? { ...e, points } : e));
+  // 2D・3D 共通の編集（作っている計画は 1 つ。どちらで足しても同じ）
+  const addEditorPoint = useCallback((lat: number, lng: number) => setEditor((e) => (e ? { ...e, points: [...e.points, { lat, lng, kind: 'via' }], sel: null } : e)), []);
+  const moveEditorPoint = useCallback((i: number, lat: number, lng: number) => setEditor((x) => (x ? { ...x, points: x.points.map((q, k) => (k === i ? { ...q, lat, lng } : q)) } : x)), []);
+  const selectEditorPoint = useCallback((i: number | null) => setEditor((x) => (x ? { ...x, sel: i } : x)), []);
+  const addCandidateToEditor = useCallback((p: CandidatePin & { setTitle?: string }) => setEditor((x) => (x ? { ...x, points: [...x.points, { lat: p.lat, lng: p.lng, kind: 'candidate', name: shortPinLabel(p.name), setTitle: p.setTitle, stayMin: DEFAULT_STAY_MIN }], sel: x.points.length } : x)), []);
+  const edit3d = useMemo(() => (editor ? { points: editor.points, sel: editor.sel } : null), [editor]);
   // 開くたびに: 送る途中の計画を送り、サーバーの一覧を端末に保存し直す（iPhone は開けば届いている。圏外でも端末の分が出る）
   const refreshRoutes = useCallback(async (sync = false) => {
     if (sync) { try { await syncRoutes(idToken); } catch { /* 端末の分で続ける */ } }
@@ -1009,7 +1015,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }, [loaded, manifest, envSpots.markers, forestView, forestLayers.species, clusters]);
   const onMapClick = useCallback((lat: number, lng: number) => {
     if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
-    if (editor) { setEditor((e) => (e ? { ...e, points: [...e.points, { lat, lng, kind: 'via' }], sel: null } : e)); return; } // 計画を作っている間は経由点を足す
+    if (editor) { addEditorPoint(lat, lng); return; } // 計画を作っている間は経由点を足す
     // 道の上（指 1 本分以内）を押したら、その道の名前（無ければ種類）を一番上に出す。表示している種類の道だけ
     const roadClasses = [...(show.road ? VEHICLE_CLASSES : []), ...(show.trail ? TRAIL_CLASSES : [])];
     const road = loaded ? roadAtTap(loaded.roadIndex, lat, lng, roadClasses, tapToleranceM(lat, mapZoom)) : null;
@@ -1595,8 +1601,8 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
                 <Marker key={`e-${i}-${p.lat}-${p.lng}`} position={[p.lat, p.lng]} draggable
                   icon={L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2], html: `<span class="${styles.routeDot}" style="width:${size}px;height:${size}px;${i === 0 ? 'background:#fff;' : ''}${on ? 'box-shadow:0 0 0 3px #ff6f00;' : ''}"></span>${label ? `<span class="${styles.routeStopLabel}">${label}</span>` : ''}` })}
                   eventHandlers={{
-                    click: (e) => { L.DomEvent.stopPropagation(e); setEditor((x) => (x ? { ...x, sel: i } : x)); },
-                    dragend: (e) => { const ll = (e.target as L.Marker).getLatLng(); setEditor((x) => (x ? { ...x, points: x.points.map((q, k) => (k === i ? { ...q, lat: ll.lat, lng: ll.lng } : q)) } : x)); },
+                    click: (e) => { L.DomEvent.stopPropagation(e); selectEditorPoint(i); },
+                    dragend: (e) => { const ll = (e.target as L.Marker).getLatLng(); moveEditorPoint(i, ll.lat, ll.lng); },
                   }}
                 />
               );
@@ -1615,7 +1621,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
               <span className={styles.sub}>予測・未確認</span>
               {p.desc && <><br />{p.desc}</>}<br />
               {editor ? (
-                <button className={`${styles.btn} ${styles.primary}`} onClick={() => { setEditor((x) => (x ? { ...x, points: [...x.points, { lat: p.lat, lng: p.lng, kind: 'candidate', name: shortPinLabel(p.name), setTitle: p.setTitle, stayMin: DEFAULT_STAY_MIN }], sel: x.points.length } : x)); mapRef.current?.closePopup(); }}>計画に入れる</button>
+                <button className={`${styles.btn} ${styles.primary}`} onClick={() => { addCandidateToEditor(p); mapRef.current?.closePopup(); }}>計画に入れる</button>
               ) : <button className={styles.btn} onClick={() => startNavigate({ kind: 'point', name: p.name, lat: p.lat, lng: p.lng })}>ここへ行く</button>}{' '}
               <button className={styles.btn} onClick={() => { const t = coordText(p.lat, p.lng); navigator.clipboard?.writeText(t).then(() => setCopied(t), () => setCopied(null)); }}>{copied === coordText(p.lat, p.lng) ? 'コピーしました' : '座標をコピー'}</button>
             </Popup>
@@ -1846,6 +1852,11 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             initial={view3d}
             focus={focus3d}
             onPick={onPick3d}
+            edit={edit3d}
+            onEditAdd={addEditorPoint}
+            onEditMove={moveEditorPoint}
+            onEditSelect={selectEditorPoint}
+            onEditCandidate={addCandidateToEditor}
             onClose={() => setView3d(null)}
           />
         </Suspense>
@@ -2347,7 +2358,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
 
       {zoomPhoto && <PhotoZoom url={zoomPhoto} onClose={() => setZoomPhoto(null)} />}
       {editor && (
-        <RouteEditor key={editor.base?.id ?? 'new'} points={editor.points} base={editor.base} sel={editor.sel} idToken={idToken}
+        <RouteEditor key={editor.base?.id ?? 'new'} points={editor.points} base={editor.base} sel={editor.sel} idToken={idToken} over3d={!!view3d}
           onPoints={setEditorPoints} onSelect={(i) => setEditor((x) => (x ? { ...x, sel: i } : x))}
           onCancel={() => setEditor(null)} onSaved={() => { setEditor(null); void refreshRoutes(); }} />
       )}
