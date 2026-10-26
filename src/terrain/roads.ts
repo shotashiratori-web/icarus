@@ -86,8 +86,29 @@ export function nearestRoad(idx: IndexedRoads, lat: number, lng: number, classes
   return best;
 }
 
+// 舗装（OSM surface）を日本語に。知らない値はそのまま
+const SURFACE_LABEL: Record<string, string> = {
+  asphalt: '舗装', concrete: '舗装', paving_stones: '舗装（敷石）', paved: '舗装',
+  gravel: '砂利', dirt: '土', ground: '土', unpaved: '未舗装', wood: '木道',
+};
+export const surfaceLabel = (f: string) => SURFACE_LABEL[f] ?? f;
+
 export function describeRoad(r: NearestRoad | null): string {
   if (!r) return '1.5km 以内になし';
   const name = r.line.n || ROAD_CLASS_LABEL[r.line.c];
-  return `約${Math.round(r.distanceM / 10) * 10}m（${name}${r.line.f ? '・' + r.line.f : ''}）`;
+  return `約${Math.round(r.distanceM / 10) * 10}m（${name}${r.line.f ? '・' + surfaceLabel(r.line.f) : ''}）`;
+}
+
+// 道を押した時（2D）: 押した所から画面で指 1 本分（ROAD_TAP_PX）以内に道があれば「この道」を出す。
+// 名前のある道は名前（種類）、無い道は種類だけ。表示している種類の道だけを見る
+export const ROAD_TAP_PX = 12;
+export function tapToleranceM(lat: number, zoom: number): number {
+  return (ROAD_TAP_PX * 156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+}
+export function roadAtTap(idx: IndexedRoads, lat: number, lng: number, classes: RoadClass[], toleranceM: number): string | null {
+  if (!classes.length) return null;
+  const r = nearestRoad(idx, lat, lng, classes, toleranceM);
+  if (!r) return null;
+  const kind = ROAD_CLASS_LABEL[r.line.c];
+  return `この道：${r.line.n ? `${r.line.n}（${kind}）` : kind}${r.line.f ? `・${surfaceLabel(r.line.f)}` : ''}`;
 }

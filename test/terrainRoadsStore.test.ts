@@ -26,7 +26,7 @@ describe('roads', () => {
     const near = nearestRoad(idx, 43.0021, 140.005, VEHICLE_CLASSES)!;
     expect(near.line.n).toBe('赤井川林道');
     expect(near.distanceM).toBeCloseTo(0.1 * 1e-3 * 111320, 0);
-    expect(describeRoad(near)).toBe('約10m（赤井川林道・gravel）');
+    expect(describeRoad(near)).toBe('約10m（赤井川林道・砂利）');
     const trail = nearestRoad(idx, 43.0021, 140.005, TRAIL_CLASSES)!;
     expect(trail.distanceM).toBeCloseTo(0.0029 * 111320, 0);
     expect(nearestRoad(idx, 43.1, 140.005, VEHICLE_CLASSES)).toBeNull();
