@@ -1234,6 +1234,15 @@ label.btn {
 }
 
 /* 予測地点の一覧: 1 行目 = 「？」＋名前・説明、2 行目 = ボタン（狭いパネルでも名前を押しつぶさない） */
+.routeRow {
+  /* 探索計画の 1 行: 上に名前と数字（幅いっぱい）、下にボタン（狭い画面で文字が 1 文字ずつ折れないように） */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--color-border);
+}
+.routeRow .check { align-items: flex-start; }
 .candidateRow {
   display: grid;
   grid-template-columns: 32px 1fr;

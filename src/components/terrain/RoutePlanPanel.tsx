@@ -59,7 +59,7 @@ export default function RoutePlanPanel({ routes, editing, idToken, onStartDraw, 
         const mine = !r.shared || r.shared.canEdit;
         const where = r.pendingUpload ? '送る途中（電波が戻れば送ります）' : r.shared ? `共有・${r.shared.createdByName || '作成者'}` : 'この端末だけ';
         return (
-          <div key={r.id} className={styles.candidateRow} aria-label={`計画 ${r.name}`}>
+          <div key={r.id} className={styles.routeRow} aria-label={`計画 ${r.name}`}>
             <label className={styles.check}>
               <input type="checkbox" checked={r.visible} onChange={async (e) => { await setRouteVisible(r.id, e.target.checked); await onChanged(); }} />
               <span className={styles.swatch} style={{ background: `repeating-linear-gradient(90deg,${ROUTE_COLOR} 0 6px,transparent 6px 9px)` }} />
