@@ -59,6 +59,7 @@ import CandidatePinsPanel from './CandidatePinsPanel';
 import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, pinRadiusM, shortPinLabel, type CandidatePin, type CandidateSet } from '../../exploration/candidatePins';
 import { listSharedCandidateSets } from '../../api/candidateSetsApi';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
+import { tracksAtTap } from '../../exploration/trackTap';
 import ContourLayer from './ContourLayer';
 import { APP_BUILD } from '../../appBuild';
 import { useEnvironmentSpots, type SpotMarker } from './useEnvironmentSpots';
@@ -380,7 +381,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [base, setBase] = useState<Base>(savedView.base ?? VIEW_DEFAULTS.base);
   const [panelOpen, setPanelOpen] = useState(() => !!openGpxDraftId || initialPanelOpen(typeof window === 'undefined' ? 1024 : window.innerWidth));
 
-  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null; road?: string | null } | null>(null);
+  const [probe, setProbe] = useState<{ lat: number; lng: number; lines: string[]; head?: ProbeHead; elevM?: number | null; road?: string | null; tracks?: string[] } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // 予測地点（検証候補）ピン: 端末の組＋スタッフで共有した組（v2）。紫の「？」で出す（観測＝環境スポットとは別）
   const [candidateSets, setCandidateSets] = useState<CandidateSet[]>([]);
@@ -1013,14 +1014,16 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
     if (!fh?.species && !fh?.vegetation && !cb && near.length === 0) return undefined;
     return { species: fh?.species ?? null, note: fh?.note ?? null, vegetation: fh?.vegetation ?? null, cluster: cb ? clusterText(cb) : null, spots: near };
   }, [loaded, manifest, envSpots.markers, forestView, forestLayers.species, clusters]);
+  // 探索履歴（GPX）の線を押した時: 指 1 本分以内の線を近い順に最大 3 本（2D・3D 共通。表示している線だけ）
+  const tracksAt = useCallback((lat: number, lng: number, zoom: number) => (showHistory ? tracksAtTap(visibleHistory, lat, lng, tapToleranceM(lat, zoom)) : []), [showHistory, visibleHistory]);
   const onMapClick = useCallback((lat: number, lng: number) => {
     if (placeWait) { placeAt(lat, lng); return; } // 写真の場所を指定中
     if (editor) { addEditorPoint(lat, lng); return; } // 計画を作っている間は経由点を足す
     // 道の上（指 1 本分以内）を押したら、その道の名前（無ければ種類）を一番上に出す。表示している種類の道だけ
     const roadClasses = [...(show.road ? VEHICLE_CLASSES : []), ...(show.trail ? TRAIL_CLASSES : [])];
     const road = loaded ? roadAtTap(loaded.roadIndex, lat, lng, roadClasses, tapToleranceM(lat, mapZoom)) : null;
-    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng), road });
-  }, [describePoint, headOf, placeWait, editor, loaded, show.road, show.trail, mapZoom]); // eslint-disable-line react-hooks/exhaustive-deps
+    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng), road, tracks: tracksAt(lat, lng, mapZoom) });
+  }, [describePoint, headOf, placeWait, editor, loaded, show.road, show.trail, mapZoom, tracksAt]); // eslint-disable-line react-hooks/exhaustive-deps
   // 条件を変えたら、開いている地点情報も今の条件で出し直す
   useEffect(() => {
     setProbe((p) => (p ? { ...p, lines: describePoint(p.lat, p.lng), head: headOf(p.lat, p.lng) } : p));
@@ -1390,9 +1393,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   const [focus3d, setFocus3d] = useState<Focus3D | null>(null);
   useEffect(() => { if (!view3d) setFocus3d(null); }, [view3d]);
   // PR3: 3D の地面を押した所の地点情報（2D と同じ内容・同じ場所。標高は 3D の地形から）
-  const onPick3d = useCallback((lat: number, lng: number, elevM: number | null) => {
-    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng), elevM });
-  }, [describePoint, headOf]);
+  const onPick3d = useCallback((lat: number, lng: number, elevM: number | null, zoom: number) => {
+    setProbe({ lat, lng, lines: describePoint(lat, lng), head: headOf(lat, lng), elevM, tracks: tracksAt(lat, lng, zoom) });
+  }, [describePoint, headOf, tracksAt]);
   // 3D だけの水の画像（3D-2）。湿りやすさ・沢の目安は開いた時に 1 回作り、閉じたら捨てる。沢の目安は 3D では別の色・別の層（地図の河川と分ける）。
   // 地形の条件に合う範囲は、3D を開いたまま条件を変えたら作り直す（3D パネル統合 PR1。3D そのものは閉じない）
   const [water3d, setWater3d] = useState<{ twi: string | null; streams: string | null } | null>(null);
@@ -1508,18 +1511,9 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             <Polyline positions={roadGroups.trail} pathOptions={roadLine('trail')} />
           </>
         )}
-        {/* 探索履歴の線: 白縁（押せる幅もここで取る）の上に細い青（trackStyle.ts） */}
+        {/* 探索履歴の線: 白縁の上に細い青（trackStyle.ts）。押した時の情報は地点情報の一番上（trackTap.ts） */}
         {showHistory && visibleHistory.map((e) => (
-          <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={TRACK_CASING}>
-            <Popup>
-              <b>{e.exploredOn ?? '日付なし'}・{PURPOSE_LABEL[e.purpose]}</b><br />
-              {e.explorerNames.join('、') || '歩いた人未記入'}・{e.distanceM >= 1000 ? `${(e.distanceM / 1000).toFixed(1)}km` : `${Math.round(e.distanceM)}m`}
-              {e.useRange && `（探索として使用。記録 ${(e.rawDistanceM / 1000).toFixed(1)}km）`}<br />
-              {e.targets.map((t) => `${t.target}: ${RESULT_LABEL[t.result]}`).join('、') || '対象未記入'}
-              {e.hypothesis && <><br />仮説「{e.hypothesis.name}」（{e.hypothesis.conditionText.join(' かつ ')}）</>}
-              {e.origin === 'device' && <><br />この端末のみ（{e.status === 'registered' ? '登録済み' : '未登録'}）</>}
-            </Popup>
-          </Polyline>
+          <Polyline key={`${e.key}-casing`} positions={e.track!} pathOptions={{ ...TRACK_CASING, interactive: false }} />
         ))}
         {showHistory && visibleHistory.filter((e) => e.key !== previewLines?.key).map((e) => (
           <Polyline key={e.key} positions={e.track!} pathOptions={{ ...TRACK_LINE, interactive: false, dashArray: e.origin === 'device' && e.status !== 'registered' ? TRACK_UNSENT_DASH : undefined }} />
@@ -2367,6 +2361,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         <div className={styles.probe} role="status">
           <button className={styles.probeClose} onClick={() => setProbe(null)} aria-label="閉じる">×</button>
           {probe.road && <div className={styles.probeSpecies}>{probe.road}</div>}
+          {probe.tracks?.map((t) => <div key={t} className={styles.probeSpecies}>{t}</div>)}
           {probe.head && (
             <div className={styles.probeHead}>
               {probe.head.species && <div className={styles.probeSpecies}>樹種 {probe.head.species}</div>}

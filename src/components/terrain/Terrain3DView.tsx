@@ -43,7 +43,7 @@ export interface Terrain3DProps {
   // PR3: 「林齢の古い林分から見る」を押した林分へ飛ぶ（key が変わるたびに 1 回）。範囲は経緯度
   focus: { key: number; south: number; west: number; north: number; east: number } | null;
   // PR3: 地面を押した所の地点情報を 2D と同じ場所に出す（標高は 3D の地形から。強調を戻した値）
-  onPick: (lat: number, lng: number, elevM: number | null) => void;
+  onPick: (lat: number, lng: number, elevM: number | null, zoom: number) => void; // zoom: 押した線（GPX）を拾う幅に使う
   // 探索計画を作っている間（2D と同じ計画を共有）。地表を押すと経由点・点はドラッグで直す・押すと帯の一覧で選ぶ
   edit: { points: RoutePoint[]; sel: number | null } | null;
   onEditAdd: (lat: number, lng: number) => void;
@@ -326,7 +326,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
       }
       if (map.queryRenderedFeatures(e.point, { layers: ['spots', 'points'].filter((id) => map.getLayer(id)) }).length) return;
       const h = map.queryTerrainElevation(e.lngLat);
-      onPickRef.current(e.lngLat.lat, e.lngLat.lng, h === null || h === undefined ? null : Math.round(h / exRef.current));
+      onPickRef.current(e.lngLat.lat, e.lngLat.lng, h === null || h === undefined ? null : Math.round(h / exRef.current), map.getZoom());
     });
     map.on('click', 'spots', (e) => {
       const f = e.features?.[0];
