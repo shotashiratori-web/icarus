@@ -1857,6 +1857,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
             onEditMove={moveEditorPoint}
             onEditSelect={selectEditorPoint}
             onEditCandidate={addCandidateToEditor}
+            onStartEdit={() => { setEditor({ points: [], base: null, sel: null }); setProbe(null); }}
             onClose={() => setView3d(null)}
           />
         </Suspense>
