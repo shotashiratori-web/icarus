@@ -49,6 +49,7 @@ export interface Terrain3DProps {
   onEditAdd: (lat: number, lng: number) => void;
   onEditMove: (i: number, lat: number, lng: number) => void;
   onEditSelect: (i: number | null) => void;
+  onStartEdit: () => void; // 3D から新しい計画を作り始める（作っている計画は 2D と共有）
   onEditCandidate: (p: CandidatePin & { setTitle?: string }) => void; // 予測地点の「？」→ 既存候補（組の名前は 2D から渡る）
   areaName: string;
   onClose: () => void;
@@ -207,7 +208,7 @@ function loadLegendOpen(): boolean {
   try { return localStorage.getItem(LEGEND_KEY) === '1'; } catch { return false; }
 }
 
-export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, routeLines, routeMarks, initial, focus, onPick, edit, onEditAdd, onEditMove, onEditSelect, onEditCandidate, areaName, onClose }: Terrain3DProps) {
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, routeLines, routeMarks, initial, focus, onPick, edit, onEditAdd, onEditMove, onEditSelect, onEditCandidate, onStartEdit, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -487,6 +488,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           </select>
         </label>
         <label>高さの強調 <input type="range" min={1} max={3} step={0.1} value={ex} onChange={(e) => setEx(Number(e.target.value))} /> {ex.toFixed(1)}×</label>
+        {!editing && <button className={styles.btn} onClick={() => { setHint('地表を押すと点が足されます（下の帯で保存）'); onStartEdit(); }}>新しい計画を作る</button>}
         <button className={`${styles.btn} ${styles.primary}`} onClick={onClose}>2D に戻る</button>
       </div>
       {/* 左下: 凡例（初めは閉じる・押すと上へ開く）と説明文を縦に並べる（重ならない） */}
