@@ -7,10 +7,11 @@ import { markReadyOnLoad, whenReady } from '../../terrain/mapReady';
 import type { Inspector } from '../../terrain/forestWater';
 import { GSI_VECTOR_TILES, mapRiverText, nearestMapRiver, RIVER_CENTER_CODES, RIVER_EDGE_CODES } from '../../terrain/gsiRivers';
 import type { TerrainBounds } from '../../terrain/types';
-import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type RouteMark3D, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
+import { LAYER_SLOTS, layerImage, pointsGeoJSON, ROAD_PAINT_3D, sameGround, slotChanged, spotsGeoJSON, tracksGeoJSON, type AppliedLayer, type RouteMark3D, type FC, type Layers3D, type Point3D } from '../../terrain/view3dData';
 import { ROAD_CLASS_LABEL } from '../../terrain/roads';
 import { CANDIDATE_LABEL_MIN_ZOOM, shortPinLabel, type CandidatePin } from '../../exploration/candidatePins';
 import { ROUTE_COLOR } from './RoutePlanPanel';
+import { isStop, type RoutePoint } from '../../exploration/routePlan';
 import styles from './ExplorationMap.module.css';
 
 // 3D（PC だけ・見るだけ）。設計: icarus_3d_terrain_view_technical_audit.md §8（3D-1）
@@ -43,6 +44,12 @@ export interface Terrain3DProps {
   focus: { key: number; south: number; west: number; north: number; east: number } | null;
   // PR3: 地面を押した所の地点情報を 2D と同じ場所に出す（標高は 3D の地形から。強調を戻した値）
   onPick: (lat: number, lng: number, elevM: number | null) => void;
+  // 探索計画を作っている間（2D と同じ計画を共有）。地表を押すと経由点・点はドラッグで直す・押すと帯の一覧で選ぶ
+  edit: { points: RoutePoint[]; sel: number | null } | null;
+  onEditAdd: (lat: number, lng: number) => void;
+  onEditMove: (i: number, lat: number, lng: number) => void;
+  onEditSelect: (i: number | null) => void;
+  onEditCandidate: (p: CandidatePin & { setTitle?: string }) => void; // 予測地点の「？」→ 既存候補（組の名前は 2D から渡る）
   areaName: string;
   onClose: () => void;
 }
@@ -133,10 +140,15 @@ function candidateNode(p: CandidatePin): HTMLElement {
 }
 
 // 予測地点のポップアップ（テキストだけで組み立てる）
-function candidateDom(p: CandidatePin): HTMLElement {
+function candidateDom(p: CandidatePin, onAdd?: () => void): HTMLElement {
   const root = el('div', styles.inspector);
   root.append(el('strong', styles.inspTitle, `？ ${p.name}`), el('div', styles.inspSub, '予測・未確認'));
   if (p.desc) root.append(el('div', null, p.desc));
+  if (onAdd) {
+    const add = el('button', `${styles.btn} ${styles.primary}`, '計画に入れる') as HTMLButtonElement;
+    add.onclick = onAdd;
+    root.append(add);
+  }
   const t = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
   const copy = el('button', styles.btn, '座標をコピー') as HTMLButtonElement;
   copy.onclick = () => { navigator.clipboard?.writeText(t).then(() => { copy.textContent = 'コピーしました'; }, () => undefined); };
@@ -168,13 +180,34 @@ function routeMarkDom(m: RouteMark3D): HTMLElement {
   return root;
 }
 
+// 押した所（動かした所）が、今の視点で本当に見えている地表か（view3dData.sameGround の説明）
+function isVisibleGround(map: maplibregl.Map, ll: maplibregl.LngLat): boolean {
+  if (map.queryTerrainElevation(ll) === null) return false;
+  const back = map.unproject(map.project(ll));
+  return !!back && sameGround(ll, back, map.getZoom());
+}
+
+// 作っている計画の点（2D と同じ: 経由点は小さく、S・G・立ち寄り地点は大きく名前つき。選んでいる点は橙の縁）
+function editPointNode(p: RoutePoint, i: number, n: number, on: boolean): HTMLElement {
+  const stop = isStop(p), end = i === 0 || i === n - 1, size = stop || end ? 16 : 11;
+  const node = el('div', styles.route3d);
+  const dot = el('span', styles.routeDot);
+  dot.style.width = `${size}px`; dot.style.height = `${size}px`; dot.style.cursor = 'grab';
+  if (i === 0) dot.style.background = '#fff';
+  if (on) dot.style.boxShadow = '0 0 0 3px #ff6f00';
+  node.append(dot);
+  const label = [i === 0 ? 'S' : i === n - 1 ? 'G' : '', stop ? p.name ?? '' : ''].filter(Boolean).join(' ');
+  if (label) node.append(el('span', styles.route3dLabel, label));
+  return node;
+}
+
 // 凡例の開閉はこの端末に覚えておく（初めは閉じる。読めない・書けない時は閉じる）
 const LEGEND_KEY = 'icarus.3d.legendOpen';
 function loadLegendOpen(): boolean {
   try { return localStorage.getItem(LEGEND_KEY) === '1'; } catch { return false; }
 }
 
-export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, routeLines, routeMarks, initial, focus, onPick, areaName, onClose }: Terrain3DProps) {
+export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, tracks, roads, spots, points, candidates, routeLines, routeMarks, initial, focus, onPick, edit, onEditAdd, onEditMove, onEditSelect, onEditCandidate, areaName, onClose }: Terrain3DProps) {
   const el = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [base, setBase] = useState<'shade' | 'photo'>('shade');
@@ -194,6 +227,12 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
   spotsRef.current = spots;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const editRef = useRef(edit);
+  editRef.current = edit;
+  const editCb = useRef({ onEditAdd, onEditMove, onEditSelect, onEditCandidate });
+  editCb.current = { onEditAdd, onEditMove, onEditSelect, onEditCandidate };
+  const [hint, setHint] = useState<string | null>(null);
+  const editing = edit !== null;
   // 3D に貼った重ね表示の枠ごとの、今の画像・表示・濃さ（変わった枠だけ差し替える）
   const appliedRef = useRef<Record<string, AppliedLayer>>({});
 
@@ -226,6 +265,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           spots: { type: 'geojson', data: spotsGeoJSON(spots) as never },
           points: { type: 'geojson', data: pointsGeoJSON(points) as never },
           routes: { type: 'geojson', data: tracksGeoJSON(routeLines) as never },
+          editRoute: { type: 'geojson', data: tracksGeoJSON([]) as never },
         },
         layers: [
           { id: 'pale', type: 'raster', source: 'pale' },
@@ -250,6 +290,9 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
           // 探索計画: 2D と同じ黄緑の点線＋白縁（予定は点線・歩いた跡は青の実線）
           { id: 'routes-casing', type: 'line', source: 'routes', layout: { 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 8, 'line-opacity': 0.9 } },
           { id: 'routes', type: 'line', source: 'routes', layout: { 'line-join': 'round' }, paint: { 'line-color': ROUTE_COLOR, 'line-width': 4, 'line-dasharray': [2.5, 1.75] } },
+          // 作っている計画（2D と同じ見た目）
+          { id: 'edit-route-casing', type: 'line', source: 'editRoute', layout: { 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 8, 'line-opacity': 0.9 } },
+          { id: 'edit-route', type: 'line', source: 'editRoute', layout: { 'line-join': 'round' }, paint: { 'line-color': ROUTE_COLOR, 'line-width': 4, 'line-dasharray': [2.5, 1.75] } },
           { id: 'points', type: 'circle', source: 'points', paint: { 'circle-radius': ['get', 'radius'], 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } },
           { id: 'spots', type: 'circle', source: 'spots', paint: {
             'circle-radius': 8, 'circle-color': ['get', 'color'],
@@ -272,6 +315,14 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     });
     // 地面を押した所の地点情報（木・Field Log の点を押した時は、それぞれの情報を出すので地点情報は出さない）
     map.on('click', (e) => {
+      if (editRef.current) {
+        // 計画を作っている間: 目印（点・？）を押した時は足さない。押した画素の視線が最初に当たった地表だけに置く
+        if ((e.originalEvent.target as HTMLElement | null)?.closest?.('.maplibregl-marker')) return;
+        if (!isVisibleGround(map, e.lngLat)) { setHint('地形に隠れた所・空には点を置けません。見えている地表を押してください'); return; }
+        setHint(null);
+        editCb.current.onEditAdd(e.lngLat.lat, e.lngLat.lng);
+        return;
+      }
       if (map.queryRenderedFeatures(e.point, { layers: ['spots', 'points'].filter((id) => map.getLayer(id)) }).length) return;
       const h = map.queryTerrainElevation(e.lngLat);
       onPickRef.current(e.lngLat.lat, e.lngLat.lng, h === null || h === undefined ? null : Math.round(h / exRef.current));
@@ -355,9 +406,12 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     const map = mapRef.current;
     if (!map) return;
     const markers = candidates.map((p) => {
+      // 計画を作っている間は「計画に入れる」（既存候補として足す。位置は予測地点に合わせる）
+      const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px', offset: 14 });
+      popup.setDOMContent(candidateDom(p, editing ? () => { editCb.current.onEditCandidate(p); popup.remove(); } : undefined));
       return new maplibregl.Marker({ element: candidateNode(p), anchor: 'center' })
         .setLngLat([p.lng, p.lat])
-        .setPopup(new maplibregl.Popup({ closeButton: true, maxWidth: '300px', offset: 14 }).setDOMContent(candidateDom(p)))
+        .setPopup(popup)
         .addTo(map);
     });
     // 引いて広く見ている時は紫の「？」だけ（2D と同じ）
@@ -368,7 +422,30 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     syncLabels();
     map.on('zoomend', syncLabels);
     return () => { map.off('zoomend', syncLabels); for (const m of markers) m.remove(); };
-  }, [candidates]);
+  }, [candidates, editing]);
+
+  // 作っている計画: 線と点（経由点も出す）。点はドラッグで直す（見えている地表に落ちた時だけ。隠れた所なら元に戻す）・押すと帯の一覧で選ぶ
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const pts = edit?.points ?? [];
+    whenReady(map, () => {
+      (map.getSource('editRoute') as maplibregl.GeoJSONSource | undefined)?.setData(tracksGeoJSON(pts.length >= 2 ? [pts.map((p) => [p.lat, p.lng] as [number, number])] : []) as never);
+    });
+    const markers = pts.map((p, i) => {
+      const node = editPointNode(p, i, pts.length, edit?.sel === i);
+      node.addEventListener('click', (ev) => { ev.stopPropagation(); editCb.current.onEditSelect(i); });
+      const m = new maplibregl.Marker({ element: node, anchor: 'center', draggable: true }).setLngLat([p.lng, p.lat]).addTo(map);
+      m.on('dragend', () => {
+        const ll = m.getLngLat();
+        if (!isVisibleGround(map, ll)) { m.setLngLat([p.lng, p.lat]); setHint('地形に隠れた所・空には動かせません。見えている地表に置いてください'); return; }
+        setHint(null);
+        editCb.current.onEditMove(i, ll.lat, ll.lng);
+      });
+      return m;
+    });
+    return () => { for (const m of markers) m.remove(); };
+  }, [edit]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -401,7 +478,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
     <div className={styles.view3d} role="dialog" aria-label="3D で見る">
       <div ref={el} className={styles.view3dMap} />
       <div className={styles.view3dBar}>
-        <strong>3D（見るだけ）</strong>
+        <strong>{editing ? '3D（計画を作っています・地表を押すと点）' : '3D'}</strong>
         <span className={styles.areaName}>{areaName}</span>
         <label>背景
           <select value={base} onChange={(e) => setBase(e.target.value as 'shade' | 'photo')}>
@@ -435,6 +512,7 @@ export default function Terrain3DView({ bounds, layers, twiUrl, streamsUrl, trac
         </p>
       </div>
       {error && <div className={styles.toast} role="status">{error}</div>}
+      {!error && hint && <div className={styles.toast} role="status">{hint}</div>}
     </div>
   );
 }

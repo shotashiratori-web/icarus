@@ -53,7 +53,7 @@ export default function RoutePlanPanel({ routes, editing, idToken, onStartDraw, 
       <h3 className={styles.h}>探索計画（ルート予定）</h3>
       <p className={styles.sub}>PC で計画を作るとサーバーに保存され、iPhone で開くと届きます（端末にも保存・圏外でも見られる）。道は自動では探しません</p>
       {!editing && <button className={`${styles.btn} ${styles.primary}`} onClick={onStartDraw}>新しい計画を作る</button>}
-      {editing && <p className={styles.sub}>計画を作っています（地図を押すと点が増えます。下の帯で保存）</p>}
+      {editing && <p className={styles.sub}>計画を作っています（地図・3D の地表を押すと点が増えます。下の帯で保存）</p>}
       {msg && <p className={styles.warn}>{msg}</p>}
       {routes.map((r) => {
         const mine = !r.shared || r.shared.canEdit;
@@ -100,6 +100,7 @@ export default function RoutePlanPanel({ routes, editing, idToken, onStartDraw, 
 
 // 計画を作る・直す帯（地図の下）。点の一覧（種類・名前・メモ・滞在時間・順番）と保存の入力
 type EditorProps = {
+  over3d?: boolean; // 3D を開いている時は帯を 3D の上に出す
   points: RoutePoint[];
   base: RoutePlan | null; // 直す時の元
   sel: number | null;
@@ -109,7 +110,7 @@ type EditorProps = {
   onCancel: () => void;
   onSaved: (sent: boolean) => void;
 };
-export function RouteEditor({ points, base, sel, idToken, onPoints, onSelect, onCancel, onSaved }: EditorProps) {
+export function RouteEditor({ points, base, sel, idToken, over3d, onPoints, onSelect, onCancel, onSaved }: EditorProps) {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState(base?.name ?? '');
   const [date, setDate] = useState(base?.plannedDate ?? '');
@@ -134,7 +135,7 @@ export function RouteEditor({ points, base, sel, idToken, onPoints, onSelect, on
   const save = async () => { const { sent } = await saveAndSend(draft, idToken); onSaved(sent); };
   const s = planSummary(draft, sunsetOf);
   return (
-    <div className={styles.routeBar} role="region" aria-label="計画を作る">
+    <div className={`${styles.routeBar} ${over3d ? styles.routeBarOver3d : ''}`} role="region" aria-label="計画を作る">
       {!saving ? (
         <>
           <div>点 {points.length}・{(lengthM(points) / 1000).toFixed(2)}km・滞在 {s.stayMin}分</div>

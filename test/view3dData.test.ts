@@ -97,3 +97,14 @@ describe('探索計画（3D は下見用）', () => {
     expect(m.map((x) => x.label)).toEqual(['S 駐車地', 'G']);
   });
 });
+
+describe('3D で計画を作る: 見えている地表か', () => {
+  it('押した所と、画面に戻して視線を伸ばし直した所が数画素以内なら同じ地表', async () => {
+    const { sameGround, groundTolM } = await import('../src/terrain/view3dData');
+    const a = { lat: 43.13, lng: 140.83 };
+    expect(groundTolM(43.13, 16)).toBeCloseTo(10.5, 0); // 6 画素（z16）
+    expect(groundTolM(43.13, 20)).toBe(2); // 寄りすぎても 2m 未満にはしない
+    expect(sameGround(a, { lat: 43.13005, lng: 140.83 }, 16)).toBe(true); // 約 5.6m
+    expect(sameGround(a, { lat: 43.1302, lng: 140.83 }, 16)).toBe(false); // 約 22m（奥の尾根・空の平面に落ちた等）
+  });
+});

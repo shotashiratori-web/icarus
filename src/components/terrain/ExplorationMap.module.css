@@ -1356,6 +1356,8 @@ label.btn {
   gap: 4px;
   padding: 4px 8px 8px;
 }
+/* 3D を開いている時も帯を 3D の上に出す（2D・3D で同じ計画を作る） */
+.routeBarOver3d { z-index: 1600; }
 .routeStopLabel {
   position: absolute;
   left: 12px;

@@ -56,6 +56,19 @@ export function routeMarks3D(routes: { name: string; points: RoutePointLike[] }[
   }));
 }
 
+// 3D で地表を押した・点を動かした時の「本当に見えている地表か」の判定（探索計画を 3D で作る）。
+// MapLibre は押した画素から視線を伸ばし、最初に地形に当たった所を返す（手前の斜面が奥の尾根より先）。
+// 視線が地形に当たらない（空・範囲外）と海面の高さの平面に落ちるので、その場所を画面に戻して視線を伸ばし直し、
+// 同じ所に戻るか（画面で数画素以内）を見る。戻らなければ地形に隠れた所・空なので点を置かない
+export const GROUND_TOL_PX = 6;
+export function groundTolM(lat: number, zoom: number): number {
+  return Math.max(2, (GROUND_TOL_PX * 156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom);
+}
+export function sameGround(a: { lat: number; lng: number }, b: { lat: number; lng: number }, zoom: number): boolean {
+  const ky = 111320, kx = 111320 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot((a.lat - b.lat) * ky, (a.lng - b.lng) * kx) <= groundTolM(a.lat, zoom);
+}
+
 // 前に貼った枠と比べて、画像・表示・濃さのどれかが変わったか（変わった枠だけ差し替える。
 // 3D の地形は画像の差し替えでしか描き直されないので、濃さだけ変わった時も差し替える）
 export type AppliedLayer = ReturnType<typeof layerImage>;
