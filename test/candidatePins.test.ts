@@ -133,3 +133,39 @@ describe('調査区の円（説明の「半径○m」）', () => {
     expect(pinRadiusM({ desc: '半径5000m' })).toBeNull();
   });
 });
+
+describe('組の色（「？」の色を組ごとに）', () => {
+  it('色の無い組に、読み込んだ順に使っていない色から付ける。色のある組は変えない。6 色を使い切ったら繰り返す', async () => {
+    const { assignSetColors, PIN_COLORS } = await import('../src/exploration/candidatePins');
+    const hex = PIN_COLORS.map((c) => c.hex);
+    const sets = [
+      { id: 'b', importedAt: '2026-10-02', color: undefined },
+      { id: 'a', importedAt: '2026-10-01', color: hex[0] }, // 手で選んだ・前に付いた色
+      { id: 'c', importedAt: '2026-10-03', color: undefined },
+    ];
+    const m = assignSetColors(sets);
+    expect(m.has('a')).toBe(false);
+    expect(m.get('b')).toBe(hex[1]);
+    expect(m.get('c')).toBe(hex[2]);
+    const many = Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, importedAt: `2026-10-${10 + i}`, color: undefined }));
+    const mm = assignSetColors(many);
+    expect([...mm.values()].slice(0, 6)).toEqual(hex);
+    expect(mm.get('s6')).toBe(hex[0]);
+  });
+  it('一覧を出す時に色を付けて覚える（開き直しても同じ）。手で変えた色・共有の保存し直しでも色は残る', async () => {
+    const { setCandidateSetColor, mergeSharedCandidateSets, PIN_COLORS } = await import('../src/exploration/candidatePins');
+    const a = (await importCandidateGpx('a.gpx', GPX)).set;
+    const b = (await importCandidateGpx('b.gpx', GPX.replace('登りやすい予測樹冠', 'ナメコ候補'))).set;
+    const first = await listCandidateSets();
+    const ca = first.find((s) => s.id === a.id)!.color, cb = first.find((s) => s.id === b.id)!.color;
+    expect(ca).toBeTruthy();
+    expect(cb).toBeTruthy();
+    expect(ca).not.toBe(cb);
+    await closeCandidateStoreForTest();
+    const again = await listCandidateSets();
+    expect(again.find((s) => s.id === a.id)!.color).toBe(ca);
+    await setCandidateSetColor(b.id, PIN_COLORS[5].hex);
+    await mergeSharedCandidateSets([{ id: b.id, title: 'ナメコ候補', fileName: 'b.gpx', pins: b.pins, createdByName: '翔大', createdAt: '2026-10-13T00:00:00Z', canArchive: true }]);
+    expect((await listCandidateSets()).find((s) => s.id === b.id)!.color).toBe(PIN_COLORS[5].hex);
+  });
+});
