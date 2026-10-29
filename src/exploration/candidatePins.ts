@@ -14,12 +14,42 @@ export interface CandidateSet {
   title: string; // GPX の metadata/name（無ければファイル名）
   importedAt: string;
   visible: boolean; // 表示する／しないは端末ごと（共有しない）
+  color?: string; // 地図の「？」の色（組ごと・端末ごと）。無ければ一覧を出す時に別の色を自動で付けて覚える
   pins: CandidatePin[];
   // 共有版（無ければこの端末だけ）。登録者・日時・この人が消せるか
   shared?: { createdByName: string; createdAt: string; canArchive: boolean } | null;
 }
 
 export class CandidateGpxError extends Error {}
+
+// 組の色（「？」の中の色。形は共通で「予測・未確認」の意味は変えない）。
+// 地図の他の色（道のオレンジ・沢の水色・GPX の青・群生のマゼンタ・林分の赤・森の緑・計画の黄緑・記録の橙）と紛れない 6 色
+export const PIN_COLORS = [
+  { label: '紫', hex: '#7b1fa2' },
+  { label: '藍', hex: '#3949ab' },
+  { label: '茶', hex: '#6d4c41' },
+  { label: '青緑', hex: '#00897b' },
+  { label: '黒', hex: '#263238' },
+  { label: '黄土', hex: '#b8860b' },
+] as const;
+export const DEFAULT_PIN_COLOR: string = PIN_COLORS[0].hex;
+export const setColor = (s: Pick<CandidateSet, 'color'>): string => s.color ?? DEFAULT_PIN_COLOR;
+
+// 色の無い組に色を付ける。読み込んだ順（古い順）に、まだ使っていない色から。6 色を使い切ったら順に繰り返す。
+// 色のある組（自動で付けた・手で選んだ）は変えない
+export function assignSetColors(sets: Pick<CandidateSet, 'id' | 'importedAt' | 'color'>[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const used = new Set(sets.map((s) => s.color).filter((c): c is string => !!c));
+  const missing = sets.filter((s) => !s.color).sort((a, b) => a.importedAt.localeCompare(b.importedAt) || a.id.localeCompare(b.id));
+  let k = 0;
+  for (const s of missing) {
+    const free = PIN_COLORS.find((c) => !used.has(c.hex));
+    const hex = free ? free.hex : PIN_COLORS[k++ % PIN_COLORS.length].hex;
+    used.add(hex);
+    out.set(s.id, hex);
+  }
+  return out;
+}
 
 // 一覧の 2 行目: 説明の 2 文目（例「樹冠高 34m（周り…より +11m）」）。無ければ空
 export function pinSummary(desc: string): string {
@@ -132,8 +162,21 @@ export async function importCandidateGpx(fileName: string, text: string): Promis
 }
 
 export async function listCandidateSets(): Promise<CandidateSet[]> {
-  const all = (await (await db()).getAll(STORE)) as CandidateSet[];
+  const d = await db();
+  let all = (await d.getAll(STORE)) as CandidateSet[];
+  // 色の無い組（読み込んだばかり・共有から届いた・前の版の組）に色を付けて覚える（表示の切り替えや開き直しで変わらない）
+  const add = assignSetColors(all);
+  if (add.size) {
+    all = all.map((s) => (add.has(s.id) ? { ...s, color: add.get(s.id) } : s));
+    for (const s of all) if (add.has(s.id)) await d.put(STORE, s);
+  }
   return all.sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+}
+
+export async function setCandidateSetColor(id: string, color: string): Promise<void> {
+  const d = await db();
+  const s = (await d.get(STORE, id)) as CandidateSet | undefined;
+  if (s) await d.put(STORE, { ...s, color });
 }
 
 export async function setCandidateSetVisible(id: string, visible: boolean): Promise<void> {
@@ -147,7 +190,7 @@ export async function deleteCandidateSet(id: string): Promise<void> {
   await (await db()).delete(STORE, id);
 }
 
-// 共有の一覧を端末に保存し直す（圏外でも出すため）。表示する／しないは端末の値を残す。
+// 共有の一覧を端末に保存し直す（圏外でも出すため）。表示する／しない・色は端末の値を残す。
 // 端末にある共有版のうち、一覧に無くなったもの（誰かがアーカイブした）は端末からも外す。この端末だけの組は触らない
 export async function mergeSharedCandidateSets(items: { id: string; title: string; fileName: string; pins: CandidatePin[]; createdByName: string; createdAt: string; canArchive: boolean }[]): Promise<void> {
   const d = await db();
@@ -158,7 +201,7 @@ export async function mergeSharedCandidateSets(items: { id: string; title: strin
   for (const i of items) {
     const prev = byId.get(i.id);
     await d.put(STORE, {
-      id: i.id, fileName: i.fileName, title: i.title, importedAt: prev?.importedAt ?? i.createdAt, visible: prev?.visible ?? true, pins: i.pins,
+      id: i.id, fileName: i.fileName, title: i.title, importedAt: prev?.importedAt ?? i.createdAt, visible: prev?.visible ?? true, ...(prev?.color ? { color: prev.color } : {}), pins: i.pins,
       shared: { createdByName: i.createdByName, createdAt: i.createdAt, canArchive: i.canArchive },
     } satisfies CandidateSet);
   }

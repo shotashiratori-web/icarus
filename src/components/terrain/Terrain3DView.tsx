@@ -36,7 +36,7 @@ export interface Terrain3DProps {
   roads: FC; // 道（PR2）。2D と同じデータ・見た目。2D の「道路・林道」「登山道・徒歩道」で絞った後のもの
   spots: Spot3D[];
   points: Point3D[];
-  candidates: CandidatePin[]; // 予測地点（2D の一覧で表示にしている組だけ）
+  candidates: (CandidatePin & { color?: string })[]; // 予測地点（2D の一覧で表示にしている組だけ。色は組の色）
   routeLines: [number, number][][]; // 探索計画の線（2D で表示にしている計画だけ。[lat, lng]）
   routeMarks: RouteMark3D[]; // 探索計画の S・G・立ち寄り地点・既存候補（経由点は出さない）
   initial: { lat: number; lng: number; zoom: number };
@@ -132,9 +132,10 @@ function inspectorDom(ins: Inspector): { root: HTMLElement; elev: HTMLElement; r
 }
 
 // 予測地点の目印（2D と同じ紫の「？」＋名前）
-function candidateNode(p: CandidatePin): HTMLElement {
+function candidateNode(p: CandidatePin & { color?: string }): HTMLElement {
   const node = el('div', styles.candidate3d);
   const pin = el('span', styles.candidatePin, '？');
+  if (p.color) pin.style.background = p.color; // 組の色（2D と同じ）
   pin.setAttribute('aria-label', '予測地点（未確認）');
   node.append(pin, el('span', `${styles.candidateLabel} cand3dLabel`, shortPinLabel(p.name)));
   return node;

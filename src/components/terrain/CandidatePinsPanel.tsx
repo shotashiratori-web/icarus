@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, searchPins, setCandidateSetVisible, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
+import { CandidateGpxError, deleteCandidateSet, importCandidateGpx, PIN_COLORS, searchPins, setCandidateSetColor, setCandidateSetVisible, setColor, sortPins, type CandidatePin, type CandidateSet, type PinOrder } from '../../exploration/candidatePins';
 import { archiveSharedCandidateSet, shareCandidateSet } from '../../api/candidateSetsApi';
 import { TokenExpiredError } from '../../api/icarusApi';
 import styles from './ExplorationMap.module.css';
@@ -102,12 +102,22 @@ export default function CandidatePinsPanel({ sets, idToken, onChanged, onShow, o
         <div className={styles.candSetHead}>
           <input type="checkbox" aria-label={`${s.title} を地図に出す`} checked={s.visible} onChange={async (e) => { await setCandidateSetVisible(s.id, e.target.checked); await onChanged(); }} />
           <button className={styles.candToggle} aria-expanded={open} onClick={() => toggleOpen(s.id)}>
-            {open ? '▼' : '▶'} <span className={styles.candSetTitle}>{s.title}</span>
+            {open ? '▼' : '▶'} <span className={styles.candidatePin} style={{ background: setColor(s), width: 18, height: 18, fontSize: 11, marginRight: 4 }} aria-hidden>？</span><span className={styles.candSetTitle}>{s.title}</span>
           </button>
           <span className={styles.candSetMeta}>{s.pins.length} 地点・{s.shared ? `共有・${s.shared.createdByName || '不明'}` : 'この端末だけ'}</span>
         </div>
         {open && (
           <>
+            {/* 組の色（地図の「？」の色。2D・3D 共通・この端末に覚える） */}
+            <div className={styles.row} role="radiogroup" aria-label={`${s.title} の色`}>
+              <span className={styles.sub}>色</span>
+              {PIN_COLORS.map((c) => (
+                <button key={c.hex} role="radio" aria-checked={setColor(s) === c.hex} aria-label={c.label} title={c.label}
+                  className={styles.candidatePin}
+                  style={{ background: c.hex, width: 22, height: 22, fontSize: 12, cursor: 'pointer', boxShadow: setColor(s) === c.hex ? '0 0 0 3px #ff6f00' : undefined }}
+                  onClick={async () => { await setCandidateSetColor(s.id, c.hex); await onChanged(); }}>？</button>
+              ))}
+            </div>
             <div className={styles.row}>
               {confirm?.id === s.id ? (
                 <>

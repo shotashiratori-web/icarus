@@ -56,7 +56,7 @@ import { useExplorationHistory, type HistoryEntry } from './useExplorationHistor
 import ExplorationHistoryPanel from './ExplorationHistoryPanel';
 import type { RangePreview } from './ExplorationRangeEditor';
 import CandidatePinsPanel from './CandidatePinsPanel';
-import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, pinRadiusM, shortPinLabel, type CandidatePin, type CandidateSet } from '../../exploration/candidatePins';
+import { CANDIDATE_LABEL_MIN_ZOOM, listCandidateSets, mergeSharedCandidateSets, pinRadiusM, setColor, shortPinLabel, type CandidatePin, type CandidateSet } from '../../exploration/candidatePins';
 import { listSharedCandidateSets } from '../../api/candidateSetsApi';
 import { clipTrack, excludedParts } from '../../exploration/trackRange';
 import { tracksAtTap } from '../../exploration/trackTap';
@@ -419,7 +419,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
   }, [idToken]);
   useEffect(() => { void refreshCandidates(true); }, [refreshCandidates]);
   const [mapZoom, setMapZoom] = useState(13);
-  const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}`, setTitle: s.title }))), [candidateSets]);
+  const candidatePins = useMemo(() => candidateSets.filter((s) => s.visible).flatMap((s) => s.pins.map((p, i) => ({ ...p, key: `${s.id}:${i}`, setTitle: s.title, color: setColor(s) }))), [candidateSets]);
   const [watching, setWatching] = useState(false);
   // 前回の画面を復元した山域では追従しない（「現在地」を押すと追従する）
   const [follow, setFollow] = useState(() => !loadCamera(area.areaId, area.bounds));
@@ -1557,7 +1557,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
         {/* 調査区の円: 説明に「半径40m」などがある予測地点だけ。紫の点線（中は薄く）。押せない（中の木や地図を押せるように） */}
         {candidatePins.map((p) => {
           const r = pinRadiusM(p);
-          return r ? <Circle key={`cand-r-${p.key}`} center={[p.lat, p.lng]} radius={r} interactive={false} pathOptions={{ color: '#7b1fa2', weight: 3, dashArray: '8 6', fillColor: '#7b1fa2', fillOpacity: 0.08 }} /> : null;
+          return r ? <Circle key={`cand-r-${p.key}`} center={[p.lat, p.lng]} radius={r} interactive={false} pathOptions={{ color: p.color, weight: 3, dashArray: '8 6', fillColor: p.color, fillOpacity: 0.08 }} /> : null;
         })}
         {/* 探索計画: 黄緑の点線＋白縁。立ち寄り地点は大きめの点と名前、経由点は小さな点。押すと「ここへ行く」（2D だけ） */}
         {routes.filter((r) => r.visible && r.id !== editor?.base?.id).map((r) => (
@@ -1608,7 +1608,7 @@ function AreaMap({ entries, openGpxDraftId, navigateTo, pkg, area, areaList, onl
           <Marker
             key={`cand-${p.key}`}
             position={[p.lat, p.lng]}
-            icon={L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: `<span class="${styles.candidatePin}" aria-label="予測地点（未確認）">？</span>${mapZoom >= CANDIDATE_LABEL_MIN_ZOOM ? `<span class="${styles.candidateLabel}">${shortPinLabel(p.name).replace(/[<>&"]/g, '')}</span>` : ''}` })}
+            icon={L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: `<span class="${styles.candidatePin}" style="background:${p.color}" aria-label="予測地点（未確認）">？</span>${mapZoom >= CANDIDATE_LABEL_MIN_ZOOM ? `<span class="${styles.candidateLabel}">${shortPinLabel(p.name).replace(/[<>&"]/g, '')}</span>` : ''}` })}
           >
             <Popup>
               <b>？ {p.name}</b><br />
