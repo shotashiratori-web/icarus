@@ -1,5 +1,6 @@
 import { submitWork } from '../../api/workApi';
-import { loadWorkLogDraft, clearWorkLogDraft } from '../../db/localDB';
+import { createUploadAndFinalizeAsset } from '../../api/photoAssetApi';
+import { loadWorkLogDraft, clearWorkLogDraft, saveWorkLogDraft } from '../../db/localDB';
 import { registerAdapter } from '../registry';
 import { mapWorkLogError } from '../errorMapping';
 import type { WorkSubmitSuccess } from '../../types/workLog';
@@ -24,6 +25,27 @@ registerAdapter<WorkLogSubmissionPayload, WorkSubmitSuccess | undefined>({
       return undefined;
     }
 
+    // 作業ログの写真を R2 へ（icarus_work_log_photo_r2_design.md）。原本を先に POST /assets → R2 → finalize で上げ、
+    // assetId を下書きに書き戻してから /work を送る。/work が失敗して再送されても、assetId があれば上げ直さない
+    let photoAssetId = draft.photoAssetId;
+    if (draft.photoOriginal && !photoAssetId) {
+      const o = draft.photoOriginal;
+      photoAssetId = await createUploadAndFinalizeAsset({
+        requestId: o.assetRequestId,
+        fileHash: o.fileHash,
+        originalFilename: o.fileName,
+        mimeType: o.mimeType,
+        sizeBytes: o.sizeBytes,
+        width: o.width ?? null,
+        height: o.height ?? null,
+        takenAt: o.takenAt ?? null,
+        exifGpsLat: null,
+        exifGpsLng: null,
+      }, o.base64, idToken);
+      const { key: _key, savedAt: _savedAt, ...rest } = draft;
+      await saveWorkLogDraft({ ...rest, photoAssetId, photoOriginal: undefined });
+    }
+
     const result = await submitWork({
       requestId: draft.requestId,
       action: draft.mode,
@@ -32,8 +54,9 @@ registerAdapter<WorkLogSubmissionPayload, WorkSubmitSuccess | undefined>({
       type: draft.mode === 'create' ? draft.type : undefined,
       content: draft.content,
       datetime: new Date(draft.datetime).toISOString(),
-      photoBase64: draft.photoBase64,
-      photoMimeType: draft.photoMimeType,
+      photoBase64: photoAssetId ? undefined : draft.photoBase64,
+      photoMimeType: photoAssetId ? undefined : draft.photoMimeType,
+      photoAssetId,
       caption: draft.caption,
     }, idToken);
 

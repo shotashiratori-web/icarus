@@ -119,10 +119,18 @@ export function mapWorkLogError(
     // それより大きい5xx（502/503/504等）だけがWorker/エッジ自体の一時的な不調——メッセージ
     // 文字列のパターンマッチではなく実際のHTTP statusで判定する（2026-09-13実機確認で発見:
     // Worker側の文言が変わるとパターンマッチでは検出漏れが起きるため）
-    if (err.status > 500) {
+    // 409 = 写真（R2）の保存がまだ終わっていない（ASSET_NOT_READY）。時間をおけば通るので自動で再送する
+    if (err.status > 500 || err.status === 409) {
       return buildError('SERVER_ERROR', ctx, true, err.message);
     }
     return buildError('SERVER_ERROR', ctx, false, err.message, WORK_LOG_VALIDATION_DESCRIPTION);
+  }
+  // 写真の原本を R2 に上げる段階の失敗。形式が対応外（ASSET_UNSUPPORTED_MIME_TYPE）以外は通信・一時的な不調として再送する
+  if (err instanceof PhotoUploadFailedError) {
+    if (err.code === 'ASSET_UNSUPPORTED_MIME_TYPE') {
+      return buildError('SERVER_ERROR', ctx, false, err.message, WORK_LOG_VALIDATION_DESCRIPTION);
+    }
+    return buildError('NETWORK_ERROR', ctx, true, err.message);
   }
   if (err instanceof Error) {
     return buildError('SERVER_ERROR', ctx, false, err.message, WORK_LOG_VALIDATION_DESCRIPTION);

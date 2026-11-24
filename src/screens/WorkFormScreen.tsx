@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { resizeToJpeg } from '../api/icarusApi';
+import { resizeToJpeg, readFileAsBase64, sha256Hex, getImageDimensions, extractExifDate, isHeicFile } from '../api/icarusApi';
+import { WORK_LOG_PHOTO_R2_ENABLED } from '../config';
 import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
-import { saveWorkLogDraft, loadWorkLogDraft } from '../db/localDB';
+import { saveWorkLogDraft, loadWorkLogDraft, type WorkLogPhotoOriginal } from '../db/localDB';
 import { submitWithFallback } from '../submission/orchestrator';
 import type { WorkLogSubmissionPayload } from '../submission/adapters/workLogAdapter';
 import type { Screen } from '../App';
@@ -10,6 +11,42 @@ import HomeButton from '../components/HomeButton';
 import styles from './WorkFormScreen.module.css';
 
 type Phase = 'form' | 'confirm' | 'sending' | 'complete';
+
+// R2（POST /assets）が受け付ける形式。それ以外（PNG のスクリーンショット等）は縮小 JPEG を原本の代わりにする
+function originalMimeType(file: File): string | null {
+  if (isHeicFile(file)) return 'image/heic';
+  if (file.type === 'image/jpeg' || file.type === 'image/heif') return file.type;
+  if (!file.type && /\.jpe?g$/i.test(file.name)) return 'image/jpeg';
+  return null;
+}
+
+async function sha256HexOfBase64(base64: string): Promise<string> {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 作業ログの写真を R2 へ（原本）。撮ったままのファイルを、縮小も変換もせずに持つ
+async function prepareOriginal(file: File, resizedBase64: string): Promise<WorkLogPhotoOriginal> {
+  const mime = originalMimeType(file);
+  if (!mime) {
+    return {
+      assetRequestId: crypto.randomUUID(),
+      base64: resizedBase64, mimeType: 'image/jpeg', fileHash: await sha256HexOfBase64(resizedBase64),
+      sizeBytes: Math.floor((resizedBase64.length * 3) / 4), fileName: file.name.replace(/\.[^.]+$/, '') + '.jpg',
+    };
+  }
+  const [base64, fileHash, dims, exif] = await Promise.all([
+    readFileAsBase64(file), sha256Hex(file), getImageDimensions(file), extractExifDate(file),
+  ]);
+  return {
+    assetRequestId: crypto.randomUUID(),
+    base64, mimeType: mime, fileHash, sizeBytes: file.size,
+    width: dims?.width, height: dims?.height, takenAt: exif?.takenAt, fileName: file.name || 'photo.jpg',
+  };
+}
 type SendOutcome =
   | { kind: 'success'; result: WorkSubmitSuccess | undefined }
   // retryable失敗。draft/queueは端末に残り、App起動時・online復帰時に自動再送される
@@ -39,6 +76,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
   const [content, setContent] = useState('');
   const [datetime, setDatetime] = useState(() => nowLocalDatetimeString());
   const [photoBase64, setPhotoBase64] = useState<string | undefined>(undefined);
+  const [photoOriginal, setPhotoOriginal] = useState<WorkLogPhotoOriginal | undefined>(undefined);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [photoProcessing, setPhotoProcessing] = useState(false);
@@ -67,6 +105,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
       setCaption(draft.caption ?? '');
       if (draft.photoBase64) {
         setPhotoBase64(draft.photoBase64);
+        setPhotoOriginal(draft.photoOriginal);
         setPreviewUrl(`data:${draft.photoMimeType ?? 'image/jpeg'};base64,${draft.photoBase64}`);
       }
     });
@@ -81,12 +120,12 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
     if (!title && !content && !photoBase64 && !caption && type === '') return; // 空のまま保存しない
     void saveWorkLogDraft({
       requestId, mode, workId, title, type, content, datetime,
-      photoBase64, photoMimeType: photoBase64 ? 'image/jpeg' : undefined, caption,
+      photoBase64, photoMimeType: photoBase64 ? 'image/jpeg' : undefined, caption, photoOriginal,
     }).catch(() => {
       // quota超過等でも無視（送信前に再入力できる）
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, workId, requestId, title, type, content, datetime, photoBase64, caption, phase]);
+  }, [mode, workId, requestId, title, type, content, datetime, photoBase64, photoOriginal, caption, phase]);
 
   // ── 写真選択 ─────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,7 +134,9 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
     setPhotoProcessing(true);
     try {
       const base64 = await resizeToJpeg(file);
+      const original = WORK_LOG_PHOTO_R2_ENABLED ? await prepareOriginal(file, base64) : undefined;
       setPhotoBase64(base64);
+      setPhotoOriginal(original);
       setPreviewUrl(`data:image/jpeg;base64,${base64}`);
     } catch (err) {
       alert(err instanceof Error ? err.message : '写真の処理に失敗しました');
@@ -107,6 +148,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
 
   const removePhoto = () => {
     setPhotoBase64(undefined);
+    setPhotoOriginal(undefined);
     setPreviewUrl('');
   };
 
@@ -129,7 +171,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
     // adapterが読むdraftを、送信直前の最新値で確実に確定させる（autosave effectとの競合を避ける保険）
     await saveWorkLogDraft({
       requestId, mode, workId, title, type, content, datetime,
-      photoBase64, photoMimeType: photoBase64 ? 'image/jpeg' : undefined, caption,
+      photoBase64, photoMimeType: photoBase64 ? 'image/jpeg' : undefined, caption, photoOriginal,
     }).catch(() => {});
 
     const outcome = await submitWithFallback<WorkLogSubmissionPayload, WorkSubmitSuccess | undefined>({
@@ -155,7 +197,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
     setRequestId(crypto.randomUUID());
     setTitle(''); setType(''); setContent('');
     setDatetime(nowLocalDatetimeString());
-    setPhotoBase64(undefined); setPreviewUrl(''); setCaption('');
+    setPhotoBase64(undefined); setPhotoOriginal(undefined); setPreviewUrl(''); setCaption('');
     setOutcome(null);
     setPhase('form');
   };

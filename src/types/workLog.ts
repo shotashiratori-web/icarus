@@ -41,6 +41,8 @@ export interface WorkSubmitPayload {
   datetime: string;
   photoBase64?: string;
   photoMimeType?: 'image/jpeg';
+  // 先に POST /assets → R2 に上げた原本（photoBase64 とは同時に送らない）
+  photoAssetId?: string;
   caption?: string;
 }
 

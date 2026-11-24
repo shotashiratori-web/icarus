@@ -37,10 +37,26 @@ export interface WorkLogDraft {
   type?: string;
   content: string;
   datetime: string;
-  photoBase64?: string;
+  photoBase64?: string; // 縮小 JPEG（プレビュー用。原本を使わない時はこれを送る）
   photoMimeType?: 'image/jpeg';
   caption?: string;
+  // 作業ログの写真を R2 へ（原本）。photoAssetId が付くまで原本を持ち、付いたら原本は消す（再送で上げ直さない）
+  photoOriginal?: WorkLogPhotoOriginal;
+  photoAssetId?: string;
   savedAt: string;
+}
+
+export interface WorkLogPhotoOriginal {
+  // POST /assets の requestId（写真ごと）。作業の requestId とは別にする（下書きで写真を差し替えたら別の写真として上げる）
+  assetRequestId: string;
+  base64: string;
+  mimeType: string;
+  fileHash: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  takenAt?: string;
+  fileName: string;
 }
 
 let _db: IDBPDatabase | null = null;

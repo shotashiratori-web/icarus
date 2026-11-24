@@ -82,6 +82,10 @@ export function isFieldLogD1Enabled(userEmail: string): boolean {
 // FIELD_CLOUDINARY_SIGNATURE_URL）はコードごと残したまま、この値をfalseにするだけで旧経路へ戻せる
 // （汎用feature flag基盤は作らない、という設計判断どおりの単純なスイッチ）
 export const PHOTO_ASSET_R2_ENABLED = true;
+
+// 作業ログ（加工・作業）の写真を原本のまま R2 に保存する（icarus_work_log_photo_r2_design.md）。
+// false にすると今まで通り縮小 JPEG を /work に送る（Worker 側の WORK_LOG_PHOTO_R2_ENABLED で R2 か Cloudinary）
+export const WORK_LOG_PHOTO_R2_ENABLED = true;
 export const ASSETS_CREATE_URL = `${WORKER_URL}/assets`;
 export function assetFinalizeUrl(assetId: string): string {
   return `${WORKER_URL}/assets/${encodeURIComponent(assetId)}/finalize`;

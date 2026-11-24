@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mapWorkLogError } from '../src/submission/errorMapping';
 import { WorkProcessingError, NetworkUnknownError, WorkServerError } from '../src/api/workApi';
 import { TokenExpiredError } from '../src/api/icarusApi';
+import { PhotoUploadFailedError } from '../src/api/fieldLogD1Api';
 
 // Work Log Submission Framework Final Design ①、および2026-09-13の本番golden path実機確認で
 // 発見した実バグの修正。当初はメッセージ文字列のパターンマッチでretryableを判定していたが、
@@ -67,5 +68,17 @@ describe('mapWorkLogError: retryable分類', () => {
   it('分類不能な例外（Errorインスタンスですらない）: retryable=false（安全側）', () => {
     const result = mapWorkLogError('some non-Error throw', CTX);
     expect(result.retryable).toBe(false);
+  });
+});
+
+describe('mapWorkLogError: 作業ログの写真を R2 へ', () => {
+  it('WorkServerError status=409（写真の保存がまだ終わっていない）: retryable=true', () => {
+    expect(mapWorkLogError(new WorkServerError('写真の保存が終わっていません', 409), CTX).retryable).toBe(true);
+  });
+  it('PhotoUploadFailedError（通信・R2 の一時的な失敗）: retryable=true', () => {
+    expect(mapWorkLogError(new PhotoUploadFailedError('R2への写真アップロード通信に失敗しました'), CTX).retryable).toBe(true);
+  });
+  it('PhotoUploadFailedError ASSET_UNSUPPORTED_MIME_TYPE: retryable=false', () => {
+    expect(mapWorkLogError(new PhotoUploadFailedError('対応していない形式', 'ASSET_UNSUPPORTED_MIME_TYPE'), CTX).retryable).toBe(false);
   });
 });
