@@ -10,6 +10,7 @@ import FieldScreen from './screens/FieldScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
 import WorkDetailScreen from './screens/WorkDetailScreen';
 import WorkFormScreen from './screens/WorkFormScreen';
+import WorkInventoryScreen from './screens/WorkInventoryScreen';
 import PendingApprovalScreen from './screens/PendingApprovalScreen';
 import StaffApprovalScreen from './screens/StaffApprovalScreen';
 import DailySubmitScreen from './screens/DailySubmitScreen';
@@ -69,6 +70,8 @@ export type Screen =
   | { name: 'workDetail'; workId: string }
   | { name: 'workForm'; mode: 'create'; draftRequestId?: string }
   | { name: 'workForm'; mode: 'append'; workId: string; workTitle?: string; draftRequestId?: string }
+  // 作業ログの棚卸しモード（写真をまとめて選び、1 枚 = 1 作業として登録）
+  | { name: 'workInventory' }
   | { name: 'staffApproval' }
   | { name: 'daily' }
   | { name: 'dailyAdmin' }
@@ -222,6 +225,7 @@ function AppRoutes() {
       draftRequestId={screen.draftRequestId}
     />
   );
+  if (screen.name === 'workInventory') return <WorkInventoryScreen go={go} />;
   if (screen.name === 'staffApproval') return <StaffApprovalScreen go={go} />;
   if (screen.name === 'daily') return <DailySubmitScreen go={go} />;
   if (screen.name === 'dailyAdmin') return <DailyAdminListScreen go={go} />;

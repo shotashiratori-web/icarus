@@ -1,0 +1,36 @@
+/* 作業ログの棚卸しモード。基本の見た目は WorkFormScreen.module.css を使い、ここは足りない分だけ */
+.lead { margin: 0; font-size: var(--font-size-sm); color: var(--color-text-sub); line-height: 1.6; }
+.commonLine { margin: 0; font-size: var(--font-size-xs); color: var(--color-text-sub); }
+
+.choiceRow { display: flex; gap: var(--space-2); margin-top: var(--space-1); }
+.choice, .choiceOn {
+  flex: 1; padding: var(--space-3) var(--space-2); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--font-size-sm); font-weight: 600; cursor: pointer;
+}
+.choice { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+.choiceOn { background: var(--color-primary); color: var(--color-primary-fg); border: 1px solid var(--color-primary); }
+
+.bigPhoto {
+  width: 100%; max-height: 45dvh; object-fit: contain; border-radius: var(--radius-md);
+  background: var(--color-surface); border: 1px solid var(--color-border);
+}
+.removeBtn {
+  align-self: flex-start; background: none; border: none; padding: var(--space-1) 0;
+  color: var(--color-danger, #c0392b); font: inherit; font-size: var(--font-size-sm); cursor: pointer;
+}
+
+.navRow { display: flex; gap: var(--space-2); }
+.navRow > button { flex: 1; }
+
+.confirmGrid {
+  list-style: none; margin: var(--space-3) 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--space-2);
+}
+.confirmItem {
+  width: 100%; display: flex; flex-direction: column; gap: var(--space-1); padding: 0;
+  background: none; border: none; font: inherit; color: inherit; cursor: pointer; text-align: left;
+}
+.thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm, 6px); border: 1px solid var(--color-border); }
+.thumbName, .thumbMissing { font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumbName { color: var(--color-text); }
+.thumbMissing { color: var(--color-danger, #c0392b); font-weight: 600; }

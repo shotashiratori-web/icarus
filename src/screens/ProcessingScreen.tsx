@@ -122,6 +122,9 @@ export default function ProcessingScreen({ go }: Props) {
         <button className={styles.newWorkBtn} onClick={() => go({ name: 'workForm', mode: 'create' })}>
           ＋ 新しい作業を始める
         </button>
+        <button className={styles.inventoryBtn} onClick={() => go({ name: 'workInventory' })}>
+          📷 棚卸しモード（まとめて登録）
+        </button>
 
         {unsentDrafts.length > 0 && (
           <section className={styles.section}>

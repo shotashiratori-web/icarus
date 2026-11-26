@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { resizeToJpeg, readFileAsBase64, sha256Hex, getImageDimensions, extractExifDate, isHeicFile } from '../api/icarusApi';
-import { WORK_LOG_PHOTO_R2_ENABLED } from '../config';
+import { prepareWorkLogPhoto } from '../utils/workLogPhoto';
 import { useAuth } from '../context/AuthContext';
 import { WORK_TYPE_OPTIONS, nowLocalDatetimeString, type WorkFormMode, type WorkSubmitSuccess } from '../types/workLog';
 import { saveWorkLogDraft, loadWorkLogDraft, type WorkLogPhotoOriginal } from '../db/localDB';
@@ -12,41 +11,6 @@ import styles from './WorkFormScreen.module.css';
 
 type Phase = 'form' | 'confirm' | 'sending' | 'complete';
 
-// R2（POST /assets）が受け付ける形式。それ以外（PNG のスクリーンショット等）は縮小 JPEG を原本の代わりにする
-function originalMimeType(file: File): string | null {
-  if (isHeicFile(file)) return 'image/heic';
-  if (file.type === 'image/jpeg' || file.type === 'image/heif') return file.type;
-  if (!file.type && /\.jpe?g$/i.test(file.name)) return 'image/jpeg';
-  return null;
-}
-
-async function sha256HexOfBase64(base64: string): Promise<string> {
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// 作業ログの写真を R2 へ（原本）。撮ったままのファイルを、縮小も変換もせずに持つ
-async function prepareOriginal(file: File, resizedBase64: string): Promise<WorkLogPhotoOriginal> {
-  const mime = originalMimeType(file);
-  if (!mime) {
-    return {
-      assetRequestId: crypto.randomUUID(),
-      base64: resizedBase64, mimeType: 'image/jpeg', fileHash: await sha256HexOfBase64(resizedBase64),
-      sizeBytes: Math.floor((resizedBase64.length * 3) / 4), fileName: file.name.replace(/\.[^.]+$/, '') + '.jpg',
-    };
-  }
-  const [base64, fileHash, dims, exif] = await Promise.all([
-    readFileAsBase64(file), sha256Hex(file), getImageDimensions(file), extractExifDate(file),
-  ]);
-  return {
-    assetRequestId: crypto.randomUUID(),
-    base64, mimeType: mime, fileHash, sizeBytes: file.size,
-    width: dims?.width, height: dims?.height, takenAt: exif?.takenAt, fileName: file.name || 'photo.jpg',
-  };
-}
 type SendOutcome =
   | { kind: 'success'; result: WorkSubmitSuccess | undefined }
   // retryable失敗。draft/queueは端末に残り、App起動時・online復帰時に自動再送される
@@ -133,8 +97,7 @@ export default function WorkFormScreen({ go, mode, workId, workTitle, draftReque
     if (!file) return;
     setPhotoProcessing(true);
     try {
-      const base64 = await resizeToJpeg(file);
-      const original = WORK_LOG_PHOTO_R2_ENABLED ? await prepareOriginal(file, base64) : undefined;
+      const { previewBase64: base64, original } = await prepareWorkLogPhoto(file);
       setPhotoBase64(base64);
       setPhotoOriginal(original);
       setPreviewUrl(`data:image/jpeg;base64,${base64}`);

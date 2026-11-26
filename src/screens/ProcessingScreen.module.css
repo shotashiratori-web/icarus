@@ -8,6 +8,7 @@
 .section { display:flex; flex-direction:column; gap:var(--space-3); }
 .sectionTitle { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text-sub); text-transform:uppercase; letter-spacing:0.5px; }
 
+.inventoryBtn { padding:var(--space-3); background:var(--color-surface); color:var(--color-text); border:1px solid var(--color-border); border-radius:var(--radius-md); font-size:var(--font-size-sm); font-weight:600; cursor:pointer; }
 .newWorkBtn { padding:var(--space-4); background:var(--color-primary); color:var(--color-primary-fg); border:none; border-radius:var(--radius-md); font-size:var(--font-size-base); font-weight:600; cursor:pointer; }
 
 .draftList { display:flex; flex-direction:column; gap:var(--space-2); }
