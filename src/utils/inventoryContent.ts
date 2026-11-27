@@ -18,6 +18,9 @@ export interface InventoryItemFields {
   memo: string;
 }
 
+// 作業ログの「内容」は必須。保存区分・場所・各項目がどれも空の時（品名だけで登録した時）はこの文を入れる
+export const INVENTORY_CONTENT_FALLBACK = '棚卸しで登録';
+
 export function buildInventoryContent(common: InventoryCommon, item: InventoryItemFields): string {
   const lines: [string, string][] = [
     ['保存', common.storageClass],
@@ -27,9 +30,10 @@ export function buildInventoryContent(common: InventoryCommon, item: InventoryIt
     ['開封', item.openState],
     ['メモ', item.memo],
   ];
-  return lines
+  const content = lines
     .map(([label, value]) => [label, value.trim()] as const)
     .filter(([, value]) => value !== '')
     .map(([label, value]) => `${label}：${value}`)
     .join('\n');
+  return content || INVENTORY_CONTENT_FALLBACK;
 }

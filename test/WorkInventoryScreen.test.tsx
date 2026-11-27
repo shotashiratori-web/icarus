@@ -49,10 +49,17 @@ describe('WorkInventoryScreen', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
-  it('共通の項目が揃うまで写真を選べない（保存区分・保管場所は必須）', () => {
+  it('保存区分・保管場所は空のままでも写真を選べ、品名だけで下書きが揃う', async () => {
     render(<WorkInventoryScreen go={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '📷 写真をまとめて選ぶ' })).toBeDisabled();
-    expect(screen.getByText(/未入力: 保存区分・保管場所/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '📷 写真をまとめて選ぶ' })).toBeEnabled();
+    fireEvent.change(screen.getByTestId('inventory-file-input'), { target: { files: [file('a.jpg')] } });
+    await screen.findByText('1 / 1');
+    const requestId = saveWorkLogDraft.mock.calls[0][0].requestId;
+    expect(store.get(requestId)?.content).toBe('棚卸しで登録');
+    setName('ナラタケ塩漬け');
+    fireEvent.click(screen.getByRole('button', { name: /次へ|確認/ }));
+    await waitFor(() => expect(store.get(requestId)?.title).toBe('ナラタケ塩漬け'));
+    expect(store.get(requestId)?.content).toBe('棚卸しで登録');
   });
 
   it('写真を選ぶと 1 枚ずつ下書き（原本つき・新規作成）を作る', async () => {

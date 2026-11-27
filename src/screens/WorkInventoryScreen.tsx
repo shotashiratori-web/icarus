@@ -56,6 +56,8 @@ async function updateDraft(item: Item, common: InventoryCommon): Promise<void> {
 
 type Props = { go: (s: Screen) => void };
 
+const commonSummary = (values: string[]) => values.map((v) => v.trim()).filter(Boolean).join('・');
+
 export default function WorkInventoryScreen({ go }: Props) {
   const { idToken, authState, signInContainerRef, handleTokenExpired } = useAuth();
   const [phase, setPhase] = useState<Phase>('common');
@@ -71,8 +73,6 @@ export default function WorkInventoryScreen({ go }: Props) {
 
   const commonErrors: string[] = [];
   if (!common.type) commonErrors.push('種別');
-  if (!common.storageClass) commonErrors.push('保存区分');
-  if (!common.location.trim()) commonErrors.push('保管場所');
   if (!common.datetime.trim()) commonErrors.push('記録日時');
 
   const setCommonField = <K extends keyof InventoryCommon>(k: K, v: InventoryCommon[K]) => setCommon((c) => ({ ...c, [k]: v }));
@@ -193,7 +193,7 @@ export default function WorkInventoryScreen({ go }: Props) {
       <div className={styles.root}>
         {header('棚卸しモード', () => go({ name: 'processing' }))}
         <main className={styles.formMain}>
-          <p className={own.lead}>全部の品に同じ値が入ります。次に写真をまとめて選びます（最大 {INVENTORY_MAX_PHOTOS} 枚）。</p>
+          <p className={own.lead}>全部の品に同じ値が入ります。保存区分・保管場所は空のままでも大丈夫です（品名だけで登録できます）。次に写真をまとめて選びます（最大 {INVENTORY_MAX_PHOTOS} 枚）。</p>
           <label className={styles.fieldLabel}>
             種別 <span className={styles.required}>*</span>
             <select className={styles.selectInput} value={common.type} onChange={(e) => setCommonField('type', e.target.value)}>
@@ -201,19 +201,19 @@ export default function WorkInventoryScreen({ go }: Props) {
             </select>
           </label>
           <div className={styles.fieldLabel}>
-            保存区分 <span className={styles.required}>*</span>
+            保存区分
             <div className={own.choiceRow} role="radiogroup" aria-label="保存区分">
               {STORAGE_CLASSES.map((c) => (
                 <button
                   key={c} type="button" role="radio" aria-checked={common.storageClass === c}
                   className={common.storageClass === c ? own.choiceOn : own.choice}
-                  onClick={() => setCommonField('storageClass', c)}
+                  onClick={() => setCommonField('storageClass', common.storageClass === c ? '' : c)}
                 >{c}</button>
               ))}
             </div>
           </div>
           <label className={styles.fieldLabel}>
-            保管場所 <span className={styles.required}>*</span>
+            保管場所
             <input type="text" className={styles.textInput} placeholder="例: 冷蔵庫A・上段" value={common.location} onChange={(e) => setCommonField('location', e.target.value)} />
           </label>
           <label className={styles.fieldLabel}>
@@ -250,7 +250,7 @@ export default function WorkInventoryScreen({ go }: Props) {
         {header(`${index + 1} / ${items.length}`, () => setPhase('common'))}
         <main className={styles.formMain}>
           <img src={`data:image/jpeg;base64,${current.previewBase64}`} alt="" className={own.bigPhoto} />
-          <p className={own.commonLine}>{common.storageClass}・{common.location}</p>
+          {commonSummary([common.storageClass, common.location]) && <p className={own.commonLine}>{commonSummary([common.storageClass, common.location])}</p>}
           <label className={styles.fieldLabel}>
             品名 <span className={styles.required}>*</span>
             <input type="text" className={styles.textInput} placeholder="例: ナラタケ塩漬け" value={current.name} onChange={(e) => setItemField('name', e.target.value)} />
@@ -299,7 +299,7 @@ export default function WorkInventoryScreen({ go }: Props) {
       <div className={styles.root}>
         {header('登録内容の確認', () => { setIndex(items.length - 1); setPhase('items'); })}
         <main className={styles.confirmMain}>
-          <p className={own.commonLine}>{common.type}・{common.storageClass}・{common.location}・{common.datetime.replace('T', ' ')}</p>
+          <p className={own.commonLine}>{commonSummary([common.type, common.storageClass, common.location, common.datetime.replace('T', ' ')])}</p>
           <ul className={own.confirmGrid}>
             {items.map((it, i) => (
               <li key={it.requestId}>

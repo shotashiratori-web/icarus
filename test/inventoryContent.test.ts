@@ -16,4 +16,7 @@ describe('buildInventoryContent', () => {
   it('前後の空白は落とし、空白だけの値は空として扱う', () => {
     expect(buildInventoryContent({ ...COMMON, location: '  乾物棚 ' }, { ...EMPTY, memo: '   ' })).toBe('保存：冷蔵\n場所：乾物棚');
   });
+  it('どれも空の時（品名だけで登録）は決まった文を入れる（内容は作業ログで必須）', () => {
+    expect(buildInventoryContent({ ...COMMON, storageClass: '', location: ' ' }, EMPTY)).toBe('棚卸しで登録');
+  });
 });
